@@ -53,7 +53,6 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 }
 
 const sse = (o: unknown) => `data: ${JSON.stringify(o)}\n\n`;
-const done = "data: [DONE]\n\n";
 
 /* ====================== M1 — transcript integrity on stream error ========= */
 

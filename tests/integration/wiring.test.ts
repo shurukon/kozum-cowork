@@ -309,7 +309,6 @@ describe("ProviderRegistry", () => {
       res.end("not found");
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const { port } = server.address() as AddressInfo;
 
     const dir = tmpDir("registry-static");
     const appPaths = makeAppPaths(dir);

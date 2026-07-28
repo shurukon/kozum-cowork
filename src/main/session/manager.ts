@@ -51,7 +51,6 @@ export class SessionManager {
   private readonly skills: SkillStore;
   private readonly mcp: McpManager;
   private readonly ask: AskBroker;
-  private readonly tasks: TaskStore;
   private readonly toolRegistry: ToolRegistry;
   private readonly emitEvent: (sessionId: string, e: AgentEvent) => void;
 
