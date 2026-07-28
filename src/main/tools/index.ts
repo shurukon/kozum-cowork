@@ -86,7 +86,7 @@ export function buildToolRegistry(svc: ToolServices): ToolRegistry {
   registry.registerAll(makeSkillTools(svc.skills));
 
   // Persistent knowledge.
-  registry.registerAll(makeMemoryTools(svc.memory, makeProjectKb));
+  registry.registerAll(makeMemoryTools(svc.memory, makeProjectKb(svc.memory.root)));
 
   // Recurring work — Cowork only, by design.
   registry.registerAll(makeScheduleTools(svc.scheduler));

@@ -11,10 +11,10 @@
  */
 
 import { readFile, writeFile, mkdir, rm, rename, readdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import type { Plugin, PluginSource, Marketplace } from "../../shared/types.ts";
+import type { Plugin, Marketplace } from "../../shared/types.ts";
 import { extractZip, readZipEntries } from "./zip.ts";
 import { parsePluginManifest, parseMarketplace } from "./manifest.ts";
 import type { MarketplaceManifest } from "./manifest.ts";

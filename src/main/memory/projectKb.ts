@@ -13,7 +13,7 @@ import {
   readdir,
   stat,
 } from "node:fs/promises";
-import { join, extname, relative, basename } from "node:path";
+import { join, extname, relative } from "node:path";
 import { parseFrontmatter } from "../agent/frontmatter.ts";
 
 /* ----------------------------------------------------------------- types --- */
@@ -180,12 +180,10 @@ async function walkDir(rootDir: string): Promise<FileEntry[]> {
 /* ======================================================== ProjectKnowledgeBase === */
 
 export class ProjectKnowledgeBase {
-  private vaultRoot: string;
   private projectId: string;
   private kbDir: string;
 
   constructor(vaultRoot: string, projectId: string) {
-    this.vaultRoot = vaultRoot;
     this.projectId = projectId;
     this.kbDir = join(vaultRoot, "project-kb", projectId);
   }

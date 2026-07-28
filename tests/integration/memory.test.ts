@@ -283,8 +283,15 @@ describe("MemoryVault.search", () => {
     // "the" is a stopword and should be ignored
     const results1 = await vault.search("chocolate the cookies");
     const results2 = await vault.search("chocolate cookies");
-    // Both searches should produce similar results; the stopword should not add noise
+    // The stopword must not change the outcome. Comparing the two rankings is
+    // the actual assertion; merely checking results1 is non-empty would pass
+    // even if "the" dominated the score.
     assert.ok(results1.length > 0, "should return results despite stopword");
+    assert.deepEqual(
+      results1.map((r) => r.id),
+      results2.map((r) => r.id),
+      "a stopword must not alter the ranking",
+    );
     // The top result should still be the cookie note
     if (results1.length > 0) {
       const top = await vault.read(results1[0]!.id);

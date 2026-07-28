@@ -8,11 +8,11 @@
  *   node --experimental-strip-types --test tests/integration/mcp.test.ts
  */
 
-import { describe, it, before, after, beforeEach, afterEach } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import * as http from "node:http";
 import * as net from "node:net";
-import { writeFile, unlink, mkdtemp, rm } from "node:fs/promises";
+import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 

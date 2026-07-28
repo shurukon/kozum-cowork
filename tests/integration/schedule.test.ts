@@ -43,7 +43,6 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { parseCron, nextRun, describeCron } from "../../src/main/schedule/cron.ts";
-import type { CronSpec } from "../../src/main/schedule/cron.ts";
 import { Scheduler } from "../../src/main/schedule/scheduler.ts";
 import { makeScheduleTools } from "../../src/main/tools/schedule.ts";
 import type { ScheduledTask } from "../../src/shared/types.ts";

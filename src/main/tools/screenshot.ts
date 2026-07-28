@@ -86,8 +86,17 @@ async function getDefaultRenderer(): Promise<PageRenderer | null> {
 
   try {
     // Lazy import — will throw in plain Node.js, which is expected.
+    // Presence of the package is NOT presence of the runtime. Under plain Node
+    // the electron module resolves to the binary path (a string), so
+    // destructuring it yields undefined and the first call throws. Only
+    // process.versions.electron proves we are inside an Electron process.
+    if (!process.versions.electron) {
+      throw new Error(
+        "the Electron runtime is not available — rendering only works inside the Kozum Cowork app",
+      );
+    }
     const electronModule = await import("electron");
-    const { WebContentsView, app } = electronModule as {
+    const { WebContentsView, app } = electronModule as unknown as {
       WebContentsView: new (opts: object) => {
         webContents: {
           loadURL(url: string): Promise<void>;

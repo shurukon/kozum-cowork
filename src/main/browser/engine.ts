@@ -242,6 +242,9 @@ export class ElectronBrowserBackend implements BrowserBackend {
 
     if (!this._electron) {
       try {
+        // See screenshot.ts: the package resolving does not mean we are in an
+        // Electron process. Check the runtime marker first.
+        if (!process.versions.electron) throw new BackendUnavailableError("Browser");
         this._electron = (await import("electron")) as unknown as ElectronModule;
       } catch {
         throw new BackendUnavailableError("Browser");

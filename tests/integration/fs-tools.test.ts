@@ -7,7 +7,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile, mkdir, symlink } from "node:fs/promises";
-import { join, sep } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { ToolRegistry } from "../../src/main/tools/registry.ts";

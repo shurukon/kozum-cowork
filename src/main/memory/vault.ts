@@ -102,10 +102,6 @@ function noteToMarkdown(note: MemoryNote, body: string): string {
   return buildFrontmatter(note) + body;
 }
 
-function noteFileFromId(vaultRoot: string, note: MemoryNote): string {
-  const dir = TYPE_DIRS[note.type];
-  return join(vaultRoot, dir, `${note.id}.md`);
-}
 
 async function exists(p: string): Promise<boolean> {
   try {
@@ -119,7 +115,8 @@ async function exists(p: string): Promise<boolean> {
 /* ============================================================= MemoryVault == */
 
 export class MemoryVault {
-  private root: string;
+  /** Vault root on disk. Exposed so callers can derive sibling paths. */
+  readonly root: string;
   private index: Map<string, MemoryNote> = new Map();
   private searchIdx: SearchIndex = { postings: {}, docLen: {}, N: 0 };
   private loaded = false;
@@ -174,9 +171,9 @@ export class MemoryVault {
     let suffix = 1;
 
     // Collision handling: increment suffix until unique
+    // Never overwrite: an identical title yields a suffixed sibling, so a
+    // second note about the same subject cannot silently clobber the first.
     while (this.index.has(slug)) {
-      const existing = this.index.get(slug)!;
-      // If same title+type it's the same logical note — still create a new one
       suffix += 1;
       slug = `${baseSlug}-${suffix}`;
     }
