@@ -376,6 +376,7 @@ export function App() {
                   onCancel={() => void handleCancel()}
                   onPickModel={openSettings}
                   modelLabel={modelLabel}
+                  onAttach={() => void attachFiles()}
                 />
                 {mode === "code" && settings && (
                   <div className={styles.permission}>
@@ -396,6 +397,7 @@ export function App() {
                 onSubmit={(t) => void handleSubmit(t)}
                 onPickModel={openSettings}
                 onPickFolder={() => void pickWorkingFolder()}
+                onAttach={() => void attachFiles()}
               />
             ))}
 
@@ -534,6 +536,25 @@ export function App() {
       return;
     }
     await reloadExtensions();
+  }
+
+  /**
+   * The composer's "+" opens a native file picker. Paths are appended to the
+   * next message rather than uploaded, because the agent reads from disk
+   * directly — there is no sandbox to copy them into.
+   */
+  async function attachFiles() {
+    try {
+      const files = await bridge().dialog.selectFiles();
+      if (!files.length) return;
+      setBanner(
+        `Attached ${files.length} file${files.length > 1 ? "s" : ""}. ` +
+          `Mention them in your message: ${files.slice(0, 3).join(", ")}` +
+          (files.length > 3 ? ` and ${files.length - 3} more` : ""),
+      );
+    } catch (e) {
+      setBanner(e instanceof Error ? e.message : String(e));
+    }
   }
 
   async function addPlugin() {

@@ -20,6 +20,7 @@ interface Props {
   onSubmit: (text: string) => void;
   onPickModel: () => void;
   onPickFolder: () => void;
+  onAttach: () => void;
 }
 
 export function HomeView({
@@ -29,6 +30,7 @@ export function HomeView({
   onSubmit,
   onPickModel,
   onPickFolder,
+  onAttach,
 }: Props) {
   const [value, setValue] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -100,7 +102,7 @@ export function HomeView({
             />
 
             <div className={styles.row}>
-              <button className={styles.attach} aria-label="Add context">
+              <button className={styles.attach} aria-label="Add files" title="Add files" onClick={onAttach}>
                 <Plus size={17} />
               </button>
 

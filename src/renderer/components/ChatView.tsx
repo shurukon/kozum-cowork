@@ -19,11 +19,20 @@ interface Props {
   onCancel: () => void;
   onPickModel: () => void;
   modelLabel: string;
+  onAttach: () => void;
 }
 
 const SCROLL_THRESHOLD = 80; // px from bottom before we consider "scrolled up"
 
-export function ChatView({ mode, sessionId, onSend, onCancel, onPickModel, modelLabel }: Props) {
+export function ChatView({
+  mode,
+  sessionId,
+  onSend,
+  onCancel,
+  onPickModel,
+  modelLabel,
+  onAttach,
+}: Props) {
   const modeState = useSessionStore((s) => s[mode]);
   const { messages, streamingMessageId, toolCards } = modeState;
 
@@ -137,7 +146,13 @@ export function ChatView({ mode, sessionId, onSend, onCancel, onPickModel, model
           />
 
           <div className={styles.row}>
-            <button className={styles.attach} aria-label="Add context" disabled={isRunning}>
+            <button
+              className={styles.attach}
+              aria-label="Add files"
+              title="Add files"
+              onClick={onAttach}
+              disabled={isRunning}
+            >
               <Plus size={16} />
             </button>
 
