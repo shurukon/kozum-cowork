@@ -45,11 +45,18 @@ const api = {
     minimize: () => ipcRenderer.send("window:minimize"),
     maximize: () => ipcRenderer.send("window:maximize"),
     close: () => ipcRenderer.send("window:close"),
-    /** Returns an unsubscribe function so React effects can clean up. */
-    onState: (cb: (s: WindowState) => void) => {
+    /**
+     * Returns an unsubscribe function so React effects can clean up.
+     * The body is braced deliberately: ipcRenderer.off() returns IpcRenderer,
+     * and leaking that return value makes the function incompatible with
+     * React's EffectCallback, which demands void.
+     */
+    onState: (cb: (s: WindowState) => void): (() => void) => {
       const handler = (_e: unknown, s: WindowState) => cb(s);
       ipcRenderer.on("window:state", handler);
-      return () => ipcRenderer.off("window:state", handler);
+      return () => {
+        ipcRenderer.off("window:state", handler);
+      };
     },
   },
 } as const;

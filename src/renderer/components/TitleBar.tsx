@@ -29,9 +29,11 @@ export function TitleBar({ onToggleSidebar, sidebarOpen }: Props) {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    // The bridge may be absent when the renderer runs outside Electron
-    // (component previews, tests), so every call is guarded.
-    return window.kozum?.window.onState((s) => setMaximized(s.maximized));
+    // The bridge is absent when the renderer runs outside Electron (component
+    // previews, tests). Returning the optional-chained value directly would
+    // hand React `undefined`, which is not a valid destructor.
+    const off = window.kozum?.window.onState((s) => setMaximized(s.maximized));
+    return () => off?.();
   }, []);
 
   return (
