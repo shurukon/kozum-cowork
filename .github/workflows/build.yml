@@ -127,6 +127,54 @@ jobs:
       - name: Package NSIS installer
         run: npx electron-builder --win --publish never
 
+      - name: Prove backend is bundled
+        shell: bash
+        continue-on-error: true
+        run: |
+          {
+            echo "## Bundle contents"
+            echo ""
+            echo "### out/ tree"
+            echo '```'
+            ls -R out/ 2>/dev/null || echo "(no out dir)"
+            echo '```'
+            echo ""
+            echo "### out/main/index.js size"
+            echo '```'
+            wc -c out/main/index.js 2>/dev/null || echo "(file missing)"
+            echo '```'
+            echo ""
+            echo "### Key symbol counts inside out/main/index.js"
+            echo '```'
+            for sym in buildToolRegistry shell_exec mcp_install runAgentLoop; do
+              count=$(grep -c "$sym" out/main/index.js 2>/dev/null || echo 0)
+              echo "$sym: $count"
+            done
+            echo '```'
+            echo ""
+            echo "### release/win-unpacked/resources/ listing"
+            echo '```'
+            ls -lh release/win-unpacked/resources/ 2>/dev/null || echo "(dir missing)"
+            echo '```'
+            echo ""
+            echo "### app.asar size"
+            echo '```'
+            wc -c release/win-unpacked/resources/app.asar 2>/dev/null || echo "(asar missing)"
+            echo '```'
+            echo ""
+            echo "### First 50 entries inside app.asar"
+            echo '```'
+            npx asar list release/win-unpacked/resources/app.asar 2>/dev/null | head -50 || echo "(asar tool unavailable)"
+            echo '```'
+            echo ""
+            echo "### out/main/index.js byte count extracted from asar"
+            echo '```'
+            npx asar extract-file release/win-unpacked/resources/app.asar out/main/index.js /tmp/main-from-asar.js 2>/dev/null \
+              && wc -c /tmp/main-from-asar.js \
+              || echo "(extract failed)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Inventory
         shell: bash
         run: |

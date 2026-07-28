@@ -15,7 +15,6 @@ import {
   FolderOpen,
   ListTodo,
   Plus,
-  Shapes,
   SlidersHorizontal,
   ChevronDown,
 } from "lucide-react";
@@ -38,12 +37,14 @@ interface Props {
   recents: Array<{ id: string; title: string; group?: string }>;
   accountLabel: string;
   providerLabel: string;
+  /** The account row is the primary way into Settings. */
+  onAccountClick: () => void;
+  onSelectRecent: (id: string) => void;
 }
 
 const COWORK_NAV: Array<{ key: NavKey; label: string; icon: typeof Plus }> = [
   { key: "new", label: "New task", icon: Plus },
   { key: "projects", label: "Projects", icon: FolderOpen },
-  { key: "artifacts", label: "Artifacts", icon: Shapes },
   { key: "scheduled", label: "Scheduled", icon: Clock },
   { key: "customize", label: "Customize", icon: Archive },
 ];
@@ -61,6 +62,8 @@ export function Sidebar({
   recents,
   accountLabel,
   providerLabel,
+  onAccountClick,
+  onSelectRecent,
 }: Props) {
   const nav = mode === "cowork" ? COWORK_NAV : CODE_NAV;
 
@@ -127,7 +130,11 @@ export function Sidebar({
             <ul>
               {items.map((r) => (
                 <li key={r.id}>
-                  <button className={styles.recent} title={r.title}>
+                  <button
+                    className={styles.recent}
+                    title={r.title}
+                    onClick={() => onSelectRecent(r.id)}
+                  >
                     <span className={styles.dot} aria-hidden />
                     <span className="kz-truncate">{r.title}</span>
                   </button>
@@ -141,7 +148,7 @@ export function Sidebar({
         )}
       </div>
 
-      <button className={styles.account}>
+      <button className={styles.account} onClick={onAccountClick} title="Settings">
         <img src="./icons/mark-24.png" alt="" className={styles.avatar} width={18} height={18} />
         <span className={styles.accountName}>{accountLabel}</span>
         <span className={styles.accountSep}>·</span>

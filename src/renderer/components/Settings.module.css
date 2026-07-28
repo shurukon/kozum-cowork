@@ -558,3 +558,49 @@
   color: var(--text-muted);
   line-height: var(--lh-snug);
 }
+
+/* ------------------------------------------------------- divider --- */
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: var(--sp-2) 0;
+}
+
+/* ---------------------------------------------------- toggle row --- */
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-5);
+}
+
+.toggleRowLabel {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+/* -------------------------------------------------- subagent list --- */
+
+.subagentList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.subagentItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.subagentLabel {
+  font-size: var(--fs-base);
+  color: var(--text-primary);
+}

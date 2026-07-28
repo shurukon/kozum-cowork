@@ -26,10 +26,12 @@ import type {
   McpServerConfig,
   McpToolInfo,
   Plugin,
+  Project,
   Skill,
   Result,
   Mode,
 } from "../shared/types.ts";
+import type { CreateProjectInput, UpdateProjectPatch } from "../main/store/projects.ts";
 
 export interface AppInfo {
   version: string;
@@ -154,6 +156,25 @@ const api = {
     list: (): Promise<Skill[]> => ipcRenderer.invoke("skills:list"),
     setEnabled: (id: string, enabled: boolean): Promise<Result<void>> =>
       ipcRenderer.invoke("skills:setEnabled", id, enabled),
+  },
+
+  dialog: {
+    /** Open a native folder picker. Resolves to the chosen path, or null if cancelled. */
+    selectFolder: (): Promise<string | null> => ipcRenderer.invoke("dialog:selectFolder"),
+    /** Open a native file picker (multi-select). Resolves to the chosen paths (may be empty). */
+    selectFiles: (): Promise<string[]> => ipcRenderer.invoke("dialog:selectFiles"),
+  },
+
+  projects: {
+    list: (): Promise<Project[]> => ipcRenderer.invoke("projects:list"),
+    create: (input: CreateProjectInput): Promise<Result<Project>> =>
+      ipcRenderer.invoke("projects:create", input),
+    update: (id: string, patch: UpdateProjectPatch): Promise<Result<Project>> =>
+      ipcRenderer.invoke("projects:update", id, patch),
+    archive: (id: string): Promise<Result<Project>> =>
+      ipcRenderer.invoke("projects:archive", id),
+    remove: (id: string): Promise<Result<void>> =>
+      ipcRenderer.invoke("projects:remove", id),
   },
 
   window: {

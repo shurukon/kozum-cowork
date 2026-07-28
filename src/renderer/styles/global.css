@@ -70,13 +70,38 @@ button:disabled {
 }
 
 input,
-textarea,
-select {
+textarea {
   font: inherit;
   color: inherit;
   background: none;
   border: none;
   outline: none;
+}
+
+/*
+ * <select> and <option> need explicit colours on Windows Chromium: the native
+ * renderer ignores CSS custom properties on option elements and renders them
+ * in the OS default (white background), so we set concrete values via the
+ * --select-* tokens that each theme defines.
+ */
+select {
+  font: inherit;
+  color: var(--select-color, var(--text-primary));
+  background-color: var(--select-bg, var(--bg-input));
+  border: 1px solid var(--select-border, var(--border));
+  outline: none;
+  /* Custom chevron so we can fully control the appearance */
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238899bb' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+select option {
+  background-color: var(--select-bg, #0d1530);
+  color: var(--select-color, #ffffff);
 }
 
 a {
@@ -166,6 +191,25 @@ kbd {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* --------------------------------------------------- chat font theming --- */
+
+/*
+ * data-font on <html> switches the chat transcript font family.
+ * The transcript container carries class="chatTranscript" set by ChatView.
+ * We change the font at the :root level so descendants inherit naturally.
+ */
+
+[data-font="serif"] .chatTranscript {
+  font-family: var(--font-serif);
+}
+
+[data-font="mono"] .chatTranscript {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* data-font="sans" (default) needs no override — the body already uses sans. */
 
 /* ------------------------------------------------------------ keyframes -- */
 

@@ -1,0 +1,177 @@
+/*
+ * CodeHome — Code-mode home screen with stats overview and activity heat-grid.
+ */
+
+.wrap {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  overflow-y: auto;
+  padding: var(--sp-20) var(--sp-12) var(--sp-16);
+  background: var(--bg-primary);
+}
+
+.inner {
+  width: 100%;
+  max-width: var(--content-max-w);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-12);
+}
+
+/* ─── Greeting ─────────────────────────────────────────────────────────── */
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+  line-height: var(--lh-tight);
+}
+
+.mark {
+  flex: 0 0 auto;
+  border-radius: var(--r-sm);
+}
+
+/* ─── Stats grid ────────────────────────────────────────────────────────── */
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--sp-4);
+}
+
+.statCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-6);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  transition: border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.statCard:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.statLabel {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.statValue {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  line-height: var(--lh-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+.statValueEmpty {
+  color: var(--text-muted);
+}
+
+.statSub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* ─── Heat grid ─────────────────────────────────────────────────────────── */
+
+.heatSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.heatTitle {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.heatGrid {
+  display: flex;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+}
+
+.heatWeek {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.heatCell {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--r-xs);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  transition: background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.heatLevel1 {
+  background: var(--accent-softer);
+  border-color: transparent;
+}
+
+.heatLevel2 {
+  background: rgba(61, 127, 255, 0.25);
+  border-color: transparent;
+}
+
+.heatLevel3 {
+  background: rgba(61, 127, 255, 0.5);
+  border-color: transparent;
+}
+
+.heatLevel4 {
+  background: var(--accent-primary);
+  border-color: transparent;
+}
+
+.heatLegend {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.heatLegendLabel {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.heatLegendCells {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+/* ─── Empty state ───────────────────────────────────────────────────────── */
+
+.emptyHint {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  text-align: center;
+  padding: var(--sp-8) 0;
+  line-height: var(--lh-snug);
+}

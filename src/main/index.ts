@@ -7,11 +7,12 @@
  * product's ~12GB Hyper-V image.
  */
 
-import { app, BrowserWindow, ipcMain, nativeTheme, safeStorage, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } from "electron";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 
-import { settingsPath, keysPath, sessionsDir, memoryDir, pluginsDir } from "./store/paths.ts";
+import { settingsPath, keysPath, sessionsDir, memoryDir, pluginsDir, projectsPath } from "./store/paths.ts";
+import { ProjectStore } from "./store/projects.ts";
 import { SettingsStore } from "./store/settings.ts";
 import { SecretStore } from "./store/secrets.ts";
 import { ProviderRegistry } from "./providers/registry.ts";
@@ -123,6 +124,7 @@ if (!app.requestSingleInstanceLock()) {
 
     // ── stores ──────────────────────────────────────────────────────────────
     const settings = new SettingsStore(settingsPath(appPaths));
+    const projects = new ProjectStore(projectsPath(appPaths));
     const secrets = new SecretStore(keysPath(appPaths), {
       isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
       encryptString: (s: string) => safeStorage.encryptString(s),
@@ -262,6 +264,8 @@ if (!app.requestSingleInstanceLock()) {
       plugins,
       skills,
       tasks,
+      projects,
+      dialog,
     });
 
     // ── window chrome IPC ────────────────────────────────────────────────────

@@ -57,6 +57,10 @@ export function modelsFilePath(app: AppPaths, providerId: string): string {
   return join(modelsDir(app), `${providerId}.json`);
 }
 
+export function projectsPath(app: AppPaths): string {
+  return join(base(app), "projects.json");
+}
+
 export function kozumBase(app: AppPaths): string {
   return base(app);
 }

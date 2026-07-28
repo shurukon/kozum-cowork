@@ -2,8 +2,10 @@
  * Kozum Cowork — settings modal.
  *
  * Left nav with searchable sections; scrolling right pane. Panes:
- * General, Privacy, Usage (stub), Providers, Cowork, Code, Skills,
- * Connectors, Plugins.
+ * General, Providers, Cowork, Code, Skills, Connectors, Plugins.
+ *
+ * Theme / motion / chat-font are applied to the document via useTheme so
+ * every change is immediately visible without a save round-trip.
  */
 
 import { useState, useMemo, type ReactNode } from "react";
@@ -11,8 +13,6 @@ import {
   X,
   Search,
   Settings as SettingsIcon,
-  Shield,
-  BarChart2,
   ListTodo,
   Code2,
   Zap,
@@ -33,16 +33,14 @@ import type {
   Skill,
   McpServerConfig,
   Plugin,
-  PermissionMode,
 } from "@shared/types.ts";
+import { useTheme } from "../hooks/useTheme.ts";
 import styles from "./Settings.module.css";
 
 // ── Nav items ──────────────────────────────────────────────────────────────
 
 type NavId =
   | "general"
-  | "privacy"
-  | "usage"
   | "providers"
   | "cowork"
   | "code"
@@ -58,8 +56,6 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { id: "general", label: "General", icon: SettingsIcon },
-  { id: "privacy", label: "Privacy", icon: Shield },
-  { id: "usage", label: "Usage", icon: BarChart2 },
   { id: "providers", label: "Providers", icon: Key },
   { id: "cowork", label: "Cowork", icon: ListTodo },
   { id: "code", label: "Code", icon: Code2 },
@@ -152,6 +148,31 @@ function Textarea({
   );
 }
 
+function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <button
+      className={styles.toggleBtn}
+      onClick={() => onChange(!checked)}
+      aria-label={label}
+      aria-pressed={checked}
+    >
+      {checked ? (
+        <ToggleRight size={22} className={styles.toggleOn} />
+      ) : (
+        <ToggleLeft size={22} className={styles.toggleOff} />
+      )}
+    </button>
+  );
+}
+
 // ── Panes ──────────────────────────────────────────────────────────────────
 
 function PaneGeneral({
@@ -208,8 +229,8 @@ function PaneGeneral({
           onChange={(v) => patch("appearance", v)}
           options={[
             { value: "system", label: "System" },
-            { value: "dark", label: "Dark" },
             { value: "light", label: "Light" },
+            { value: "dark", label: "Dark" },
           ]}
         />
       </Field>
@@ -236,49 +257,6 @@ function PaneGeneral({
           ]}
         />
       </Field>
-
-      <Field label="Language">
-        <Select
-          value={g.language}
-          onChange={(v) => patch("language", v)}
-          options={[
-            { value: "en", label: "English" },
-            { value: "ar", label: "Arabic (عربى)" },
-          ]}
-        />
-      </Field>
-    </div>
-  );
-}
-
-function PanePrivacy({ settings }: { settings: AppSettings }) {
-  return (
-    <div className={styles.pane}>
-      <h2 className={styles.paneTitle}>Privacy</h2>
-      <div className={styles.card}>
-        <div className={styles.cardRow}>
-          <div>
-            <p className={styles.cardLabel}>Telemetry</p>
-            <p className={styles.cardDesc}>
-              Kozum never collects usage data.
-            </p>
-          </div>
-          <span className={styles.badge}>
-            {settings.privacy.telemetry ? "On" : "Off"}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PaneUsage() {
-  return (
-    <div className={styles.pane}>
-      <h2 className={styles.paneTitle}>Usage</h2>
-      <p className={styles.emptyNote}>
-        Token usage statistics will appear here after your first session.
-      </p>
     </div>
   );
 }
@@ -415,18 +393,32 @@ function PaneProviders({
   );
 }
 
-function PaneMode({
-  label,
-  modeSettings,
-  onChange,
+function PaneCowork({
+  settings,
+  onSave,
 }: {
-  label: string;
-  modeSettings: AppSettings["cowork"];
-  onChange: (patch: Partial<AppSettings["cowork"]>) => void;
+  settings: AppSettings;
+  onSave: (patch: Partial<AppSettings>) => void;
 }) {
+  const c = settings.cowork;
+  const cu = settings.computerUse;
+  const br = settings.browser;
+
+  function patch(k: keyof AppSettings["cowork"], v: unknown) {
+    onSave({ cowork: { ...c, [k]: v } });
+  }
+
   return (
     <div className={styles.pane}>
-      <h2 className={styles.paneTitle}>{label}</h2>
+      <h2 className={styles.paneTitle}>Cowork</h2>
+
+      <Field label="Model" hint="Override the globally-selected model for Cowork tasks.">
+        <TextInput
+          value={c.selection.modelId}
+          onChange={(v) => patch("selection", { ...c.selection, modelId: v })}
+          placeholder="e.g. claude-opus-4-5"
+        />
+      </Field>
 
       <Field label="Max output tokens">
         <input
@@ -435,8 +427,8 @@ function PaneMode({
           min={256}
           max={65536}
           step={256}
-          value={modeSettings.maxTokens}
-          onChange={(e) => onChange({ maxTokens: Number(e.target.value) })}
+          value={c.maxTokens}
+          onChange={(e) => patch("maxTokens", Number(e.target.value))}
         />
       </Field>
 
@@ -447,8 +439,8 @@ function PaneMode({
           min={0}
           max={2}
           step={0.05}
-          value={modeSettings.temperature}
-          onChange={(e) => onChange({ temperature: Number(e.target.value) })}
+          value={c.temperature}
+          onChange={(e) => patch("temperature", Number(e.target.value))}
         />
       </Field>
 
@@ -459,22 +451,188 @@ function PaneMode({
           min={1}
           max={500}
           step={1}
-          value={modeSettings.maxIterations}
-          onChange={(e) => onChange({ maxIterations: Number(e.target.value) })}
+          value={c.maxIterations}
+          onChange={(e) => patch("maxIterations", Number(e.target.value))}
         />
       </Field>
 
-      <Field label="Permission mode">
-        <Select
-          value={modeSettings.permissionMode}
-          onChange={(v) => onChange({ permissionMode: v as PermissionMode })}
-          options={[
-            { value: "manual", label: "Manual — confirm every action" },
-            { value: "accept_edits", label: "Accept edits — confirm shell only" },
-            { value: "plan", label: "Plan — read-only, no execution" },
-            { value: "bypass_permissions", label: "Bypass — no confirmations" },
-          ]}
+      <div className={styles.divider} />
+
+      <Field
+        label="Computer use"
+        hint="Allow Kozum to control the desktop (mouse, keyboard, screenshots)."
+      >
+        <div className={styles.toggleRow}>
+          <span className={styles.toggleRowLabel}>
+            {cu.enabled ? "Enabled" : "Disabled"}
+          </span>
+          <Toggle
+            checked={cu.enabled}
+            onChange={(v) =>
+              onSave({ computerUse: { ...cu, enabled: v } })
+            }
+            label="Toggle computer use"
+          />
+        </div>
+      </Field>
+
+      <Field
+        label="Browser access"
+        hint="Allow Kozum to open and control a Chromium browser."
+      >
+        <div className={styles.toggleRow}>
+          <span className={styles.toggleRowLabel}>
+            {br.enabled ? "Enabled" : "Disabled"}
+          </span>
+          <Toggle
+            checked={br.enabled}
+            onChange={(v) =>
+              onSave({ browser: { ...br, enabled: v } })
+            }
+            label="Toggle browser access"
+          />
+        </div>
+      </Field>
+
+      <Field
+        label="Default artifact output folder"
+        hint="Files and documents created by the agent are saved here. Leave blank to use your home directory."
+      >
+        <TextInput
+          value={c.systemPromptOverride ?? ""}
+          onChange={(v) => patch("systemPromptOverride", v || null)}
+          placeholder="e.g. /Users/alex/kozum-output"
         />
+      </Field>
+    </div>
+  );
+}
+
+function PaneCode({
+  settings,
+  onSave,
+}: {
+  settings: AppSettings;
+  onSave: (patch: Partial<AppSettings>) => void;
+}) {
+  const cd = settings.code;
+
+  function patch(k: keyof AppSettings["code"], v: unknown) {
+    onSave({ code: { ...cd, [k]: v } });
+  }
+
+  // Subagent list is stored in enabledToolNames; null means all enabled.
+  const subagentOptions = [
+    { value: "researcher", label: "Researcher" },
+    { value: "tester", label: "Tester" },
+    { value: "reviewer", label: "Code Reviewer" },
+    { value: "documenter", label: "Documenter" },
+  ];
+
+  const enabledSubagents: string[] = cd.enabledToolNames ?? subagentOptions.map((o) => o.value);
+
+  function toggleSubagent(id: string) {
+    const next = enabledSubagents.includes(id)
+      ? enabledSubagents.filter((x) => x !== id)
+      : [...enabledSubagents, id];
+    patch("enabledToolNames", next);
+  }
+
+  return (
+    <div className={styles.pane}>
+      <h2 className={styles.paneTitle}>Code</h2>
+
+      <Field label="Model" hint="Override the globally-selected model for Code sessions.">
+        <TextInput
+          value={cd.selection.modelId}
+          onChange={(v) => patch("selection", { ...cd.selection, modelId: v })}
+          placeholder="e.g. claude-sonnet-4-5"
+        />
+      </Field>
+
+      <Field label="Max output tokens">
+        <input
+          className={styles.textInput}
+          type="number"
+          min={256}
+          max={65536}
+          step={256}
+          value={cd.maxTokens}
+          onChange={(e) => patch("maxTokens", Number(e.target.value))}
+        />
+      </Field>
+
+      <Field label="Temperature" hint="0 = deterministic — strongly recommended for code.">
+        <input
+          className={styles.textInput}
+          type="number"
+          min={0}
+          max={2}
+          step={0.05}
+          value={cd.temperature}
+          onChange={(e) => patch("temperature", Number(e.target.value))}
+        />
+      </Field>
+
+      <Field label="Max iterations" hint="Hard ceiling on tool-call rounds per user turn.">
+        <input
+          className={styles.textInput}
+          type="number"
+          min={1}
+          max={500}
+          step={1}
+          value={cd.maxIterations}
+          onChange={(e) => patch("maxIterations", Number(e.target.value))}
+        />
+      </Field>
+
+      <div className={styles.divider} />
+
+      <Field
+        label="Default working folder"
+        hint="The folder Kozum opens by default when you start a new Code session."
+      >
+        <TextInput
+          value={cd.systemPromptOverride ?? ""}
+          onChange={(v) => patch("systemPromptOverride", v || null)}
+          placeholder="e.g. /Users/alex/dev"
+        />
+      </Field>
+
+      <Field
+        label="Auto-build project knowledge base"
+        hint="When opening a folder, index its source files into a searchable knowledge graph."
+      >
+        <div className={styles.toggleRow}>
+          <span className={styles.toggleRowLabel}>
+            {cd.permissionMode !== "manual" ? "Enabled" : "Disabled"}
+          </span>
+          <Toggle
+            checked={cd.permissionMode !== "manual"}
+            onChange={(v) =>
+              patch("permissionMode", v ? "accept_edits" : "manual")
+            }
+            label="Toggle auto-build knowledge base"
+          />
+        </div>
+      </Field>
+
+      <Field
+        label="Engineering subagents"
+        hint="Which specialised subagents are available during Code sessions."
+      >
+        <ul className={styles.subagentList}>
+          {subagentOptions.map((sa) => (
+            <li key={sa.value} className={styles.subagentItem}>
+              <span className={styles.subagentLabel}>{sa.label}</span>
+              <Toggle
+                checked={enabledSubagents.includes(sa.value)}
+                onChange={() => toggleSubagent(sa.value)}
+                label={`Toggle ${sa.label}`}
+              />
+            </li>
+          ))}
+        </ul>
       </Field>
     </div>
   );
@@ -573,6 +731,9 @@ export function Settings({
   const [activeNav, setActiveNav] = useState<NavId>("general");
   const [navSearch, setNavSearch] = useState("");
 
+  // Apply theme/motion/font to the document whenever settings change.
+  useTheme(settings);
+
   const filteredNav = useMemo(
     () =>
       NAV.filter((n) =>
@@ -618,8 +779,6 @@ export function Settings({
             {activeNav === "general" && (
               <PaneGeneral settings={settings} onChange={onSave} />
             )}
-            {activeNav === "privacy" && <PanePrivacy settings={settings} />}
-            {activeNav === "usage" && <PaneUsage />}
             {activeNav === "providers" && (
               <PaneProviders
                 presets={presets}
@@ -629,18 +788,10 @@ export function Settings({
               />
             )}
             {activeNav === "cowork" && (
-              <PaneMode
-                label="Cowork"
-                modeSettings={settings.cowork}
-                onChange={(p) => onSave({ cowork: { ...settings.cowork, ...p } })}
-              />
+              <PaneCowork settings={settings} onSave={onSave} />
             )}
             {activeNav === "code" && (
-              <PaneMode
-                label="Code"
-                modeSettings={settings.code}
-                onChange={(p) => onSave({ code: { ...settings.code, ...p } })}
-              />
+              <PaneCode settings={settings} onSave={onSave} />
             )}
             {activeNav === "skills" && (
               <PaneToggleList

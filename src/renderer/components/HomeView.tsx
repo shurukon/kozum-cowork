@@ -19,9 +19,17 @@ interface Props {
   modelLabel: string;
   onSubmit: (text: string) => void;
   onPickModel: () => void;
+  onPickFolder: () => void;
 }
 
-export function HomeView({ mode, userName, modelLabel, onSubmit, onPickModel }: Props) {
+export function HomeView({
+  mode,
+  userName,
+  modelLabel,
+  onSubmit,
+  onPickModel,
+  onPickFolder,
+}: Props) {
   const [value, setValue] = useState("");
   const ta = useRef<HTMLTextAreaElement>(null);
 
@@ -113,7 +121,7 @@ export function HomeView({ mode, userName, modelLabel, onSubmit, onPickModel }: 
             </div>
           </div>
 
-          <button className={styles.folder}>
+          <button className={styles.folder} onClick={onPickFolder}>
             <FolderOpen size={14} />
             <span>Work in a project or folder</span>
             <ChevronDown size={14} />

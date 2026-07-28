@@ -1,0 +1,129 @@
+/*
+ * PermissionPicker — popover above the composer showing the four
+ * permission modes with number badges. Floats above the composer,
+ * anchored to the left of the permission button.
+ */
+
+.anchor {
+  position: relative;
+  display: inline-block;
+}
+
+.popover {
+  position: absolute;
+  bottom: calc(100% + var(--sp-3));
+  left: 0;
+  z-index: var(--z-dropdown);
+  min-width: 260px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--sp-2);
+  animation: kz-rise var(--dur-fast) var(--ease-out) both;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  text-align: start;
+  transition: background var(--dur-fast) var(--ease-out);
+  cursor: pointer;
+}
+
+.option:hover {
+  background: var(--bg-hover);
+}
+
+.optionActive {
+  background: var(--bg-active);
+}
+
+.badge {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-xs);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.optionActive .badge {
+  background: var(--accent-soft);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.desc {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: var(--lh-snug);
+}
+
+.tick {
+  flex: 0 0 auto;
+  color: var(--accent-primary);
+  opacity: 0;
+}
+
+.optionActive .tick {
+  opacity: 1;
+}
+
+/* Trigger button that opens/closes the popover */
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.trigger:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.triggerBadge {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semibold);
+  font-family: var(--font-mono);
+  color: var(--accent-primary);
+}

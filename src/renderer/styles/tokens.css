@@ -1,14 +1,15 @@
 /*
  * Kozum Cowork — design tokens.
  *
- * The palette is fixed by spec. Everything else here is derived from it so that
- * the surface stays coherent: elevation is expressed as stacked translucent
- * white, never as a new opaque grey, which is what keeps the Cowork-like
- * calmness on a near-black canvas.
+ * Dark palette is fixed by spec and lives under :root[data-theme="dark"].
+ * Light palette keeps the same accent identity with near-white surfaces.
+ * System resolves via prefers-color-scheme when data-theme="system".
  */
 
-:root {
-  /* ---- Palette (spec, do not drift) ---------------------------------- */
+/* ── Dark theme (spec, do not drift) ─────────────────────────────────────── */
+
+:root[data-theme="dark"] {
+  /* ---- Palette -------------------------------------------------------- */
   --bg-primary: #05081a;
   --bg-secondary: #080d24;
   --bg-card: rgba(255, 255, 255, 0.04);
@@ -49,6 +50,211 @@
   --warning-soft: rgba(245, 158, 11, 0.14);
   --error-soft: rgba(239, 68, 68, 0.14);
 
+  /* ---- Select dropdown colours (Chromium on Windows needs explicit) --- */
+  --select-bg: #0d1530;
+  --select-color: #ffffff;
+  --select-border: rgba(255, 255, 255, 0.18);
+}
+
+/* ── Light theme ──────────────────────────────────────────────────────────── */
+
+:root[data-theme="light"] {
+  /* ---- Palette ------------------------------------------------------- */
+  --bg-primary: #f4f6fb;
+  --bg-secondary: #ffffff;
+  --bg-card: rgba(0, 0, 0, 0.03);
+  --border: rgba(0, 0, 0, 0.1);
+
+  /* Accent identity preserved exactly */
+  --accent-primary: #3d7fff;
+  --accent-secondary: #00c8ff;
+  --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
+
+  --text-primary: #0d1120;
+  --text-secondary: #4a5a7a;
+  --text-muted: #8898b2;
+
+  --glow-blue: rgba(61, 127, 255, 0.2);
+  --glow-teal: rgba(0, 200, 255, 0.15);
+
+  --success: #16a34a;
+  --warning: #d97706;
+  --error: #dc2626;
+
+  /* ---- Derived surfaces ---------------------------------------------- */
+  --bg-elevated: rgba(0, 0, 0, 0.04);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --bg-active: rgba(0, 0, 0, 0.08);
+  --bg-input: rgba(0, 0, 0, 0.04);
+  --bg-overlay: rgba(180, 188, 210, 0.6);
+  --bg-sunken: rgba(0, 0, 0, 0.06);
+
+  --border-strong: rgba(0, 0, 0, 0.16);
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-focus: var(--accent-primary);
+
+  --accent-soft: rgba(61, 127, 255, 0.12);
+  --accent-softer: rgba(61, 127, 255, 0.06);
+  --teal-soft: rgba(0, 200, 255, 0.1);
+
+  --success-soft: rgba(22, 163, 74, 0.12);
+  --warning-soft: rgba(217, 119, 6, 0.12);
+  --error-soft: rgba(220, 38, 38, 0.12);
+
+  /* ---- Select dropdown colours --------------------------------------- */
+  --select-bg: #ffffff;
+  --select-color: #0d1120;
+  --select-border: rgba(0, 0, 0, 0.18);
+}
+
+/* ── System theme — dark variant ─────────────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --bg-primary: #05081a;
+    --bg-secondary: #080d24;
+    --bg-card: rgba(255, 255, 255, 0.04);
+    --border: rgba(255, 255, 255, 0.08);
+
+    --accent-primary: #3d7fff;
+    --accent-secondary: #00c8ff;
+    --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
+
+    --text-primary: #ffffff;
+    --text-secondary: #8899bb;
+    --text-muted: #4a5568;
+
+    --glow-blue: rgba(61, 127, 255, 0.3);
+    --glow-teal: rgba(0, 200, 255, 0.2);
+
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --error: #ef4444;
+
+    --bg-elevated: rgba(255, 255, 255, 0.055);
+    --bg-hover: rgba(255, 255, 255, 0.06);
+    --bg-active: rgba(255, 255, 255, 0.09);
+    --bg-input: rgba(255, 255, 255, 0.035);
+    --bg-overlay: rgba(3, 5, 14, 0.72);
+    --bg-sunken: rgba(0, 0, 0, 0.22);
+
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --border-subtle: rgba(255, 255, 255, 0.05);
+    --border-focus: var(--accent-primary);
+
+    --accent-soft: rgba(61, 127, 255, 0.14);
+    --accent-softer: rgba(61, 127, 255, 0.08);
+    --teal-soft: rgba(0, 200, 255, 0.12);
+
+    --success-soft: rgba(34, 197, 94, 0.14);
+    --warning-soft: rgba(245, 158, 11, 0.14);
+    --error-soft: rgba(239, 68, 68, 0.14);
+
+    --select-bg: #0d1530;
+    --select-color: #ffffff;
+    --select-border: rgba(255, 255, 255, 0.18);
+  }
+}
+
+/* ── System theme — light variant ────────────────────────────────────────── */
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    --bg-primary: #f4f6fb;
+    --bg-secondary: #ffffff;
+    --bg-card: rgba(0, 0, 0, 0.03);
+    --border: rgba(0, 0, 0, 0.1);
+
+    --accent-primary: #3d7fff;
+    --accent-secondary: #00c8ff;
+    --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
+
+    --text-primary: #0d1120;
+    --text-secondary: #4a5a7a;
+    --text-muted: #8898b2;
+
+    --glow-blue: rgba(61, 127, 255, 0.2);
+    --glow-teal: rgba(0, 200, 255, 0.15);
+
+    --success: #16a34a;
+    --warning: #d97706;
+    --error: #dc2626;
+
+    --bg-elevated: rgba(0, 0, 0, 0.04);
+    --bg-hover: rgba(0, 0, 0, 0.05);
+    --bg-active: rgba(0, 0, 0, 0.08);
+    --bg-input: rgba(0, 0, 0, 0.04);
+    --bg-overlay: rgba(180, 188, 210, 0.6);
+    --bg-sunken: rgba(0, 0, 0, 0.06);
+
+    --border-strong: rgba(0, 0, 0, 0.16);
+    --border-subtle: rgba(0, 0, 0, 0.06);
+    --border-focus: var(--accent-primary);
+
+    --accent-soft: rgba(61, 127, 255, 0.12);
+    --accent-softer: rgba(61, 127, 255, 0.06);
+    --teal-soft: rgba(0, 200, 255, 0.1);
+
+    --success-soft: rgba(22, 163, 74, 0.12);
+    --warning-soft: rgba(217, 119, 6, 0.12);
+    --error-soft: rgba(220, 38, 38, 0.12);
+
+    --select-bg: #ffffff;
+    --select-color: #0d1120;
+    --select-border: rgba(0, 0, 0, 0.18);
+  }
+}
+
+/* ── Fallback: dark when no data-theme is set (should not happen in practice) */
+
+:root:not([data-theme]) {
+  --bg-primary: #05081a;
+  --bg-secondary: #080d24;
+  --bg-card: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.08);
+
+  --accent-primary: #3d7fff;
+  --accent-secondary: #00c8ff;
+  --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
+
+  --text-primary: #ffffff;
+  --text-secondary: #8899bb;
+  --text-muted: #4a5568;
+
+  --glow-blue: rgba(61, 127, 255, 0.3);
+  --glow-teal: rgba(0, 200, 255, 0.2);
+
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+
+  --bg-elevated: rgba(255, 255, 255, 0.055);
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.09);
+  --bg-input: rgba(255, 255, 255, 0.035);
+  --bg-overlay: rgba(3, 5, 14, 0.72);
+  --bg-sunken: rgba(0, 0, 0, 0.22);
+
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-focus: var(--accent-primary);
+
+  --accent-soft: rgba(61, 127, 255, 0.14);
+  --accent-softer: rgba(61, 127, 255, 0.08);
+  --teal-soft: rgba(0, 200, 255, 0.12);
+
+  --success-soft: rgba(34, 197, 94, 0.14);
+  --warning-soft: rgba(245, 158, 11, 0.14);
+  --error-soft: rgba(239, 68, 68, 0.14);
+
+  --select-bg: #0d1530;
+  --select-color: #ffffff;
+  --select-border: rgba(255, 255, 255, 0.18);
+}
+
+/* ── Shared tokens (theme-independent) ────────────────────────────────────── */
+
+:root {
   /* ---- Typography ----------------------------------------------------- */
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
     "Segoe UI", system-ui, sans-serif;

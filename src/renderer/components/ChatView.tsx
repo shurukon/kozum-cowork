@@ -82,9 +82,9 @@ export function ChatView({ mode, sessionId, onSend, onCancel, onPickModel, model
 
   return (
     <div className={styles.wrap}>
-      {/* Transcript */}
+      {/* Transcript — class "chatTranscript" is targeted by [data-font] in global.css */}
       <div
-        className={styles.transcript}
+        className={`${styles.transcript} chatTranscript`}
         ref={scrollRef}
         onScroll={handleScroll}
         data-session={sessionId}

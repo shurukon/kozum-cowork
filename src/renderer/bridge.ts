@@ -25,6 +25,7 @@ import type {
   McpServerConfig,
   McpToolInfo,
   Plugin,
+  Project,
   Skill,
   Result,
   Mode,
@@ -118,7 +119,10 @@ export interface KozumBridge {
   mcp: {
     list: () => Promise<McpServerConfig[]>;
     add: (
-      config: Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount">,
+      config: Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount"> & {
+        /** Raw token. Encrypted by the main process and never returned. */
+        authToken?: string;
+      },
     ) => Promise<Result<McpServerConfig>>;
     remove: (id: string) => Promise<Result<void>>;
     setEnabled: (id: string, enabled: boolean) => Promise<Result<void>>;
@@ -135,6 +139,28 @@ export interface KozumBridge {
   skills: {
     list: () => Promise<Skill[]>;
     setEnabled: (id: string, enabled: boolean) => Promise<Result<void>>;
+  };
+
+  dialog: {
+    /** Native folder picker. Resolves to null when cancelled. */
+    selectFolder: () => Promise<string | null>;
+    selectFiles: () => Promise<string[]>;
+  };
+
+  projects: {
+    list: () => Promise<Project[]>;
+    create: (input: {
+      name: string;
+      folder: string;
+      mode: Mode;
+      instructions?: string;
+    }) => Promise<Result<Project>>;
+    update: (
+      id: string,
+      patch: { name?: string; folder?: string; mode?: Mode; instructions?: string },
+    ) => Promise<Result<Project>>;
+    archive: (id: string) => Promise<Result<Project>>;
+    remove: (id: string) => Promise<Result<void>>;
   };
 
   window: {

@@ -22,6 +22,20 @@ import type { PluginManager } from "../plugins/manager.ts";
 import type { SkillStore } from "../skills/index.ts";
 import type { TaskStore } from "../tools/tasks.ts";
 import type { TaskPatch } from "../schedule/scheduler.ts";
+import type { ProjectStore } from "../store/projects.ts";
+import type { UpdateProjectPatch, CreateProjectInput } from "../store/projects.ts";
+
+/* ---------------------------------------------------------------- dialog facade --- */
+
+/**
+ * Inject interface for Electron's dialog module so the handler is testable
+ * without Electron.
+ */
+export interface DialogFacade {
+  showOpenDialog(options: {
+    properties: string[];
+  }): Promise<{ canceled: boolean; filePaths: string[] }>;
+}
 
 export interface IpcDeps {
   ipcMain: IpcMain;
@@ -39,6 +53,8 @@ export interface IpcDeps {
   plugins: PluginManager;
   skills: SkillStore;
   tasks: TaskStore;
+  projects: ProjectStore;
+  dialog: DialogFacade;
 }
 
 /** Wrap an async handler so a thrown error becomes {ok:false, error}. */
@@ -59,6 +75,24 @@ function handle(
 
 export function registerIpc(deps: IpcDeps): void {
   const { ipcMain } = deps;
+
+  /* -------------------------------------------------------------- dialog --- */
+
+  handle(ipcMain, "dialog:selectFolder", async () => {
+    const result = await deps.dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0] ?? null;
+  });
+
+  handle(ipcMain, "dialog:selectFiles", async () => {
+    const result = await deps.dialog.showOpenDialog({
+      properties: ["openFile", "multiSelections"],
+    });
+    if (result.canceled) return [];
+    return result.filePaths;
+  });
 
   /* ---------------------------------------------------------------- app --- */
 
@@ -213,17 +247,32 @@ export function registerIpc(deps: IpcDeps): void {
   });
 
   handle(ipcMain, "mcp:add", async (_e, config) => {
-    const c = config as Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount">;
-    const full = {
-      ...c,
+    // The renderer may pass an optional `authToken` field that must never be
+    // persisted in plain text and must never be returned to the renderer.
+    type AddPayload = Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount"> & {
+      authToken?: string;
+    };
+    const payload = config as AddPayload;
+    // Extract and strip the raw token before building the persisted config.
+    const { authToken, ...rest } = payload;
+    const hasAuthToken = Boolean(authToken) || rest.hasAuthToken;
+
+    const full: McpServerConfig = {
+      ...rest,
+      hasAuthToken,
       id: randomUUID(),
       createdAt: Date.now(),
       status: "disconnected" as const,
       toolCount: 0,
     };
+
     deps.mcp.add(full);
-    await deps.mcp.connect(full.id).catch(() => undefined);
+
+    // Connect, passing the raw token in memory only (never persisted).
+    await deps.mcp.connect(full.id, { authToken }).catch(() => undefined);
+
     const updated = deps.mcp.status().find((s) => s.id === full.id);
+    // The returned value must not carry authToken (it was never on McpServerConfig).
     return ok(updated ?? full);
   });
 
@@ -269,6 +318,41 @@ export function registerIpc(deps: IpcDeps): void {
   handle(ipcMain, "plugins:installFromUrl", async (_e, url) => {
     const plugin = await deps.plugins.installFromGitHub(String(url));
     return ok(plugin);
+  });
+
+  /* ---------------------------------------------------------- projects --- */
+
+  handle(ipcMain, "projects:list", async () => {
+    return deps.projects.list();
+  });
+
+  handle(ipcMain, "projects:get", async (_e, id) => {
+    return deps.projects.get(String(id));
+  });
+
+  handle(ipcMain, "projects:create", async (_e, input) => {
+    const i = input as CreateProjectInput;
+    const result = await deps.projects.create(i);
+    if (!result.ok) return err(result.error);
+    return ok(result.value);
+  });
+
+  handle(ipcMain, "projects:update", async (_e, id, patch) => {
+    const result = await deps.projects.update(String(id), patch as UpdateProjectPatch);
+    if (!result.ok) return err(result.error);
+    return ok(result.value);
+  });
+
+  handle(ipcMain, "projects:archive", async (_e, id) => {
+    const result = await deps.projects.archive(String(id));
+    if (!result.ok) return err(result.error);
+    return ok(result.value);
+  });
+
+  handle(ipcMain, "projects:remove", async (_e, id) => {
+    const result = await deps.projects.remove(String(id));
+    if (!result.ok) return err(result.error);
+    return ok(undefined);
   });
 
   /* ----------------------------------------------------------- skills --- */
