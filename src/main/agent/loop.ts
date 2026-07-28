@@ -32,7 +32,7 @@ import type {
   ToolResult,
   TokenUsage,
 } from "../../shared/types.ts";
-import type { ProviderAdapter, ProviderContext, StreamDelta } from "../providers/adapter.ts";
+import type { ProviderAdapter, ProviderContext } from "../providers/adapter.ts";
 import { ProviderError } from "../providers/adapter.ts";
 
 export interface ToolExecutor {

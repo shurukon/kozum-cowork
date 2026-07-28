@@ -18,23 +18,39 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - name: Install
         run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
       - name: Typecheck
         id: typecheck
-        run: npm run typecheck 2>&1 | tee /tmp/typecheck.log
+        shell: bash
+        run: |
+          set -o pipefail
+          # Run both projects unconditionally. Chaining them with && hides every
+          # renderer error behind the first main-process error, which costs a
+          # whole CI round per layer.
+          rc=0
+          npm run typecheck:node 2>&1 | tee /tmp/typecheck.log || rc=1
+          npm run typecheck:web 2>&1 | tee -a /tmp/typecheck.log || rc=1
+          exit $rc
         continue-on-error: true
 
       - name: Unit + integration tests
         id: tests
-        run: node --experimental-strip-types --test tests/integration/*.test.ts 2>&1 | tee /tmp/tests.log
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types --test tests/integration/*.test.ts 2>&1 | tee /tmp/tests.log
         continue-on-error: true
 
       - name: Capability gate validation
         id: caps
-        run: node --experimental-strip-types scripts/validate-capabilities.ts 2>&1 | tee /tmp/caps.log
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types scripts/validate-capabilities.ts 2>&1 | tee /tmp/caps.log
         continue-on-error: true
 
       - name: Report
@@ -91,6 +107,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - uses: actions/setup-python@v5
         with:

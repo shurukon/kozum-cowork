@@ -68,14 +68,19 @@ function createWindow(): void {
   });
 
   // Keep the renderer's maximised state in sync with the real window.
-  const pushWindowState = () =>
-    mainWindow?.webContents.send("window:state", {
+  const pushWindowState = () => {
+    if (!mainWindow) return;
+    mainWindow.webContents.send("window:state", {
       maximized: mainWindow.isMaximized(),
       focused: mainWindow.isFocused(),
     });
-  for (const ev of ["maximize", "unmaximize", "focus", "blur"] as const) {
-    mainWindow.on(ev, pushWindowState);
-  }
+  };
+  // Registered individually rather than in a loop: BrowserWindow.on is typed as
+  // a set of per-event overloads, so a union of event names matches none of them.
+  mainWindow.on("maximize", pushWindowState);
+  mainWindow.on("unmaximize", pushWindowState);
+  mainWindow.on("focus", pushWindowState);
+  mainWindow.on("blur", pushWindowState);
 
   const devUrl = process.env.ELECTRON_RENDERER_URL;
   if (isDev && devUrl) {
