@@ -14,14 +14,10 @@ import {
   stat,
   mkdir,
   rename,
-  symlink,
   readdir,
 } from "node:fs/promises";
-import { createReadStream } from "node:fs";
 import { createInflate } from "node:zlib";
-import { pipeline } from "node:stream/promises";
 import { extname, dirname, join, sep } from "node:path";
-import { existsSync } from "node:fs";
 
 import type { Tool } from "./registry.ts";
 import { ok, fail, describeError } from "./registry.ts";
@@ -191,13 +187,6 @@ function matchGlob(pattern: string, filePath: string): boolean {
 }
 
 /* ------------------------------------------------------------------ PDF */
-
-interface PdfStream {
-  start: number;
-  end: number;
-  filter: string;
-  data: Buffer;
-}
 
 /** Very basic PDF BT/ET text extraction without external deps. */
 async function extractPdfText(path: string, pages?: string): Promise<string> {
