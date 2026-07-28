@@ -1,7 +1,6 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "composite": true,
     "lib": [
       "ES2023",
       "DOM",
@@ -15,7 +14,8 @@
       "@shared/*": [
         "src/shared/*"
       ]
-    }
+    },
+    "jsx": "react-jsx"
   },
   "include": [
     "src/main/**/*.ts",
@@ -23,6 +23,8 @@
     "src/shared/**/*.ts",
     "tests/**/*.ts",
     "scripts/**/*.ts",
-    "electron.vite.config.ts"
+    "electron.vite.config.ts",
+    "src/renderer/**/*.ts",
+    "src/renderer/**/*.tsx"
   ]
 }

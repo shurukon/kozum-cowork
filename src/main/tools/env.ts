@@ -39,7 +39,7 @@ const FORBIDDEN_SET_NAMES = new Set([
 ]);
 
 /** Produce a masked representation of a secret value (length + first/last 2 chars). */
-function maskSecret(name: string, value: string): string {
+function maskSecret(value: string): string {
   const len = value.length;
   if (len === 0) return "(empty)";
   if (len <= 4) return "*".repeat(len);
@@ -81,7 +81,7 @@ export const envTools: Tool[] = [
       // H11: mask values that look like secrets so they cannot leak into the
       // model's context, transcript, or session store.
       if (SECRET_NAME_RE.test(name)) {
-        const masked = maskSecret(name, value);
+        const masked = maskSecret(value);
         return ok(
           `[MASKED — full value withheld for security] length=${value.length} preview="${masked}"`,
           {

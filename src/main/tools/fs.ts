@@ -330,6 +330,9 @@ async function extractPdfText(path: string, pages?: string): Promise<string> {
 
   // Find all stream objects with FlateDecode (or no filter for plain streams)
   const streamTexts: string[] = [];
+  // Content streams appear in document order, so their index approximates the
+  // page number. This is an approximation, not true page segmentation — the
+  // tool description says so rather than implying exact page addressing.
   const streamRegex = /<<([^>]*?)>>\s*stream\r?\n/gs;
   let m: RegExpExecArray | null;
 
@@ -372,13 +375,14 @@ async function extractPdfText(path: string, pages?: string): Promise<string> {
       text = streamBuf.toString("latin1");
     }
 
-    // Extract text from BT/ET blocks
+    // Extract text from BT/ET blocks, keeping this stream's text together so a
+    // page selection can address it.
+    const frag: string[] = [];
     const btBlocks = text.match(/BT[\s\S]*?ET/g) ?? [];
     for (const block of btBlocks) {
-      // Tj: (text) Tj  or  (text) Tj
       const tjMatches = block.matchAll(/\(([^)]*)\)\s*Tj/g);
       for (const tj of tjMatches) {
-        streamTexts.push(decodePdfString(tj[1] ?? ""));
+        frag.push(decodePdfString(tj[1] ?? ""));
       }
       // TJ: [(text) ...] TJ
       const tjArrMatches = block.matchAll(/\[([^\]]*)\]\s*TJ/g);
@@ -386,13 +390,21 @@ async function extractPdfText(path: string, pages?: string): Promise<string> {
         const inner = tjArr[1] ?? "";
         const parts = inner.matchAll(/\(([^)]*)\)/g);
         for (const part of parts) {
-          streamTexts.push(decodePdfString(part[1] ?? ""));
+          frag.push(decodePdfString(part[1] ?? ""));
         }
       }
     }
+    if (frag.length) streamTexts.push(frag.join(" "));
   }
 
-  const combined = streamTexts.join(" ").replace(/\s+/g, " ").trim();
+  // Apply the page selection. Without this the `pages` argument was accepted,
+  // validated, and then silently ignored.
+  const selected =
+    wantedPages === null
+      ? streamTexts
+      : streamTexts.filter((_t, i) => wantedPages.has(i + 1));
+
+  const combined = selected.join(" ").replace(/\s+/g, " ").trim();
   if (!combined || combined.length < 20) {
     return "";
   }
@@ -1044,9 +1056,10 @@ export const fsTools: Tool[] = [
       // H7: compile the user regex once.  Pattern length is not capped because
       // length alone does not bound backtracking, but we impose a wall-clock
       // budget per file below.
-      let regex: RegExp;
+      // Validate the pattern here so a bad regex fails fast with a clear
+      // message; the worker compiles its own copy from patternStr.
       try {
-        regex = new RegExp(patternStr, caseSensitive ? "" : "i");
+        new RegExp(patternStr, caseSensitive ? "" : "i");
       } catch (e) {
         return fail(`Invalid regex pattern: ${describeError(e)}`);
       }

@@ -757,7 +757,12 @@ describe("L13 — registry coerceInput validates array item types", () => {
   it("computer_key with a numeric key array item fails before reaching the handler", async () => {
     // computer_key expects keys: string[]. Passing [1] (a number) should fail.
     const { makeComputerTools } = await import("../../src/main/tools/computer.ts");
-    const tools = makeComputerTools();
+    // makeComputerTools(backend, getBlocklist) — pass a backend that reports no
+    // active window so the fail-closed blocklist path is not what is under test.
+    const tools = makeComputerTools(
+      { activeWindow: async () => ({ pid: 0, name: "test", title: "test" }) } as never,
+      () => [],
+    );
     const r2 = new ToolRegistry();
     r2.registerAll(tools);
     const ctx = makeCtx();

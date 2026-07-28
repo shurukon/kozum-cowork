@@ -77,7 +77,6 @@ export class SessionManager {
     this.skills = opts.skills;
     this.mcp = opts.mcp;
     this.ask = opts.ask;
-    this.tasks = opts.tasks;
     this.toolRegistry = opts.toolRegistry;
     this.emitEvent = opts.emitEvent;
   }
@@ -123,7 +122,7 @@ export class SessionManager {
 
   /** Resolve a pending ask/question. */
   async reply(
-    sessionId: string,
+    _sessionId: string,
     requestId: string,
     answer: string | string[],
   ): Promise<Result<void>> {

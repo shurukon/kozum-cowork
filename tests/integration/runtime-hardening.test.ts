@@ -10,12 +10,9 @@
  *   L8  — multi-byte character split across chunk boundaries
  */
 
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 
 /* ============================================================ imports ===== */
@@ -123,7 +120,7 @@ describe("M1 — transcript integrity on mid-stream error", () => {
       sessionId: "s-m1",
       mode: "cowork",
       adapter: new OpenAiChatAdapter(),
-      ctx: { baseUrl: base, apiKey: "k", providerId: "test" },
+      ctx: { baseUrl: base, apiKey: "k", providerId: "test", meta: {}, extraHeaders: {} },
       model: "m",
       system: "sys",
       history,

@@ -25,7 +25,7 @@ export class SettingsStore {
     this.loaded = true;
     const saved = await readJson<Partial<AppSettings>>(this.filePath, {});
     // Merge saved values over factory defaults.
-    this.data = deepMerge(freshSettings(), saved) as AppSettings;
+    this.data = deepMerge(freshSettings(), saved);
   }
 
   async get(): Promise<AppSettings> {
@@ -39,7 +39,7 @@ export class SettingsStore {
    */
   async patch(partial: Partial<AppSettings>): Promise<AppSettings> {
     await this.ensureLoaded();
-    this.data = deepMerge(this.data, partial) as AppSettings;
+    this.data = deepMerge(this.data, partial);
     await writeJson(this.filePath, this.data);
     return structuredClone(this.data);
   }
@@ -50,11 +50,20 @@ export class SettingsStore {
  * - For object-valued keys: merges the sub-objects (flat, no recursion beyond one level).
  * - For other values: overwrites.
  */
-function deepMerge(target: Record<string, unknown>, src: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = { ...target };
-  for (const key of Object.keys(src)) {
-    const sv = src[key];
-    const tv = target[key];
+/**
+ * Deep-merge one level of nested objects, preserving the target's type.
+ *
+ * Generic rather than Record-typed: a TypeScript interface has no index
+ * signature, so AppSettings is not assignable to Record<string, unknown> under
+ * strict mode, and casting at every call site is noisier than casting once here.
+ */
+function deepMerge<T extends object>(target: T, src: Partial<T>): T {
+  const result: Record<string, unknown> = { ...(target as Record<string, unknown>) };
+  const srcRec = src as Record<string, unknown>;
+  const tgtRec = target as Record<string, unknown>;
+  for (const key of Object.keys(srcRec)) {
+    const sv = srcRec[key];
+    const tv = tgtRec[key];
     if (
       sv !== null &&
       typeof sv === "object" &&
@@ -68,5 +77,5 @@ function deepMerge(target: Record<string, unknown>, src: Record<string, unknown>
       result[key] = sv;
     }
   }
-  return result;
+  return result as T;
 }

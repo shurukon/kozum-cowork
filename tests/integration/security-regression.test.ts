@@ -382,13 +382,6 @@ describe("L6 — atomic install uses pluginsDir as tmpdir base (same filesystem)
 
   it("install failure leaves no _tmp-* remnants", async () => {
     // An invalid ZIP (no manifest) — install should fail and clean up
-    const badZip = Buffer.concat([
-      Buffer.from("PK\x03\x04"),
-      Buffer.alloc(22),
-      // minimal EOCD to make it look like a ZIP with no entries
-      Buffer.from([0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-    ]);
-
     // Build a real but manifest-less ZIP
     const noManifestData = Buffer.from("readme content", "utf-8");
     const e = makeEntry("README.md", noManifestData, 0, noManifestData.length);
