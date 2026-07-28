@@ -1,0 +1,127 @@
+name: verify-and-build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Two jobs on purpose. `verify` is cheap and runs on Linux, so a type error or a
+# failing test costs ~1 minute instead of waiting on a full Windows Electron
+# build. `build-windows` only starts once verify is green.
+jobs:
+  verify:
+    name: typecheck + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Typecheck
+        id: typecheck
+        run: npm run typecheck 2>&1 | tee /tmp/typecheck.log
+        continue-on-error: true
+
+      - name: Unit + integration tests
+        id: tests
+        run: node --experimental-strip-types --test tests/integration/*.test.ts 2>&1 | tee /tmp/tests.log
+        continue-on-error: true
+
+      - name: Capability gate validation
+        id: caps
+        run: node --experimental-strip-types scripts/validate-capabilities.ts 2>&1 | tee /tmp/caps.log
+        continue-on-error: true
+
+      - name: Report
+        run: |
+          {
+            echo "## Verify results"
+            echo ""
+            echo "| step | outcome |"
+            echo "|---|---|"
+            echo "| typecheck | ${{ steps.typecheck.outcome }} |"
+            echo "| tests | ${{ steps.tests.outcome }} |"
+            echo "| capability gate | ${{ steps.caps.outcome }} |"
+            echo ""
+            echo "<details><summary>typecheck log</summary>"
+            echo ""; echo '```'; tail -80 /tmp/typecheck.log 2>/dev/null || echo "(none)"; echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details><summary>test log</summary>"
+            echo ""; echo '```'; tail -120 /tmp/tests.log 2>/dev/null || echo "(none)"; echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details><summary>capability log</summary>"
+            echo ""; echo '```'; tail -60 /tmp/caps.log 2>/dev/null || echo "(none)"; echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-logs
+          path: /tmp/*.log
+          if-no-files-found: warn
+
+      - name: Fail if anything broke
+        if: steps.typecheck.outcome == 'failure' || steps.tests.outcome == 'failure' || steps.caps.outcome == 'failure'
+        run: |
+          echo "::error::verify failed — see the job summary"
+          exit 1
+
+  build-windows:
+    name: windows installer
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Icon pipeline
+        run: |
+          python -m pip install --quiet pillow numpy
+          python scripts/make_icons.py assets/logo-source.png build resources/icons
+
+      - name: Install
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Build renderer + main
+        run: npm run build
+
+      - name: Package NSIS installer
+        run: npx electron-builder --win --publish never
+
+      - name: Inventory
+        shell: bash
+        run: |
+          {
+            echo "## Windows build"
+            echo ""
+            echo '```'
+            ls -la release/ 2>/dev/null || echo "(no release dir)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kozum-Cowork-Setup
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+          if-no-files-found: error
