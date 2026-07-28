@@ -18,7 +18,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Install
         run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
@@ -69,6 +68,13 @@ jobs:
           path: /tmp/*.log
           if-no-files-found: warn
 
+      - name: Upload resolved lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: package-lock.json
+          if-no-files-found: warn
+
       - name: Fail if anything broke
         if: steps.typecheck.outcome == 'failure' || steps.tests.outcome == 'failure' || steps.caps.outcome == 'failure'
         run: |
@@ -85,7 +91,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - uses: actions/setup-python@v5
         with:
