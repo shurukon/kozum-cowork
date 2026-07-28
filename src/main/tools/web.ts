@@ -5,109 +5,35 @@
  * fetch and on every redirect hop. A public URL redirecting to 169.254.169.254
  * (cloud metadata service) is the classic attack vector — this is why the check
  * runs on redirects too.
+ *
+ * The core SSRF guard lives in ../net/ssrf.ts and is shared with the MCP
+ * transport layer and plugin manager. The exported names below (isPrivateHost,
+ * isLocalhostHost) are re-exported unchanged so that existing tests keep passing.
  */
 
 import { htmlToText } from "../net/html.ts";
 import type { Tool } from "./registry.ts";
 import { ok, fail, describeError } from "./registry.ts";
+import {
+  isPrivateHost,
+  isLocalhostHost,
+  assertPublicUrl,
+} from "../net/ssrf.ts";
 
-/* ----------------------------------------------------------- SSRF guard --- */
-
-/**
- * Returns true when the hostname is specifically localhost or 127.x.x.x.
- *
- * Used to determine whether `allowLocal: true` should exempt the address.
- * 169.254.x, 10.x, 172.16.x, 192.168.x are NOT covered here — those are
- * private but not "localhost" and should never be exempted.
- */
-export function isLocalhostHost(hostname: string): boolean {
-  const h = hostname.toLowerCase();
-  if (h === "localhost" || h.endsWith(".localhost")) return true;
-  if (h === "ip6-localhost" || h === "ip6-loopback") return true;
-  if (h === "::1" || h === "[::1]") return true;
-  const bare = h.replace(/^\[/, "").replace(/\]$/, "");
-  const v4 = bare.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (v4) {
-    const a = Number(v4[1]);
-    if (a === 127) return true;
-  }
-  return false;
-}
-
-/**
- * Returns true when the hostname resolves to a private/loopback/link-local
- * address that should be blocked.
- *
- * This is a syntactic check — it catches literal IP addresses and
- * `localhost`. A DNS-rebind attack (domain -> private IP) is partially covered
- * because `fetch` in Node uses `getaddrinfo` which returns the IP; however,
- * intercepting that requires a custom agent. For the common cases (literal
- * 127.0.0.1, 10.x, 169.254.x, ::1) this is fully effective.
- */
-export function isPrivateHost(hostname: string): boolean {
-  const h = hostname.toLowerCase();
-
-  // Loopback names
-  if (h === "localhost") return true;
-  if (h.endsWith(".localhost")) return true;
-  if (h === "ip6-localhost" || h === "ip6-loopback") return true;
-
-  // IPv6 loopback
-  if (h === "::1" || h === "[::1]") return true;
-
-  // IPv6 ULA (fc00::/7)
-  if (/^\[?f[cd][0-9a-f]{2}:/i.test(h)) return true;
-
-  // Strip brackets for IPv6 addresses
-  const bare = h.replace(/^\[/, "").replace(/\]$/, "");
-
-  // IPv4 parsing
-  const v4 = bare.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (v4) {
-    const [, a, b, c] = v4.map(Number) as [number, number, number, number, number];
-    if (a === 127) return true; // 127.0.0.0/8
-    if (a === 10) return true; // 10.0.0.0/8
-    if (a === 169 && b === 254) return true; // 169.254.0.0/16 (link-local / metadata)
-    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
-    if (a === 192 && b === 168) return true; // 192.168.0.0/16
-    if (a === 0) return true; // 0.0.0.0/8
-    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 (CGNAT)
-    if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
-    if (a === 203 && b === 0 && c === 113) return true; // documentation
-    if (a === 240) return true; // reserved
-    if (a === 255 && b === 255 && c === 255) return true; // broadcast
-  }
-
-  // IPv4-mapped IPv6 ::ffff:10.x.x.x etc.
-  const v4mapped = bare.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
-  if (v4mapped) return isPrivateHost(v4mapped[1]!);
-
-  return false;
-}
+// Re-export for backward compatibility with existing tests.
+export { isPrivateHost, isLocalhostHost };
 
 function checkSsrf(url: string, allowLocal: boolean): string | null {
-  let parsed: URL;
   try {
-    parsed = new URL(url);
-  } catch {
-    return `Invalid URL: ${url}`;
+    assertPublicUrl(url, { allowLocal });
+    return null;
+  } catch (e) {
+    // Convert the thrown error into the string format callers expect.
+    const msg = e instanceof Error ? e.message : String(e);
+    // Strip the "SSRF guard: " prefix that assertPublicUrl adds so the error
+    // message wording stays consistent with the original (existing tests match it).
+    return msg.replace(/^SSRF guard: /, "");
   }
-
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return `Only http and https URLs are supported, got ${parsed.protocol}`;
-  }
-
-  const isPrivate = isPrivateHost(parsed.hostname);
-  if (!isPrivate) return null;
-
-  // allowLocal only exempts localhost / 127.x.x.x — never 169.254.x, 10.x, etc.
-  if (allowLocal && isLocalhostHost(parsed.hostname)) return null;
-
-  return (
-    `Requests to private/loopback addresses are blocked to prevent SSRF ` +
-    `(${parsed.hostname}). Pass allowLocal: true to allow localhost requests ` +
-    `for local development servers.`
-  );
 }
 
 /* -------------------------------------------------------------- fetch ---- */

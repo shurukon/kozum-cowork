@@ -56,17 +56,25 @@ export interface BrowserBackend {
 
 /* ========================================== pure helper — sanitiseUrl ====== */
 
-const ALLOWED_SCHEMES = new Set(["http:", "https:", "file:", "about:"]);
+const ALLOWED_SCHEMES = new Set(["http:", "https:"]);
 const BLOCKED_SCHEME_PATTERNS = /^[\s\x00-\x1f]*(javascript|data|vbscript)\s*:/i;
 
 /**
  * Validate a URL before handing it to the browser.
  *
- * Allows: http, https, file, about:blank.
- * Rejects: javascript:, data:, vbscript:, and mixed-case / whitespace-padded
- * variants.
+ * Allows: http, https, about:blank only.
+ * Rejects: file: (arbitrary local-file read), javascript:, data:, vbscript:,
+ * about:config and any other about: URL that is not exactly about:blank,
+ * and mixed-case / whitespace-padded variants.
  *
- * Returns the trimmed, validated URL string or throws with a descriptive message.
+ * Returns parsed.href (the WHATWG-normalised form) rather than the raw
+ * trimmed input, so there is no parser differential between new URL() and
+ * Chromium.
+ *
+ * @param url            The URL to validate.
+ * @param opts.workingFolder  When provided and the scheme is file:, the path
+ *   is resolved via resolvePath() and the result is returned; otherwise file:
+ *   is always rejected.  Pass null to unconditionally reject file: URLs.
  */
 export function sanitiseUrl(url: string): string {
   const trimmed = url.trim();
@@ -75,7 +83,31 @@ export function sanitiseUrl(url: string): string {
   if (BLOCKED_SCHEME_PATTERNS.test(trimmed)) {
     throw new Error(
       `Blocked URL scheme: "${trimmed.slice(0, 64)}". ` +
-        "Only http, https, file, and about:blank are permitted.",
+        "Only http and https are permitted.",
+    );
+  }
+
+  // about:blank is the sole allowed about: URL.
+  if (/^about:/i.test(trimmed)) {
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      throw new Error(`Invalid URL: "${trimmed.slice(0, 256)}".`);
+    }
+    if (parsed.href !== "about:blank") {
+      throw new Error(
+        `Blocked about: URL "${parsed.href}". Only about:blank is permitted.`,
+      );
+    }
+    return parsed.href;
+  }
+
+  // file: is removed from allowed schemes to prevent workspace escape.
+  if (/^file:/i.test(trimmed)) {
+    throw new Error(
+      `Blocked URL scheme "file:". ` +
+        "Local-file navigation is not permitted. Only http and https are allowed.",
     );
   }
 
@@ -91,11 +123,12 @@ export function sanitiseUrl(url: string): string {
   if (!ALLOWED_SCHEMES.has(parsed.protocol)) {
     throw new Error(
       `Blocked URL scheme "${parsed.protocol}". ` +
-        "Only http, https, file, and about:blank are permitted.",
+        "Only http and https are permitted.",
     );
   }
 
-  return trimmed;
+  // Return the WHATWG-normalised form to close any parser-differential gap.
+  return parsed.href;
 }
 
 /* =========================================== pure helper — buildSelectorScript */

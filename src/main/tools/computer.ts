@@ -22,6 +22,58 @@ function computerFail(e: unknown): ReturnType<typeof fail> {
   return fail(msg, "Computer use error");
 }
 
+/**
+ * Fail-CLOSED blocklist check.
+ *
+ * If `activeWindow()` throws for any reason (including the $pid→$procId PS
+ * bug that has been fixed, or a genuine BackendUnavailableError), we refuse
+ * the action rather than proceeding blind.  The caller is told why so the
+ * user can diagnose the problem rather than seeing a mysterious failure later.
+ *
+ * Returns null when the action is permitted, or a `fail()` result when it
+ * should be blocked.
+ */
+async function checkBlocklist(
+  backend: ComputerBackend,
+  blocklist: string[],
+): Promise<ReturnType<typeof fail> | null> {
+  // If the blocklist is empty there is nothing to enforce — skip the PS call.
+  if (blocklist.length === 0) return null;
+
+  let active: Awaited<ReturnType<ComputerBackend["activeWindow"]>>;
+  try {
+    active = await backend.activeWindow();
+  } catch (e) {
+    // Cannot determine the active window → refuse with explanation.
+    const reason = e instanceof Error ? e.message : String(e);
+    return fail(
+      `Blocked: the active window could not be determined (${reason}). ` +
+        "Computer-use is fail-closed when the blocklist is non-empty: " +
+        "resolve the backend error or clear the blocklist in Settings.",
+      "Blocked: active window unknown",
+    );
+  }
+
+  if (active === null) {
+    // No foreground window returned by the OS.  Refuse conservatively.
+    return fail(
+      "Blocked: no foreground window detected. " +
+        "Computer-use is fail-closed when the blocklist is non-empty.",
+      "Blocked: no active window",
+    );
+  }
+
+  if (isAppBlocked(active.processName, blocklist)) {
+    return fail(
+      `Blocked: "${active.processName}" is on the computer-use blocklist. ` +
+        "Remove it from Settings > Computer Use > Blocked Apps to allow interaction.",
+      `Blocked: ${active.processName}`,
+    );
+  }
+
+  return null;
+}
+
 /* --------------------------------------------------------- tool factory ---- */
 
 /**
@@ -79,6 +131,10 @@ export function makeComputerTools(
       },
 
       handler: async (input, ctx) => {
+        // Screenshot of a blocked app leaks sensitive screen content.
+        const blocked = await checkBlocklist(backend, getBlocklist());
+        if (blocked) return blocked;
+
         ctx.onProgress("Capturing desktop screenshot…");
 
         const hasRegion =
@@ -151,6 +207,9 @@ export function makeComputerTools(
         const x = input["x"] as number;
         const y = input["y"] as number;
         const button = (input["button"] as "left" | "right" | "middle") ?? "left";
+
+        const blocked = await checkBlocklist(backend, getBlocklist());
+        if (blocked) return blocked;
 
         ctx.onProgress(`Clicking ${button} at (${x}, ${y})…`);
 
@@ -232,21 +291,10 @@ export function makeComputerTools(
       handler: async (input, ctx) => {
         const text = String(input["text"] ?? "");
 
-        // Blocklist check — prevent typing into blocked apps.
-        try {
-          const active = await backend.activeWindow();
-          if (active && isAppBlocked(active.processName, getBlocklist())) {
-            return fail(
-              `Blocked: "${active.processName}" is on the computer-use blocklist. ` +
-                "Remove it from Settings > Computer Use > Blocked Apps to allow interaction.",
-              `Blocked: ${active.processName}`,
-            );
-          }
-        } catch {
-          // If we cannot determine the active window, proceed (fail-open for
-          // cases where activeWindow itself throws BackendUnavailableError
-          // and we want a better error from typeText).
-        }
+        // Blocklist check — fail CLOSED: if we cannot determine the active
+        // window, refuse rather than proceeding blind.
+        const blocked = await checkBlocklist(backend, getBlocklist());
+        if (blocked) return blocked;
 
         ctx.onProgress(`Typing ${text.length} characters…`);
 
@@ -290,6 +338,10 @@ export function makeComputerTools(
       handler: async (input, ctx) => {
         const keys = (input["keys"] as string[]) ?? [];
         const chord = keys.join("+");
+
+        const blocked = await checkBlocklist(backend, getBlocklist());
+        if (blocked) return blocked;
+
         ctx.onProgress(`Pressing ${chord}…`);
 
         try {

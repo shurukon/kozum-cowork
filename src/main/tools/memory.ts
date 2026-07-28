@@ -73,6 +73,16 @@ export function makeMemoryTools(vault: MemoryVault, kbFactory: KbFactory): Tool[
           return fail(`Invalid type "${type}". Must be one of: ${MEMORY_TYPES.join(", ")}.`);
         }
 
+        // Reject titles that contain XML/HTML-like tags — the vault index is
+        // prompt-adjacent and a tag like </memory> or <user_instructions> in
+        // the title could forge a new section in the system prompt.
+        if (/<\/?[a-z_][a-z0-9_]*/i.test(title)) {
+          return fail(
+            `Title may not contain XML/HTML-style tags (< >). ` +
+              `Please choose a plain-text title.`,
+          );
+        }
+
         try {
           const note = await vault.write({ title, type, description, tags, body, links });
           return ok(

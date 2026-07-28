@@ -448,7 +448,7 @@ describe("HttpTransport", () => {
   });
 
   it("full round-trip: initialize → tools/list → tools/call", async () => {
-    const transport = new HttpTransport(url);
+    const transport = new HttpTransport(url, {}, { allowLocal: true });
     const client = new McpClient(transport);
 
     await client.initialize();
@@ -468,7 +468,7 @@ describe("HttpTransport", () => {
   });
 
   it("two concurrent requests return out of order", async () => {
-    const transport = new HttpTransport(url);
+    const transport = new HttpTransport(url, {}, { allowLocal: true });
     const client = new McpClient(transport);
     await client.initialize();
 
@@ -501,7 +501,7 @@ describe("SseTransport", () => {
   });
 
   it("full round-trip via SSE transport", async () => {
-    const transport = new SseTransport(baseUrl);
+    const transport = new SseTransport(baseUrl, {}, { allowLocal: true });
     const client = new McpClient(transport);
 
     await client.initialize();
@@ -586,13 +586,13 @@ describe("detectTransport", () => {
   });
 
   it("detects streamable HTTP for a POST-capable server", async () => {
-    const transport = await detectTransport(httpUrl);
+    const transport = await detectTransport(httpUrl, {}, { allowLocal: true });
     assert.equal(transport, "http");
   });
 
   it("falls back to SSE for an SSE-only server", async () => {
     // SSE server returns 405 for POST to /
-    const transport = await detectTransport(sseBaseUrl);
+    const transport = await detectTransport(sseBaseUrl, {}, { allowLocal: true });
     assert.equal(transport, "sse");
   });
 });
@@ -610,7 +610,7 @@ describe("auth token forwarding", () => {
     const url = `http://127.0.0.1:${getPort(server)}`;
 
     try {
-      const transport = new HttpTransport(url, { Authorization: "Bearer secret123" });
+      const transport = new HttpTransport(url, { Authorization: "Bearer secret123" }, { allowLocal: true });
       const client = new McpClient(transport);
       await client.initialize();
       await client.close();
@@ -634,7 +634,7 @@ describe("auth token forwarding", () => {
     const url = `http://127.0.0.1:${getPort(server)}`;
 
     try {
-      const transport = new HttpTransport(url, { "x-custom-auth": "mytoken" });
+      const transport = new HttpTransport(url, { "x-custom-auth": "mytoken" }, { allowLocal: true });
       const client = new McpClient(transport);
       await client.initialize();
       await client.close();
@@ -662,7 +662,7 @@ describe("auth token forwarding", () => {
       assert.ok(installTool);
 
       const result = await installTool!.handler(
-        { name: "auth-server", url, authToken: "install-token", transport: "http" },
+        { name: "auth-server", url, authToken: "install-token", transport: "http", allowLocal: true },
         makeCtx(),
       );
       assert.equal(result.ok, true, `Install failed: ${result.error ?? ""}`);
@@ -684,7 +684,7 @@ describe("request timeout", () => {
     const url = `http://127.0.0.1:${getPort(server)}`;
 
     try {
-      const transport = new HttpTransport(url);
+      const transport = new HttpTransport(url, {}, { allowLocal: true });
       // Use a very short timeout
       const client = new McpClient(transport, 500);
 
@@ -722,7 +722,7 @@ describe("JSON-RPC error response handling", () => {
       const installTool = tools.find((t) => t.definition.name === "mcp_install");
       assert.ok(installTool);
 
-      await installTool!.handler({ name: "err-server", url, transport: "http" }, makeCtx());
+      await installTool!.handler({ name: "err-server", url, transport: "http", allowLocal: true }, makeCtx());
 
       const servers = manager.status();
       const srv = servers[0];
@@ -762,6 +762,7 @@ describe("JSON-RPC error response handling", () => {
         installedByAgent: false,
         status: "disconnected",
         toolCount: 0,
+        allowLocal: true,
       };
       manager.add(config);
       await manager.connect("fail-srv");
@@ -817,7 +818,7 @@ describe("mcp_install end-to-end", () => {
 
     // Install the server
     const installResult = await installTool!.handler(
-      { name: "math", url, transport: "http" },
+      { name: "math", url, transport: "http", allowLocal: true },
       makeCtx(),
     );
     assert.equal(installResult.ok, true, `Install failed: ${installResult.error ?? ""}`);
@@ -853,7 +854,7 @@ describe("mcp_install end-to-end", () => {
     const installTool = tools.find((t) => t.definition.name === "mcp_install")!;
     const removeTool = tools.find((t) => t.definition.name === "mcp_remove")!;
 
-    await installTool.handler({ name: "to-remove", url, transport: "http" }, makeCtx());
+    await installTool.handler({ name: "to-remove", url, transport: "http", allowLocal: true }, makeCtx());
     const servers = manager.status();
     assert.equal(servers.length, 1);
 
@@ -892,6 +893,7 @@ describe("server isolation", () => {
         installedByAgent: false,
         status: "disconnected",
         toolCount: 0,
+        allowLocal: true,
       };
       const goodConfig: McpServerConfig = {
         id: "good",
@@ -904,6 +906,7 @@ describe("server isolation", () => {
         installedByAgent: false,
         status: "disconnected",
         toolCount: 0,
+        allowLocal: true,
       };
 
       manager.add(deadConfig);
@@ -952,6 +955,7 @@ describe("tool namespacing", () => {
         installedByAgent: false,
         status: "disconnected",
         toolCount: 0,
+        allowLocal: true,
       };
       manager.add(config);
       await manager.connect("ns-test");
@@ -980,7 +984,7 @@ describe("concurrent request correlation", () => {
     const url = `http://127.0.0.1:${getPort(delayServer)}`;
 
     try {
-      const transport = new HttpTransport(url);
+      const transport = new HttpTransport(url, {}, { allowLocal: true });
       const client = new McpClient(transport);
       await client.initialize();
 
@@ -1014,7 +1018,7 @@ describe("mcp_install failure handling", () => {
     const installTool = tools.find((t) => t.definition.name === "mcp_install")!;
 
     const result = await installTool.handler(
-      { name: "dead-server", url: deadUrl, transport: "http" },
+      { name: "dead-server", url: deadUrl, transport: "http", allowLocal: true },
       makeCtx(),
     );
 

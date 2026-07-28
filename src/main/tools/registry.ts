@@ -211,14 +211,34 @@ function coerceInput(
         }
         break;
 
-      case "array":
-        if (Array.isArray(v)) out[key] = v;
-        // A single value where a list is expected is a common model slip.
-        else if (typeof v === "string" || typeof v === "number") out[key] = [v];
-        else {
+      case "array": {
+        let arr: unknown[];
+        if (Array.isArray(v)) {
+          arr = v;
+        } else if (typeof v === "string" || typeof v === "number") {
+          // A single value where a list is expected is a common model slip.
+          arr = [v];
+        } else {
           return { error: `${def.name}: "${key}" must be an array.` };
         }
+        // L13: validate each item against items.type when declared.
+        const itemType = spec.items?.type;
+        if (itemType) {
+          for (let idx = 0; idx < arr.length; idx++) {
+            const item = arr[idx];
+            // eslint-disable-next-line valid-typeof
+            if (typeof item !== itemType) {
+              return {
+                error:
+                  `${def.name}: "${key}[${idx}]" must be of type ${itemType}, ` +
+                  `got ${typeof item}.`,
+              };
+            }
+          }
+        }
+        out[key] = arr;
         break;
+      }
 
       case "object":
         if (typeof v === "object" && !Array.isArray(v)) out[key] = v;

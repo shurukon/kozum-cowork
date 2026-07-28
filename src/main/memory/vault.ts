@@ -81,15 +81,54 @@ function extractWikilinks(body: string): string[] {
   return matches.map((m) => m.slice(2, -2).trim());
 }
 
+/**
+ * Strip newlines from a string so it cannot break out of a YAML frontmatter
+ * or markdown table row context.
+ */
+function stripNewlines(s: string): string {
+  return s.replace(/[\r\n]+/g, " ");
+}
+
+/**
+ * Neutralise XML/HTML-ish tags so they cannot forge prompt section boundaries.
+ * Angle brackets are replaced with Unicode look-alikes that are visually
+ * identical but structurally inert.
+ *
+ * Applied to title and description before they are stored in the in-memory
+ * index, written to frontmatter, or interpolated into the index table.
+ */
+function neutraliseTags(s: string): string {
+  // Replace < with U+FE64 (SMALL LESS-THAN SIGN) and > with U+FE65
+  return s.replace(/</g, "﹤").replace(/>/g, "﹥");
+}
+
+/**
+ * Escape a string for safe embedding in a YAML scalar value that will be
+ * interpolated into a prompt. We use JSON quoting which wraps the value in
+ * double-quotes and escapes special characters.
+ */
+function yamlQuote(s: string): string {
+  // JSON.stringify produces a valid YAML double-quoted scalar.
+  return JSON.stringify(stripNewlines(s));
+}
+
+/**
+ * Escape a cell value for safe embedding in a markdown table.
+ * Removes newlines and escapes pipe characters.
+ */
+function tableCell(s: string): string {
+  return stripNewlines(s).replace(/\|/g, "\\|");
+}
+
 function buildFrontmatter(note: MemoryNote): string {
-  const tags = note.tags.length > 0 ? `[${note.tags.join(", ")}]` : "[]";
-  const links = note.links.length > 0 ? `[${note.links.join(", ")}]` : "[]";
+  const tags = note.tags.length > 0 ? `[${note.tags.map(stripNewlines).join(", ")}]` : "[]";
+  const links = note.links.length > 0 ? `[${note.links.map(stripNewlines).join(", ")}]` : "[]";
   return [
     "---",
     `id: ${note.id}`,
-    `title: ${note.title}`,
+    `title: ${yamlQuote(note.title)}`,
     `type: ${note.type}`,
-    `description: ${note.description}`,
+    `description: ${yamlQuote(note.description)}`,
     `tags: ${tags}`,
     `links: ${links}`,
     `updatedAt: ${note.updatedAt}`,
@@ -180,10 +219,15 @@ export class MemoryVault {
 
     const note: MemoryNote = {
       id: slug,
-      title: input.title,
+      // Sanitise title and description:
+      //   1. Strip newlines — cannot break out of a YAML frontmatter line or table row.
+      //   2. Neutralise angle brackets — prevents forged XML/prompt section tags.
+      // The YAML quoting in buildFrontmatter and escaping in tableCell then add a
+      // further layer on top of already-clean strings.
+      title: neutraliseTags(stripNewlines(input.title)),
       type: input.type,
       path: join(this.root, TYPE_DIRS[input.type], `${slug}.md`),
-      description: input.description,
+      description: neutraliseTags(stripNewlines(input.description)),
       tags: input.tags ?? [],
       updatedAt: Date.now(),
       links: input.links ?? [],
@@ -493,8 +537,13 @@ export class MemoryVault {
   }
 
   private _removeFromIndex(id: string): void {
-    for (const postings of Object.values(this.searchIdx.postings)) {
+    for (const [token, postings] of Object.entries(this.searchIdx.postings)) {
       delete postings[id];
+      // Remove the postings entry entirely when it becomes empty so the
+      // inverted index does not grow monotonically over the process lifetime.
+      if (Object.keys(postings).length === 0) {
+        delete this.searchIdx.postings[token];
+      }
     }
     delete this.searchIdx.docLen[id];
     this.searchIdx.N = this.index.size;
@@ -516,9 +565,12 @@ export class MemoryVault {
     );
 
     for (const note of sorted) {
-      const tags = note.tags.join(", ");
-      const desc = note.description.replace(/\|/g, "\\|");
-      lines.push(`| ${note.id} | ${note.title} | ${note.type} | ${desc} | ${tags} |`);
+      const id = tableCell(note.id);
+      const title = tableCell(note.title);
+      const type = tableCell(note.type);
+      const desc = tableCell(note.description);
+      const tags = tableCell(note.tags.join(", "));
+      lines.push(`| ${id} | ${title} | ${type} | ${desc} | ${tags} |`);
     }
 
     lines.push("", `_Updated: ${new Date().toISOString()}_`, "");

@@ -14,6 +14,7 @@ import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import type { McpTransport } from "../../shared/types.ts";
 import { parseRpcMessage } from "./protocol.ts";
+import { assertPublicUrl } from "../net/ssrf.ts";
 
 /* -------------------------------------------------- shared interface ---- */
 
@@ -35,11 +36,17 @@ export interface McpTransportImpl {
 export class HttpTransport implements McpTransportImpl {
   private readonly url: string;
   private readonly headers: Record<string, string>;
+  private readonly allowLocal: boolean;
   private callbacks: Array<(raw: string) => void> = [];
 
-  constructor(url: string, headers: Record<string, string> = {}) {
+  constructor(
+    url: string,
+    headers: Record<string, string> = {},
+    opts: { allowLocal?: boolean } = {},
+  ) {
     this.url = url;
     this.headers = headers;
+    this.allowLocal = opts.allowLocal ?? false;
   }
 
   onMessage(cb: (raw: string) => void): void {
@@ -51,6 +58,8 @@ export class HttpTransport implements McpTransportImpl {
   }
 
   async send(msg: unknown): Promise<void> {
+    // SSRF guard — the URL was provided by config / model; ensure it is public.
+    assertPublicUrl(this.url, { allowLocal: this.allowLocal });
     const body = JSON.stringify(msg);
     const res = await fetch(this.url, {
       method: "POST",
@@ -60,6 +69,7 @@ export class HttpTransport implements McpTransportImpl {
         ...this.headers,
       },
       body,
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {
@@ -85,12 +95,23 @@ export class HttpTransport implements McpTransportImpl {
 
     const decoder = new TextDecoder();
     let buf = "";
+    const MAX_BUF = 1 * 1024 * 1024; // 1 MB per-frame cap
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
       buf += decoder.decode(value, { stream: true });
+
+      // Cap the buffer to prevent unbounded growth from a server that streams
+      // megabytes without ever emitting a newline.
+      if (buf.length > MAX_BUF) {
+        reader.cancel().catch(() => undefined);
+        throw new Error(
+          `MCP SSE frame exceeded buffer cap (${MAX_BUF} bytes) — server may be misbehaving`,
+        );
+      }
+
       const lines = buf.split("\n");
       buf = lines.pop() ?? "";
 
@@ -127,6 +148,7 @@ export class HttpTransport implements McpTransportImpl {
 export class SseTransport implements McpTransportImpl {
   private readonly baseUrl: string;
   private readonly headers: Record<string, string>;
+  private readonly allowLocal: boolean;
   private callbacks: Array<(raw: string) => void> = [];
   private postUrl: string;
   private abortController: AbortController | null = null;
@@ -137,9 +159,14 @@ export class SseTransport implements McpTransportImpl {
   private readyReject: ((e: Error) => void) | null = null;
   private ready: Promise<void>;
 
-  constructor(baseUrl: string, headers: Record<string, string> = {}) {
+  constructor(
+    baseUrl: string,
+    headers: Record<string, string> = {},
+    opts: { allowLocal?: boolean } = {},
+  ) {
     this.baseUrl = baseUrl;
     this.headers = headers;
+    this.allowLocal = opts.allowLocal ?? false;
     this.postUrl = baseUrl;
     this.ready = new Promise<void>((resolve, reject) => {
       this.readyResolve = resolve;
@@ -160,6 +187,9 @@ export class SseTransport implements McpTransportImpl {
    * (usually an `endpoint` event telling us where to POST).
    */
   async openStream(): Promise<void> {
+    // SSRF guard on the configured base URL.
+    assertPublicUrl(this.baseUrl, { allowLocal: this.allowLocal });
+
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
@@ -203,12 +233,22 @@ export class SseTransport implements McpTransportImpl {
     let eventType = "message";
     let dataLines: string[] = [];
     let signalledReady = false;
+    const MAX_BUF = 1 * 1024 * 1024; // 1 MB per-frame cap
 
     while (!this.streamClosed) {
       const { done, value } = await reader.read();
       if (done) break;
 
       buf += decoder.decode(value, { stream: true });
+
+      // Cap the buffer to prevent unbounded growth.
+      if (buf.length > MAX_BUF) {
+        reader.cancel().catch(() => undefined);
+        throw new Error(
+          `MCP SSE frame exceeded buffer cap (${MAX_BUF} bytes) — server may be misbehaving`,
+        );
+      }
+
       const lines = buf.split("\n");
       buf = lines.pop() ?? "";
 
@@ -218,17 +258,31 @@ export class SseTransport implements McpTransportImpl {
           if (dataLines.length > 0) {
             const data = dataLines.join("\n");
             if (eventType === "endpoint") {
-              // Server sends the POST endpoint URL
+              // Server sends the POST endpoint URL.
+              // SECURITY (C1): reject any endpoint whose origin differs from
+              // the configured baseUrl — a cross-origin redirect would forward
+              // this.headers (including the auth token) to an attacker host.
               const endpoint = data.trim();
+              let resolved: string;
               if (endpoint.startsWith("http")) {
-                this.postUrl = endpoint;
+                resolved = endpoint;
               } else {
                 try {
-                  const base = new URL(this.baseUrl);
-                  this.postUrl = new URL(endpoint, base).toString();
+                  resolved = new URL(endpoint, new URL(this.baseUrl)).toString();
                 } catch {
-                  this.postUrl = endpoint;
+                  resolved = endpoint;
                 }
+              }
+              // Same-origin check: only accept if resolved origin matches baseUrl.
+              try {
+                const resolvedOrigin = new URL(resolved).origin;
+                const baseOrigin = new URL(this.baseUrl).origin;
+                if (resolvedOrigin === baseOrigin) {
+                  this.postUrl = resolved;
+                }
+                // If origins differ, silently keep postUrl as baseUrl (safe default).
+              } catch {
+                // Malformed endpoint — keep the current postUrl.
               }
               // Signal ready after receiving the endpoint
               if (!signalledReady) {
@@ -262,13 +316,22 @@ export class SseTransport implements McpTransportImpl {
   }
 
   async send(msg: unknown): Promise<void> {
+    // Belt-and-braces same-origin guard: only attach headers (which may include
+    // the auth token) when the resolved postUrl still shares the baseUrl origin.
+    // This prevents a future relaxation of the endpoint assignment from re-leaking.
+    let sendHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    try {
+      if (new URL(this.postUrl).origin === new URL(this.baseUrl).origin) {
+        sendHeaders = { "Content-Type": "application/json", ...this.headers };
+      }
+    } catch {
+      sendHeaders = { "Content-Type": "application/json", ...this.headers };
+    }
+
     const body = JSON.stringify(msg);
     const res = await fetch(this.postUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...this.headers,
-      },
+      headers: sendHeaders,
       body,
     });
 
@@ -310,6 +373,7 @@ export class StdioTransport implements McpTransportImpl {
   private callbacks: Array<(raw: string) => void> = [];
   private closed = false;
   private buf = "";
+  private static readonly MAX_BUF = 1 * 1024 * 1024; // 1 MB per-frame cap
 
   constructor(command: string, args: string[] = [], env: Record<string, string> = {}) {
     this.proc = spawn(command, args, {
@@ -320,6 +384,14 @@ export class StdioTransport implements McpTransportImpl {
     this.proc.stdout?.setEncoding("utf8");
     this.proc.stdout?.on("data", (chunk: string) => {
       this.buf += chunk;
+      if (this.buf.length > StdioTransport.MAX_BUF) {
+        // A line exceeding 1 MB is not a valid JSON-RPC message.
+        this.buf = "";
+        this.proc.kill("SIGTERM");
+        throw new Error(
+          `MCP stdio frame exceeded buffer cap (${StdioTransport.MAX_BUF} bytes) — server may be misbehaving`,
+        );
+      }
       const lines = this.buf.split("\n");
       this.buf = lines.pop() ?? "";
       for (const line of lines) {
@@ -396,7 +468,11 @@ export class StdioTransport implements McpTransportImpl {
 export async function detectTransport(
   url: string,
   headers: Record<string, string> = {},
+  opts: { allowLocal?: boolean } = {},
 ): Promise<McpTransport> {
+  // SSRF guard — detectTransport is called with model-supplied URLs.
+  assertPublicUrl(url, { allowLocal: opts.allowLocal ?? false });
+
   // Try streamable HTTP: a small probe POST
   try {
     const probe = await fetch(url, {
@@ -466,6 +542,7 @@ export function createTransport(
     env?: Record<string, string>;
     authToken?: string;
     authHeader?: string;
+    allowLocal?: boolean;
   },
 ): McpTransportImpl {
   const headers: Record<string, string> = {};
@@ -479,12 +556,12 @@ export function createTransport(
 
   if (transport === "http") {
     if (!opts.url) throw new Error("HTTP transport requires a url");
-    return new HttpTransport(opts.url, headers);
+    return new HttpTransport(opts.url, headers, { allowLocal: opts.allowLocal });
   }
 
   if (transport === "sse") {
     if (!opts.url) throw new Error("SSE transport requires a url");
-    return new SseTransport(opts.url, headers);
+    return new SseTransport(opts.url, headers, { allowLocal: opts.allowLocal });
   }
 
   // stdio

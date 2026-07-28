@@ -244,6 +244,18 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       stopReason: turnStop,
     });
 
+    // If the turn ended without producing tool results (error OR cancellation
+    // after tool_use blocks were already pushed), synthesise error results now
+    // so the transcript stays replayable.  The provider rejects any history
+    // that carries an unanswered tool_use, so this MUST happen before we break.
+    if (ordered.length && (streamError || turnStop === "cancelled")) {
+      produced.push(
+        streamError
+          ? errorResults(ordered, streamError.message)
+          : cancellationResults(ordered),
+      );
+    }
+
     if (streamError) {
       opts.emit({
         type: "error",
@@ -256,10 +268,6 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     }
 
     if (turnStop === "cancelled") {
-      // Answer any outstanding calls so the transcript stays replayable.
-      if (ordered.length) {
-        produced.push(cancellationResults(ordered));
-      }
       stopReason = "cancelled";
       break;
     }
@@ -410,6 +418,25 @@ function cancellationResults(calls: PendingCall[]): Message {
       toolUseId: c.id,
       isError: true,
       content: [{ type: "text" as const, text: "Cancelled by the user before this tool ran." }],
+    })),
+    createdAt: Date.now(),
+  };
+}
+
+function errorResults(calls: PendingCall[], errorMessage: string): Message {
+  return {
+    id: newId("msg"),
+    role: "user",
+    content: calls.map((c) => ({
+      type: "tool_result" as const,
+      toolUseId: c.id,
+      isError: true,
+      content: [
+        {
+          type: "text" as const,
+          text: `Provider stream error before this tool ran: ${errorMessage}`,
+        },
+      ],
     })),
     createdAt: Date.now(),
   };

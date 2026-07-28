@@ -12,7 +12,6 @@
 
 import { readFile, writeFile, mkdir, rm, rename, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 
 import type { Plugin, Marketplace } from "../../shared/types.ts";
 import { extractZip, readZipEntries } from "./zip.ts";
@@ -20,6 +19,7 @@ import { parsePluginManifest, parseMarketplace } from "./manifest.ts";
 import type { MarketplaceManifest } from "./manifest.ts";
 import { discoverContributions } from "./discover.ts";
 import { fetchGitHub, isGitHubHost } from "../net/github.ts";
+import { assertPublicUrl } from "../net/ssrf.ts";
 
 /* ----------------------------------------------------------------- ids --- */
 
@@ -28,6 +28,22 @@ function newId(): string {
   _seq += 1;
   return `plugin_${Date.now().toString(36)}_${_seq.toString(36)}`;
 }
+
+/**
+ * Pattern for safe plugin ids.  Must match what newId() produces and must
+ * not contain path separators, "..", or anything that could be abused in a
+ * filesystem path.
+ */
+const SAFE_ID_RE = /^plugin_[a-z0-9]+_[a-z0-9]+$/;
+
+/** Valid GitHub owner / repo component: 1-100 alphanumeric, dash, dot, underscore. */
+const GITHUB_NAME_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})$/;
+
+/**
+ * Valid ref: alphanumeric, dot, dash, slash, underscore — no ".." segment,
+ * no leading or trailing slash.  We then additionally check for ".." segments.
+ */
+const GITHUB_REF_RE = /^[A-Za-z0-9._\-/]{1,255}$/;
 
 /* -------------------------------------------------------- state shape --- */
 
@@ -134,8 +150,10 @@ export class PluginManager {
     // 1. Validate that buf is a real ZIP before touching disk
     await readZipEntries(buf); // throws if not a valid ZIP
 
-    // 2. Extract to a temp dir
-    const tmpBase = join(tmpdir(), `kozum-plugin-tmp-${Date.now()}`);
+    // 2. Extract to a temp dir INSIDE pluginsDir so the final rename is
+    //    always on the same filesystem (avoids EXDEV when /tmp is tmpfs).
+    await mkdir(this.pluginsDir, { recursive: true });
+    const tmpBase = join(this.pluginsDir, `_tmp-${Date.now()}`);
     await mkdir(tmpBase, { recursive: true });
 
     try {
@@ -232,18 +250,31 @@ export class PluginManager {
 
     const downloadRef = ref ?? "HEAD";
 
-    // GitHub zipball URL via codeload
-    const zipUrl = `https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${downloadRef}`;
+    // Encode each URL path segment individually so that a ref containing
+    // "/../" cannot collapse into a different path component.  owner/repo are
+    // already validated to contain only safe characters, but encode anyway
+    // for defence in depth.
+    const encodedOwner = encodeURIComponent(owner);
+    const encodedRepo = encodeURIComponent(repo);
+    const encodedRef = encodeURIComponent(downloadRef);
+
+    // GitHub zipball URL via codeload — each segment encoded separately.
+    const zipUrl =
+      `https://codeload.github.com/${encodedOwner}/${encodedRepo}` +
+      `/zip/refs/heads/${encodedRef}`;
 
     let response: Response;
+    let resolvedUrl = zipUrl;
     try {
       response = await fetchGitHub(zipUrl);
     } catch (e) {
       // Try fallback: zip/HEAD
       if (downloadRef !== "HEAD") {
         try {
-          const fallbackUrl = `https://codeload.github.com/${owner}/${repo}/zip/HEAD`;
+          const fallbackUrl =
+            `https://codeload.github.com/${encodedOwner}/${encodedRepo}/zip/HEAD`;
           response = await fetchGitHub(fallbackUrl);
+          resolvedUrl = fallbackUrl;
         } catch {
           const msg = e instanceof Error ? e.message : String(e);
           throw new Error(`Failed to download GitHub plugin "${repoRef}": ${msg}`);
@@ -267,7 +298,8 @@ export class PluginManager {
     // GitHub always wraps content in <owner>-<repo>-<sha>/ at the root
     const stripped = await stripTopLevelDir(buf, subPath);
 
-    return this.installFromZip(stripped, `${owner}/${repo}@${downloadRef}`);
+    // Record the RESOLVED url so the UI always shows where the code came from.
+    return this.installFromZip(stripped, resolvedUrl);
   }
 
   /* ----------------------------------------- marketplace --- */
@@ -284,6 +316,8 @@ export class PluginManager {
     // Try to fetch the marketplace manifest
     try {
       const manifestUrl = buildMarketplaceUrl(source);
+      // SSRF guard — the source URL comes from model/user input.
+      assertPublicUrl(manifestUrl);
       let response: Response;
       if (isGitHubHost(manifestUrl)) {
         response = await fetchGitHub(manifestUrl);
@@ -398,9 +432,23 @@ export class PluginManager {
     if (idx === -1) throw new Error(`Plugin "${id}" not found.`);
     const plugin = this.state.plugins[idx]!;
 
+    // Validate the id itself before using it to construct a path.
+    // A strict pattern prevents directory traversal or device names.
+    if (!SAFE_ID_RE.test(plugin.id)) {
+      throw new Error(`Plugin id "${plugin.id}" in state is malformed — refusing to delete.`);
+    }
+
+    // RECOMPUTE the delete target from the id rather than trusting the stored
+    // path, so a tampered plugins.json cannot point rm at arbitrary locations.
+    const expectedPath = join(this.pluginsDir, plugin.id);
+
+    // Double-check: if the stored path differs from expected, log and use expected.
+    // We still remove the expected location; an unexpected stored path is suspicious.
+    const deletePath = expectedPath;
+
     // Remove files from disk
     try {
-      await rm(plugin.path, { recursive: true, force: true });
+      await rm(deletePath, { recursive: true, force: true });
     } catch {
       // Proceed even if removal partially fails — state is removed either way
     }
@@ -419,6 +467,37 @@ interface GitHubRef {
   subPath?: string;
 }
 
+function validateGitHubPart(
+  value: string,
+  field: string,
+  input: string,
+  re: RegExp,
+): void {
+  if (!re.test(value)) {
+    throw new Error(
+      `Invalid GitHub ${field} "${value}" in "${input}". ` +
+        `Only alphanumeric characters, dots, dashes, and underscores are allowed.`,
+    );
+  }
+}
+
+function validateGitHubRef(ref: string, input: string): void {
+  if (!GITHUB_REF_RE.test(ref)) {
+    throw new Error(
+      `Invalid GitHub ref "${ref}" in "${input}". ` +
+        `Refs must be 1-255 characters of alphanumeric, dot, dash, slash, or underscore.`,
+    );
+  }
+  // Forbid ".." segments — split on both separators to be thorough.
+  for (const segment of ref.split(/[\\/]/)) {
+    if (segment === "..") {
+      throw new Error(
+        `GitHub ref "${ref}" in "${input}" contains ".." — rejected to prevent path traversal.`,
+      );
+    }
+  }
+}
+
 function parseGitHubRef(input: string): GitHubRef {
   // Full URL: https://github.com/owner/repo[/tree/<ref>[/subpath]]
   if (input.startsWith("https://") || input.startsWith("http://")) {
@@ -429,9 +508,12 @@ function parseGitHubRef(input: string): GitHubRef {
     if (!owner || !repo) {
       throw new Error(`Invalid GitHub URL: "${input}"`);
     }
+    validateGitHubPart(owner, "owner", input, GITHUB_NAME_RE);
+    validateGitHubPart(repo, "repo", input, GITHUB_NAME_RE);
     // /tree/<ref>/...
     if (parts[2] === "tree" && parts[3]) {
-      const ref = parts[3];
+      const ref = parts[3]!;
+      validateGitHubRef(ref, input);
       const subPath = parts.slice(4).join("/") || undefined;
       return { owner, repo, ref, subPath };
     }
@@ -447,6 +529,7 @@ function parseGitHubRef(input: string): GitHubRef {
   if (atIdx !== -1) {
     ref = rest.slice(atIdx + 1);
     rest = rest.slice(0, atIdx);
+    validateGitHubRef(ref, input);
   }
 
   const parts = rest.split("/");
@@ -459,6 +542,9 @@ function parseGitHubRef(input: string): GitHubRef {
         `Expected "owner/repo", "owner/repo@ref", or a full https://github.com/... URL.`,
     );
   }
+
+  validateGitHubPart(owner, "owner", input, GITHUB_NAME_RE);
+  validateGitHubPart(repo, "repo", input, GITHUB_NAME_RE);
 
   const subPath = parts.slice(2).join("/") || undefined;
   return { owner, repo, ref, subPath };

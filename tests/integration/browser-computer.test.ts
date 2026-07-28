@@ -56,24 +56,28 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 /* ==================================================== sanitiseUrl ========= */
 
 describe("sanitiseUrl — allowed schemes", () => {
-  it("accepts http://", () => {
-    assert.equal(sanitiseUrl("http://example.com"), "http://example.com");
+  it("accepts http:// and returns WHATWG-normalised href", () => {
+    // WHATWG URL adds a trailing slash to bare hostnames — this is intentional
+    // (H3: we return parsed.href to close parser-differential gaps).
+    assert.equal(sanitiseUrl("http://example.com"), "http://example.com/");
   });
 
-  it("accepts https://", () => {
+  it("accepts https:// with path and query", () => {
     assert.equal(sanitiseUrl("https://example.com/path?q=1"), "https://example.com/path?q=1");
   });
 
-  it("accepts file://", () => {
-    assert.equal(sanitiseUrl("file:///C:/Users/test.html"), "file:///C:/Users/test.html");
+  it("rejects file:// (H3 fix — local-file read bypasses workspace confinement)", () => {
+    // file: URLs were previously allowed, enabling arbitrary local-file reads.
+    assert.throws(() => sanitiseUrl("file:///C:/Users/test.html"), /file:|blocked|permitted/i);
   });
 
   it("accepts about:blank", () => {
     assert.equal(sanitiseUrl("about:blank"), "about:blank");
   });
 
-  it("strips leading/trailing whitespace", () => {
-    assert.equal(sanitiseUrl("  https://example.com  "), "https://example.com");
+  it("strips leading/trailing whitespace and returns normalised href", () => {
+    // Whitespace is stripped and WHATWG normalisation adds trailing slash.
+    assert.equal(sanitiseUrl("  https://example.com  "), "https://example.com/");
   });
 });
 
@@ -667,12 +671,13 @@ class FakeBrowserBackend implements BrowserBackend {
 }
 
 describe("BrowserEngine — navigate", () => {
-  it("calls backend.navigate with the sanitised URL", async () => {
+  it("calls backend.navigate with the sanitised (WHATWG-normalised) URL", async () => {
     const fake = new FakeBrowserBackend();
     const engine = new BrowserEngine(fake);
     await engine.navigate("https://example.com");
     assert.equal(fake.navigatedUrls.length, 1);
-    assert.equal(fake.navigatedUrls[0], "https://example.com");
+    // WHATWG URL normalisation adds trailing slash to bare hostnames (H3 fix).
+    assert.equal(fake.navigatedUrls[0], "https://example.com/");
   });
 
   it("does NOT call backend.navigate for javascript: URL", async () => {
@@ -708,7 +713,8 @@ describe("BrowserEngine — click → type → extract sequencing", () => {
     await engine.extract("find headings");
 
     assert.equal(fake.navigatedUrls.length, 1);
-    assert.equal(fake.navigatedUrls[0], "https://example.com");
+    // WHATWG URL normalisation adds trailing slash to bare hostnames (H3 fix).
+    assert.equal(fake.navigatedUrls[0], "https://example.com/");
     assert.equal(fake.clicks.length, 1);
     assert.equal(fake.clicks[0], "#search");
     assert.equal(fake.typedInputs.length, 1);

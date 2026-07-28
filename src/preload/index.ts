@@ -5,10 +5,31 @@
  * No `ipcRenderer` passthrough, no `require`, no Node globals: every capability
  * the UI has is a named method here, which keeps the audit surface small even
  * though the main process can drive the entire machine.
+ *
+ * onEvent / onState return unsubscribe functions whose bodies are braced so they
+ * return void. ipcRenderer.off() returns IpcRenderer, which is incompatible with
+ * React's EffectCallback (which requires void). The braced form prevents that.
  */
 
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppSettings, ProviderPreset } from "../shared/types.ts";
+import type {
+  AppSettings,
+  ProviderPreset,
+  ApiKeyEntry,
+  ModelInfo,
+  ModelSelection,
+  Session,
+  Message,
+  AgentEvent,
+  AgentTask,
+  ScheduledTask,
+  McpServerConfig,
+  McpToolInfo,
+  Plugin,
+  Skill,
+  Result,
+  Mode,
+} from "../shared/types.ts";
 
 export interface AppInfo {
   version: string;
@@ -39,6 +60,100 @@ const api = {
 
   providers: {
     presets: (): Promise<ProviderPreset[]> => ipcRenderer.invoke("providers:presets"),
+    addKey: (
+      providerId: string,
+      label: string,
+      rawKey: string,
+      meta?: Record<string, string>,
+    ): Promise<Result<ApiKeyEntry>> =>
+      ipcRenderer.invoke("providers:addKey", providerId, label, rawKey, meta),
+    removeKey: (keyId: string): Promise<Result<void>> =>
+      ipcRenderer.invoke("providers:removeKey", keyId),
+    listKeys: (providerId: string): Promise<ApiKeyEntry[]> =>
+      ipcRenderer.invoke("providers:listKeys", providerId),
+    testKey: (keyId: string): Promise<Result<void>> =>
+      ipcRenderer.invoke("providers:testKey", keyId),
+    refreshModels: (providerId: string): Promise<Result<ModelInfo[]>> =>
+      ipcRenderer.invoke("providers:refreshModels", providerId),
+    listModels: (providerId: string): Promise<ModelInfo[]> =>
+      ipcRenderer.invoke("providers:listModels", providerId),
+  },
+
+  sessions: {
+    list: (mode: Mode): Promise<Session[]> => ipcRenderer.invoke("sessions:list", mode),
+    get: (sessionId: string): Promise<Session | null> =>
+      ipcRenderer.invoke("sessions:get", sessionId),
+    create: (mode: Mode, selection: ModelSelection): Promise<Result<Session>> =>
+      ipcRenderer.invoke("sessions:create", mode, selection),
+    archive: (sessionId: string): Promise<Result<void>> =>
+      ipcRenderer.invoke("sessions:archive", sessionId),
+    messages: (sessionId: string): Promise<Message[]> =>
+      ipcRenderer.invoke("sessions:messages", sessionId),
+    send: (sessionId: string, text: string, attachments?: string[]): Promise<Result<void>> =>
+      ipcRenderer.invoke("sessions:send", sessionId, text, attachments),
+    cancel: (sessionId: string): Promise<Result<void>> =>
+      ipcRenderer.invoke("sessions:cancel", sessionId),
+    reply: (
+      sessionId: string,
+      requestId: string,
+      answer: string | string[],
+    ): Promise<Result<void>> =>
+      ipcRenderer.invoke("sessions:reply", sessionId, requestId, answer),
+    tasks: (sessionId: string): Promise<AgentTask[]> =>
+      ipcRenderer.invoke("sessions:tasks", sessionId),
+    /**
+     * Subscribe to agent events for any session.
+     * Returns an unsubscribe function. The body is braced deliberately:
+     * ipcRenderer.off() returns IpcRenderer, and leaking that return value
+     * makes the function incompatible with React's EffectCallback.
+     */
+    onEvent: (cb: (e: AgentEvent) => void): (() => void) => {
+      const handler = (_event: unknown, e: AgentEvent) => cb(e);
+      ipcRenderer.on("sessions:event", handler);
+      return () => {
+        ipcRenderer.off("sessions:event", handler);
+      };
+    },
+  },
+
+  schedule: {
+    list: (): Promise<ScheduledTask[]> => ipcRenderer.invoke("schedule:list"),
+    create: (
+      task: Omit<ScheduledTask, "id" | "createdAt" | "runCount">,
+    ): Promise<Result<ScheduledTask>> => ipcRenderer.invoke("schedule:create", task),
+    update: (
+      id: string,
+      patch: Partial<ScheduledTask>,
+    ): Promise<Result<ScheduledTask>> =>
+      ipcRenderer.invoke("schedule:update", id, patch),
+    remove: (id: string): Promise<Result<void>> => ipcRenderer.invoke("schedule:remove", id),
+  },
+
+  mcp: {
+    list: (): Promise<McpServerConfig[]> => ipcRenderer.invoke("mcp:list"),
+    add: (
+      config: Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount">,
+    ): Promise<Result<McpServerConfig>> => ipcRenderer.invoke("mcp:add", config),
+    remove: (id: string): Promise<Result<void>> => ipcRenderer.invoke("mcp:remove", id),
+    setEnabled: (id: string, enabled: boolean): Promise<Result<void>> =>
+      ipcRenderer.invoke("mcp:setEnabled", id, enabled),
+    tools: (serverId: string): Promise<McpToolInfo[]> =>
+      ipcRenderer.invoke("mcp:tools", serverId),
+  },
+
+  plugins: {
+    list: (): Promise<Plugin[]> => ipcRenderer.invoke("plugins:list"),
+    setEnabled: (id: string, enabled: boolean): Promise<Result<void>> =>
+      ipcRenderer.invoke("plugins:setEnabled", id, enabled),
+    remove: (id: string): Promise<Result<void>> => ipcRenderer.invoke("plugins:remove", id),
+    installFromUrl: (url: string): Promise<Result<Plugin>> =>
+      ipcRenderer.invoke("plugins:installFromUrl", url),
+  },
+
+  skills: {
+    list: (): Promise<Skill[]> => ipcRenderer.invoke("skills:list"),
+    setEnabled: (id: string, enabled: boolean): Promise<Result<void>> =>
+      ipcRenderer.invoke("skills:setEnabled", id, enabled),
   },
 
   window: {

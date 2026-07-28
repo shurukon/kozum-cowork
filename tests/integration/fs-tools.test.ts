@@ -478,9 +478,10 @@ describe("directory_create + directory_delete", () => {
     );
     assert.equal(listR.ok, true);
 
+    // M10: recursive=true is now required as an explicit safety guard.
     const delR = await registry.execute(
       "directory_delete",
-      { path: "created" },
+      { path: "created", recursive: true },
       ctx,
     );
     assert.equal(delR.ok, true);

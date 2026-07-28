@@ -16,6 +16,7 @@
 
 import { isAbsolute, normalize, resolve, sep } from "node:path";
 import { realpath } from "node:fs/promises";
+import { homedir } from "node:os";
 
 export class PathError extends Error {
   readonly code = "PATH_DENIED";
@@ -28,14 +29,56 @@ export class PathError extends Error {
 /**
  * Locations that are never writable, even unscoped. Matched case-insensitively
  * against the resolved path, so drive-letter and slash variance do not matter.
+ *
+ * UNC / device paths (\\server\share, \\?\...) are rejected before this list
+ * is consulted — see the check in resolvePath below.
  */
-const FORBIDDEN_WRITE = [
+const FORBIDDEN_WRITE: RegExp[] = [
+  // Windows system directories
   /^[a-z]:[\\/]windows([\\/]|$)/i,
   /^[a-z]:[\\/]program files( \(x86\))?([\\/]|$)/i,
   /^[a-z]:[\\/]\$recycle\.bin/i,
+  /^[a-z]:[\\/]programdata([\\/]|$)/i,
+  // Windows persistence locations
+  /start menu[\\/]programs[\\/]startup/i,
+  // POSIX system directories
   /^\/(etc|boot|sys|proc|dev)(\/|$)/,
   /^\/usr\/(bin|sbin|lib)(\/|$)/,
+  /^\/usr\/local\/bin(\/|$)/,
+  /^\/root(\/|$)/,
+  // SSH trust stores and shell init files (all platforms)
+  /[/\\]\.ssh[/\\]/i,
+  /[/\\]\.(bash|zsh|sh)rc$/i,
+  /[/\\]\.profile$/i,
+  /[/\\]\.bashrc$/i,
+  /[/\\]\.zshrc$/i,
 ];
+
+/**
+ * Build the app's own userData forbidden-write patterns at runtime so this
+ * module does not need to import Electron. Call sites that know the userData
+ * path (e.g. from app.getPath('userData')) should push extra entries here
+ * before any resolvePath calls.
+ *
+ * The home-directory-relative SSH path is always present.
+ */
+function buildRuntimeForbidden(): RegExp[] {
+  try {
+    const home = homedir();
+    if (home) {
+      return [new RegExp(`^${escapeRegex(home)}[/\\\\]\\.ssh([/\\\\]|$)`, "i")];
+    }
+  } catch {
+    // homedir() can throw in stripped environments
+  }
+  return [];
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const RUNTIME_FORBIDDEN: RegExp[] = buildRuntimeForbidden();
 
 /** Windows reserved device names; writing to them does surprising things. */
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
@@ -52,6 +95,10 @@ export interface ResolveOptions {
  * `realpath` is attempted first; when the target does not exist yet (the common
  * case for writes) we fall back to resolving its nearest existing ancestor, so
  * a new file inside a symlinked working folder still validates correctly.
+ *
+ * Returns the canonicalised path (symlinks resolved) rather than the raw
+ * normalised absolute path, so callers operate on exactly the path that was
+ * checked — closing the check-then-use gap.
  */
 export async function resolvePath(
   input: string,
@@ -63,8 +110,17 @@ export async function resolvePath(
   // Reject NUL bytes outright; they truncate paths in native calls.
   if (raw.includes("\0")) throw new PathError("Path contains a NUL byte.");
 
+  // Reject UNC paths and Windows device paths — libuv preserves them and
+  // FORBIDDEN_WRITE regexes anchored on drive letters never match them.
+  if (/^\\\\/.test(raw)) {
+    throw new PathError(
+      `UNC and device paths are not permitted: "${raw.slice(0, 128)}".\n` +
+        "Use a drive-letter path instead.",
+    );
+  }
+
   const base = opts.workingFolder;
-  let abs = isAbsolute(raw) ? normalize(raw) : resolve(base ?? process.cwd(), raw);
+  const abs = isAbsolute(raw) ? normalize(raw) : resolve(base ?? process.cwd(), raw);
 
   const leaf = abs.split(/[\\/]/).pop() ?? "";
   if (RESERVED.test(leaf)) {
@@ -86,11 +142,13 @@ export async function resolvePath(
     }
   }
 
-  if (opts.forWrite && FORBIDDEN_WRITE.some((re) => re.test(canonical))) {
+  const allForbidden = [...FORBIDDEN_WRITE, ...RUNTIME_FORBIDDEN];
+  if (opts.forWrite && allForbidden.some((re) => re.test(canonical))) {
     throw new PathError(`Refusing to write to a protected system location: ${canonical}`);
   }
 
-  return abs;
+  // Return the canonicalised path so callers operate on the same path that was checked.
+  return canonical;
 }
 
 /** Resolve symlinks as far as the path exists. */
@@ -120,7 +178,8 @@ async function canonicalise(abs: string): Promise<string> {
 export function contains(parent: string, child: string): boolean {
   const p = stripTrailing(normalize(parent));
   const c = stripTrailing(normalize(child));
-  if (process.platform === "win32") {
+  // macOS default filesystems (HFS+, APFS) are case-insensitive; treat like win32.
+  if (process.platform === "win32" || process.platform === "darwin") {
     const pl = p.toLowerCase();
     const cl = c.toLowerCase();
     return cl === pl || cl.startsWith(pl + sep.toLowerCase()) || cl.startsWith(pl + "/");

@@ -148,11 +148,23 @@ export const processTools: Tool[] = [
       const pid = input["pid"] as number;
       const force = (input["force"] as boolean | undefined) ?? false;
 
-      if (pid === 0 || pid === 1) {
-        return fail(`Refusing to kill PID ${pid} — this is a protected system process.`);
+      // H9: reject any PID < 2.  On POSIX, negative PIDs target process groups
+      // (kill(-1, SIGKILL) signals every process the user can signal).  PID 0
+      // targets the caller's own process group.  PID 1 is init.  All are
+      // dangerous and should never be reachable from a model argument.
+      if (!Number.isInteger(pid) || pid < 2) {
+        return fail(
+          `Refusing to kill PID ${pid}. ` +
+            "Only positive integers ≥ 2 are accepted. " +
+            "Negative PIDs target POSIX process groups (kill(-1, SIGKILL) signals " +
+            "every process the user can signal), PID 0 targets the caller's process " +
+            "group, and PID 1 is init — all are protected.",
+        );
       }
-      if (pid === process.pid) {
-        return fail(`Refusing to kill PID ${process.pid} — that is the agent's own process.`);
+      if (pid === process.pid || pid === process.ppid) {
+        return fail(
+          `Refusing to kill PID ${pid} — that is the agent's own ${pid === process.pid ? "process" : "parent process"}.`,
+        );
       }
 
       try {

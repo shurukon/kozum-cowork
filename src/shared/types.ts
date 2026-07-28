@@ -391,6 +391,11 @@ export interface McpServerConfig {
   status: McpStatus;
   statusMessage?: string;
   toolCount: number;
+  /**
+   * When true, allows connections to localhost/127.x.x.x.
+   * Required for local development MCP servers; false by default.
+   */
+  allowLocal?: boolean;
 }
 
 export type McpStatus = "connected" | "connecting" | "disconnected" | "error";

@@ -1,0 +1,132 @@
+.root {
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  line-height: var(--lh-relaxed);
+}
+
+.root > * + * {
+  margin-top: var(--sp-6);
+}
+
+.h1 {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+  margin-block-end: var(--sp-6);
+}
+
+.h2 {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+  margin-block-end: var(--sp-4);
+}
+
+.h3 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  color: var(--text-primary);
+  margin-block-end: var(--sp-3);
+}
+
+.h4 {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.h5 {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+.h6 {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+}
+
+.p {
+  color: var(--text-primary);
+  margin-block: var(--sp-2);
+}
+
+.inlineCode {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  padding: 1px var(--sp-2);
+  color: var(--accent-secondary);
+}
+
+.pre {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-6) var(--sp-8);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--text-primary);
+}
+
+.codeWithLang {
+  display: block;
+}
+
+.blockquote {
+  border-inline-start: 3px solid var(--accent-primary);
+  padding-inline-start: var(--sp-8);
+  color: var(--text-secondary);
+  margin-block: var(--sp-4);
+}
+
+.ul,
+.ol {
+  padding-inline-start: var(--sp-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.ul {
+  list-style: disc;
+}
+
+.ol {
+  list-style: decimal;
+}
+
+.li {
+  padding-inline-start: var(--sp-2);
+  list-style: inherit;
+  display: list-item;
+}
+
+.li > * + * {
+  margin-top: var(--sp-2);
+}
+
+.hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin-block: var(--sp-8);
+}
+
+.link {
+  color: var(--accent-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  color: var(--accent-primary);
+}

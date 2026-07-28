@@ -7,13 +7,27 @@
  * product's ~12GB Hyper-V image.
  */
 
-import { app, BrowserWindow, ipcMain, nativeTheme, shell } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, safeStorage, shell } from "electron";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 
-import { freshSettings } from "../shared/defaults.ts";
-import { PROVIDER_PRESETS } from "./providers/presets.ts";
-import type { AppSettings } from "../shared/types.ts";
+import { settingsPath, keysPath, sessionsDir, memoryDir, pluginsDir } from "./store/paths.ts";
+import { SettingsStore } from "./store/settings.ts";
+import { SecretStore } from "./store/secrets.ts";
+import { ProviderRegistry } from "./providers/registry.ts";
+import { SessionStore } from "./session/store.ts";
+import { SessionManager } from "./session/manager.ts";
+import { MemoryVault } from "./memory/vault.ts";
+import { SkillStore } from "./skills/index.ts";
+import { Scheduler } from "./schedule/scheduler.ts";
+import { McpManager } from "./mcp/manager.ts";
+import { PluginManager } from "./plugins/manager.ts";
+import { BrowserEngine, ElectronBrowserBackend } from "./browser/engine.ts";
+import { TaskStore } from "./tools/tasks.ts";
+import { AskBroker } from "./tools/ask.ts";
+import { SubagentManager } from "./agent/subagents.ts";
+import { buildToolRegistry } from "./tools/index.ts";
+import { registerIpc, makeEmitEvent } from "./ipc/index.ts";
 
 const isDev = !app.isPackaged;
 
@@ -24,14 +38,10 @@ const isDev = !app.isPackaged;
  * refusing to traverse it is exactly the failure users hit elsewhere.
  */
 function resolveUserData(): string {
-  const dir = join(app.getPath("appData"), "Kozum");
-  return dir;
+  return join(app.getPath("appData"), "Kozum");
 }
 
 let mainWindow: BrowserWindow | null = null;
-
-/** In-memory settings; the persistent store lands in a later phase. */
-let settings: AppSettings = freshSettings();
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -92,38 +102,7 @@ function createWindow(): void {
   }
 }
 
-/* ---------------------------------------------------------------- IPC --- */
-
-function registerIpc(): void {
-  ipcMain.handle("app:info", () => ({
-    version: app.getVersion(),
-    platform: process.platform,
-    arch: process.arch,
-    electron: process.versions.electron,
-    node: process.versions.node,
-    chrome: process.versions.chrome,
-    userDataPath: resolveUserData(),
-    isDev,
-  }));
-
-  ipcMain.handle("settings:get", () => settings);
-
-  ipcMain.handle("settings:set", (_e, patch: Partial<AppSettings>) => {
-    settings = { ...settings, ...patch };
-    return settings;
-  });
-
-  ipcMain.handle("providers:presets", () => PROVIDER_PRESETS);
-
-  ipcMain.on("window:minimize", () => mainWindow?.minimize());
-  ipcMain.on("window:maximize", () => {
-    if (!mainWindow) return;
-    mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
-  });
-  ipcMain.on("window:close", () => mainWindow?.close());
-}
-
-/* -------------------------------------------------------------- boot ---- */
+/* ---------------------------------------------------------------- boot ---- */
 
 // One instance only; a second launch focuses the existing window.
 if (!app.requestSingleInstanceLock()) {
@@ -135,11 +114,165 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus();
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     app.setAppUserModelId("app.kozum.cowork");
     nativeTheme.themeSource = "dark";
 
-    registerIpc();
+    const appPaths = { getPath: (name: "appData") => app.getPath(name) };
+    const userDataPath = resolveUserData();
+
+    // ── stores ──────────────────────────────────────────────────────────────
+    const settings = new SettingsStore(settingsPath(appPaths));
+    const secrets = new SecretStore(keysPath(appPaths), {
+      isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+      encryptString: (s: string) => safeStorage.encryptString(s),
+      decryptString: (buf: Buffer) => safeStorage.decryptString(buf),
+    });
+
+    // ── providers ───────────────────────────────────────────────────────────
+    const registry = new ProviderRegistry(secrets, appPaths);
+
+    // ── sessions ────────────────────────────────────────────────────────────
+    const sessionStore = new SessionStore(sessionsDir(appPaths));
+
+    // ── memory ──────────────────────────────────────────────────────────────
+    let memory: MemoryVault;
+    try {
+      memory = new MemoryVault(memoryDir(appPaths));
+      await memory.init();
+    } catch (e) {
+      console.error("[boot] Memory vault init failed:", e);
+      memory = new MemoryVault(memoryDir(appPaths));
+    }
+
+    // ── skills ──────────────────────────────────────────────────────────────
+    const skills = new SkillStore();
+    try {
+      const builtinSkillsDir = join(app.getAppPath(), "skills");
+      if (existsSync(builtinSkillsDir)) {
+        await skills.discover([builtinSkillsDir]);
+      }
+    } catch (e) {
+      console.error("[boot] Skill discovery failed:", e);
+    }
+
+    // ── task / ask stores ────────────────────────────────────────────────────
+    const tasks = new TaskStore();
+    const ask = new AskBroker();
+
+    // ── subagent manager ─────────────────────────────────────────────────────
+    const subagents = new SubagentManager(async (_spec) => {
+      return { text: "(subagent not yet wired)" };
+    });
+
+    // ── mcp ─────────────────────────────────────────────────────────────────
+    const mcp = new McpManager();
+    try {
+      await mcp.connectAll();
+    } catch (e) {
+      console.error("[boot] MCP connectAll failed:", e);
+    }
+
+    // ── plugins ─────────────────────────────────────────────────────────────
+    const plugins = new PluginManager(pluginsDir(appPaths));
+    try {
+      await plugins.list();
+    } catch (e) {
+      console.error("[boot] Plugin load failed:", e);
+    }
+
+    // ── browser ─────────────────────────────────────────────────────────────
+    const browser = new BrowserEngine(new ElectronBrowserBackend());
+
+    // ── event forwarding ─────────────────────────────────────────────────────
+    const emitEvent = makeEmitEvent(() => mainWindow);
+
+    // ── scheduler ───────────────────────────────────────────────────────────
+    // The scheduler runner needs sessionManager, but sessionManager needs the
+    // tool registry. Build a placeholder runner first, then wire the real one.
+    let sessionManagerRef: SessionManager | null = null;
+
+    let scheduler: Scheduler;
+    try {
+      scheduler = new Scheduler({
+        rootDir: userDataPath,
+        runner: async (scheduledTask) => {
+          if (!sessionManagerRef) return;
+          const appSets = await settings.get();
+          const modeSettings = appSets[scheduledTask.mode];
+          const selection = scheduledTask.selection ?? modeSettings.selection;
+          const session = await sessionStore.create(scheduledTask.mode, selection);
+          await sessionManagerRef.send(session.id, scheduledTask.prompt);
+        },
+      });
+      await scheduler.start();
+    } catch (e) {
+      console.error("[boot] Scheduler start failed:", e);
+      scheduler = new Scheduler({
+        rootDir: userDataPath,
+        runner: async () => undefined,
+      });
+    }
+
+    // ── tool registry ────────────────────────────────────────────────────────
+    const toolRegistry = buildToolRegistry({
+      tasks,
+      ask,
+      subagents,
+      skills,
+      memory,
+      scheduler,
+      mcp,
+      plugins,
+      browser,
+      getComputerBlocklist: () => [],
+    });
+
+    // ── session manager ──────────────────────────────────────────────────────
+    const sessionManager = new SessionManager({
+      sessions: sessionStore,
+      registry,
+      settings,
+      memory,
+      skills,
+      mcp,
+      ask,
+      tasks,
+      toolRegistry,
+      emitEvent,
+    });
+
+    // Patch the circular reference so the scheduler can create sessions
+    sessionManagerRef = sessionManager;
+
+    // ── IPC ─────────────────────────────────────────────────────────────────
+    registerIpc({
+      ipcMain,
+      app,
+      getWindow: () => mainWindow,
+      isDev,
+      userDataPath,
+      settings,
+      secrets,
+      registry,
+      sessions: sessionStore,
+      sessionManager,
+      scheduler,
+      mcp,
+      plugins,
+      skills,
+      tasks,
+    });
+
+    // ── window chrome IPC ────────────────────────────────────────────────────
+    ipcMain.on("window:minimize", () => mainWindow?.minimize());
+    ipcMain.on("window:maximize", () => {
+      if (!mainWindow) return;
+      mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
+    });
+    ipcMain.on("window:close", () => mainWindow?.close());
+
+    // ── window ───────────────────────────────────────────────────────────────
     createWindow();
 
     app.on("activate", () => {

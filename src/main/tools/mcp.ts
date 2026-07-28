@@ -88,6 +88,13 @@ function makeMcpInstall(manager: McpManager): Tool {
             description: "Transport type: http, sse, or stdio (auto-detected when url is given)",
             enum: ["http", "sse", "stdio"],
           },
+          allowLocal: {
+            type: "boolean",
+            description:
+              "Set true to allow connections to localhost/127.x.x.x. " +
+              "Required for local development MCP servers. SSRF protections " +
+              "still block non-localhost private addresses.",
+          },
         },
         additionalProperties: false,
       },
@@ -102,6 +109,7 @@ function makeMcpInstall(manager: McpManager): Tool {
       const rawArgs = input["args"];
       const rawEnv = input["env"];
       const transportOverride = input["transport"] as McpTransport | undefined;
+      const allowLocal = input["allowLocal"] === true;
 
       const args = toStringArray(rawArgs);
       const env = toStringRecord(rawEnv);
@@ -126,7 +134,7 @@ function makeMcpInstall(manager: McpManager): Tool {
             ? `Bearer ${authToken}`
             : authToken;
         }
-        transport = await detectTransport(url!, headers);
+        transport = await detectTransport(url!, headers, { allowLocal });
       }
 
       const id = genId();
@@ -145,6 +153,7 @@ function makeMcpInstall(manager: McpManager): Tool {
         installedByAgent: true,
         status: "connecting",
         toolCount: 0,
+        allowLocal,
       };
 
       let added = false;

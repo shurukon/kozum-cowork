@@ -64,13 +64,25 @@ export interface ComputerBackend {
 /* ======================================= pure helper — isAppBlocked ========= */
 
 /**
+ * Strip a trailing `.exe` (case-insensitive) from an executable name so we
+ * can compare names returned by `Get-Process` (which omits the extension)
+ * against the default blocklist entries (which include `.exe`).
+ */
+function stripExeExt(name: string): string {
+  return name.toLowerCase().endsWith(".exe") ? name.slice(0, -4) : name;
+}
+
+/**
  * Case-insensitive check whether an executable name matches any entry in the
- * blocklist. Both the exe name and blocklist entries are compared in lower case.
+ * blocklist.  Both the exe name and blocklist entries have their `.exe`
+ * extension stripped before comparison so that `"keepass"` (as returned by
+ * PowerShell's `Get-Process .Name`) correctly matches `"keepass.exe"` in the
+ * defaults list.
  */
 export function isAppBlocked(exeName: string, blocklist: string[]): boolean {
-  const lower = exeName.toLowerCase();
+  const normalised = stripExeExt(exeName).toLowerCase();
   for (const entry of blocklist) {
-    if (entry.toLowerCase() === lower) return true;
+    if (stripExeExt(entry).toLowerCase() === normalised) return true;
   }
   return false;
 }
@@ -131,9 +143,11 @@ export function buildCaptureScript(opts: CaptureScriptOptions): string {
 }
 
 function buildFullScreenCaptureBody(): string {
+  // Add-Type must precede any reference to the type it loads.
+  // System.Windows.Forms is required before [Screen]::PrimaryScreen.Bounds.
   return (
-    `$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds\n` +
     `Add-Type -AssemblyName System.Windows.Forms\n` +
+    `$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds\n` +
     `$bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)\n` +
     `$g = [System.Drawing.Graphics]::FromImage($bmp)\n` +
     `$g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)\n` +
@@ -147,6 +161,7 @@ function buildRegionCaptureBody(r: {
   width: number;
   height: number;
 }): string {
+  // Add-Type must precede any System.Drawing reference.
   return (
     `Add-Type -AssemblyName System.Windows.Forms\n` +
     `$bmp = New-Object System.Drawing.Bitmap(${r.width}, ${r.height})\n` +
@@ -310,7 +325,10 @@ export class PowerShellComputerBackend implements ComputerBackend {
       throw new BackendUnavailableError("Computer use (child_process)");
     }
 
-    for (const candidate of ["pwsh", "powershell"]) {
+    // Prefer powershell.exe (Windows PowerShell 5) over pwsh (PowerShell 7):
+    // WinForms (System.Windows.Forms) is not included in PS7 by default, and
+    // all screen-capture scripts rely on it.
+    for (const candidate of ["powershell", "pwsh"]) {
       try {
         const { stdout } = await execFile(candidate, ["-NoProfile", "-Command", "echo OK"], {
           timeout: 5000,
@@ -450,9 +468,9 @@ export class PowerShellComputerBackend implements ComputerBackend {
       `$h = [Win32Win]::GetForegroundWindow()\n` +
       `$sb = New-Object System.Text.StringBuilder(256)\n` +
       `[Win32Win]::GetWindowText($h, $sb, 256) | Out-Null\n` +
-      `$pid = 0\n` +
-      `[Win32Win]::GetWindowThreadProcessId($h, [ref]$pid) | Out-Null\n` +
-      `$proc = Get-Process -Id $pid -ErrorAction SilentlyContinue\n` +
+      `$procId = 0\n` +
+      `[Win32Win]::GetWindowThreadProcessId($h, [ref]$procId) | Out-Null\n` +
+      `$proc = Get-Process -Id $procId -ErrorAction SilentlyContinue\n` +
       `Write-Output "$($h.ToInt64())|$($sb.ToString())|$($proc.Name)"\n`;
 
     const out = await this.runScript(script);

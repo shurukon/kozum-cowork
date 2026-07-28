@@ -17,7 +17,9 @@
 import { inflateRaw } from "node:zlib";
 import { promisify } from "node:util";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve, normalize, isAbsolute, dirname } from "node:path";
+import { join, resolve, normalize, isAbsolute, dirname, sep } from "node:path";
+
+import { contains } from "../tools/paths.ts";
 
 const inflateRawAsync = promisify(inflateRaw);
 
@@ -25,6 +27,8 @@ const inflateRawAsync = promisify(inflateRaw);
 
 const MAX_ENTRIES = 10_000;
 const MAX_TOTAL_BYTES = 512 * 1024 * 1024; // 512 MiB
+/** Maximum compression ratio per entry before we reject pre-inflation. */
+const MAX_RATIO = 1000;
 
 /* ----------------------------------------------------------- data types --- */
 
@@ -214,6 +218,7 @@ async function extractEntry(
   buf: Buffer,
   entry: ZipEntry,
   localHeaderOffset: number,
+  remainingBudget: number,
 ): Promise<Buffer> {
   if (entry.isDirectory) return Buffer.alloc(0);
 
@@ -246,8 +251,23 @@ async function extractEntry(
   }
 
   if (entry.method === 8) {
-    // DEFLATE
-    const result = await inflateRawAsync(compressed);
+    // DEFLATE — reject absurd compression ratios before inflating to limit
+    // how many bytes we will materialise.  A 1-byte declared size with a
+    // 1 MB compressed payload would exceed ratio 1 000 000:1, which no
+    // legitimate file produces.
+    if (entry.compressedSize > 0) {
+      const ratio = entry.uncompressedSize / entry.compressedSize;
+      if (ratio > MAX_RATIO) {
+        throw new Error(
+          `ZIP: Entry "${entry.name}" has a suspicious compression ratio of ${Math.round(ratio)}:1 — zip-bomb rejected.`,
+        );
+      }
+    }
+
+    // Cap the inflate output to the smaller of the declared size+1 and the
+    // remaining aggregate budget so we never materialise more than expected.
+    const maxOutputLength = Math.min(entry.uncompressedSize + 1, remainingBudget);
+    const result = await inflateRawAsync(compressed, { maxOutputLength });
     if (result.length !== entry.uncompressedSize) {
       throw new Error(
         `ZIP: DEFLATE entry "${entry.name}" decompressed to ${result.length} bytes, ` +
@@ -272,16 +292,19 @@ async function extractEntry(
 function validateEntryName(name: string): string | null {
   if (!name) return "Entry has an empty name.";
 
-  // Reject absolute paths
-  if (isAbsolute(name)) {
+  // Reject absolute paths — check the raw name first so platform-specific
+  // normalisation cannot hide a leading separator.
+  if (isAbsolute(name) || isAbsolute(name.replace(/\\/g, "/"))) {
     return `Entry "${name}" has an absolute path — rejected.`;
   }
 
-  // Normalize separators
-  const normalized = normalize(name.replace(/\\/g, "/"));
+  // Normalise separators to the platform separator, then split on EITHER
+  // separator so that backslash entry names produced by Windows ZIP tools
+  // are also split correctly and ".." segments cannot hide.
+  const normalized = normalize(name.replace(/\//g, sep));
 
-  // Reject any ".." segment
-  const parts = normalized.split("/");
+  // Split on both / and \ so we catch every segment regardless of platform.
+  const parts = normalized.split(/[\\/]/);
   for (const part of parts) {
     if (part === "..") {
       return `Entry "${name}" contains ".." — zip-slip rejected.`;
@@ -302,20 +325,24 @@ function validateEntryName(name: string): string | null {
 export async function extractZip(buf: Buffer, destDir: string): Promise<void> {
   const entries = await readZipEntries(buf);
 
-  // Zip-bomb guard: total uncompressed size
-  let totalSize = 0;
+  // Zip-bomb guard: sum DECLARED sizes as an early-out (declared values come
+  // from the attacker, so this is only a first layer; the per-entry budget
+  // enforced during actual inflation is the binding bound).
+  let totalDeclared = 0;
   for (const entry of entries) {
     if (!entry.isDirectory) {
-      totalSize += entry.uncompressedSize;
+      totalDeclared += entry.uncompressedSize;
     }
   }
-  if (totalSize > MAX_TOTAL_BYTES) {
+  if (totalDeclared > MAX_TOTAL_BYTES) {
     throw new Error(
-      `ZIP: Total uncompressed size ${totalSize} exceeds the limit of ${MAX_TOTAL_BYTES} bytes (zip-bomb guard).`,
+      `ZIP: Total uncompressed size ${totalDeclared} exceeds the limit of ${MAX_TOTAL_BYTES} bytes (zip-bomb guard).`,
     );
   }
 
-  // Security pre-check: validate ALL entries before writing anything
+  // Security pre-check: validate ALL entries before writing anything.
+  // Use contains() from paths.ts which handles both separators and
+  // case-insensitive comparison on Windows — no reimplementation needed.
   const resolvedDest = resolve(destDir);
   const plan: Array<{ entry: ZipEntry; outPath: string }> = [];
 
@@ -328,9 +355,8 @@ export async function extractZip(buf: Buffer, destDir: string): Promise<void> {
     const outPath = join(resolvedDest, entry.name);
     const resolvedOut = resolve(outPath);
 
-    // Zip-slip: check that resolved output path is inside destDir
-    const destWithSep = resolvedDest.endsWith("/") ? resolvedDest : resolvedDest + "/";
-    if (resolvedOut !== resolvedDest && !resolvedOut.startsWith(destWithSep)) {
+    // Zip-slip: check that resolved output path is inside destDir.
+    if (!contains(resolvedDest, resolvedOut)) {
       throw new Error(
         `ZIP: Entry "${entry.name}" would extract to "${resolvedOut}" which escapes ` +
           `destDir "${resolvedDest}" — zip-slip rejected. Aborting entire extraction.`,
@@ -340,13 +366,23 @@ export async function extractZip(buf: Buffer, destDir: string): Promise<void> {
     plan.push({ entry, outPath });
   }
 
-  // Now perform the actual extraction
+  // Now perform the actual extraction, tracking real output bytes so that a
+  // lying central directory cannot smuggle extra data past the aggregate cap.
+  let actualTotal = 0;
+
   for (const { entry, outPath } of plan) {
     if (entry.isDirectory) {
       await mkdir(outPath, { recursive: true });
     } else {
       await mkdir(dirname(outPath), { recursive: true });
-      const data = await extractEntry(buf, entry, entry.localHeaderOffset);
+      const remainingBudget = MAX_TOTAL_BYTES - actualTotal;
+      const data = await extractEntry(buf, entry, entry.localHeaderOffset, remainingBudget);
+      actualTotal += data.length;
+      if (actualTotal > MAX_TOTAL_BYTES) {
+        throw new Error(
+          `ZIP: Actual extracted size exceeded ${MAX_TOTAL_BYTES} bytes — zip-bomb guard.`,
+        );
+      }
       await writeFile(outPath, data);
     }
   }

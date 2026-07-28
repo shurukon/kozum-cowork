@@ -97,6 +97,7 @@ export class McpManager {
         env: entry.config.env,
         authToken: opts.authToken,
         authHeader: entry.config.authHeader,
+        allowLocal: entry.config.allowLocal,
       });
 
       const client = new McpClient(transport);

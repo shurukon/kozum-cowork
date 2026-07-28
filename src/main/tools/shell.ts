@@ -9,6 +9,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import type { Tool, ToolContext } from "./registry.ts";
 import { ok, fail, describeError } from "./registry.ts";
 
@@ -72,6 +73,12 @@ async function spawnCommand(
   let stdoutTruncated = false;
   let stderrTruncated = false;
 
+  // Use StringDecoder to handle multi-byte UTF-8 sequences that may be split
+  // across chunk boundaries (slice.toString("utf8") on a partial sequence
+  // produces U+FFFD replacement characters).
+  const stdoutDecoder = new StringDecoder("utf8");
+  const stderrDecoder = new StringDecoder("utf8");
+
   child.stdout.on("data", (chunk: Buffer) => {
     const remaining = MAX_BYTES - stdoutBytes;
     if (remaining <= 0) {
@@ -79,7 +86,7 @@ async function spawnCommand(
       return;
     }
     const slice = remaining < chunk.length ? chunk.subarray(0, remaining) : chunk;
-    stdoutBuf += slice.toString("utf8");
+    stdoutBuf += stdoutDecoder.write(slice);
     stdoutBytes += slice.length;
     if (stdoutBytes >= MAX_BYTES) stdoutTruncated = true;
   });
@@ -91,7 +98,7 @@ async function spawnCommand(
       return;
     }
     const slice = remaining < chunk.length ? chunk.subarray(0, remaining) : chunk;
-    stderrBuf += slice.toString("utf8");
+    stderrBuf += stderrDecoder.write(slice);
     stderrBytes += slice.length;
     if (stderrBytes >= MAX_BYTES) stderrTruncated = true;
   });
@@ -136,13 +143,21 @@ async function spawnCommand(
     };
     ctx.signal.addEventListener("abort", onAbort, { once: true });
 
-    // Set up timeout
+    // Set up timeout.  After killing the tree we give child processes a 2-second
+    // grace window to flush their stdio pipes and emit "close".  If "close" has
+    // not arrived within the grace window (e.g. a grandchild escaped the group
+    // and is holding stdout open) we call finish() directly so the promise
+    // always settles at roughly timeoutMs, not "never".
     let timer: NodeJS.Timeout | null = null;
     if (timeoutMs !== null) {
       timer = setTimeout(() => {
         if (!settled) {
           timedOut = true;
           killTree();
+          // Grace period: give the child a chance to close pipes cleanly.
+          setTimeout(() => {
+            finish(null);
+          }, 2000);
         }
       }, timeoutMs);
     }
@@ -158,6 +173,9 @@ async function spawnCommand(
     });
 
     child.on("close", (code) => {
+      // Flush any remaining bytes held by the StringDecoders.
+      stdoutBuf += stdoutDecoder.end();
+      stderrBuf += stderrDecoder.end();
       if (timer) clearTimeout(timer);
       ctx.signal.removeEventListener("abort", onAbort);
       finish(code);

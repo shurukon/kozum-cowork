@@ -1,0 +1,92 @@
+/* ------------------------------------------------------------ user --- */
+
+.userRow {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--sp-4);
+  animation: kz-rise var(--dur-normal) var(--ease-out) both;
+}
+
+.userBubble {
+  max-width: 72%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl) var(--r-xl) var(--r-xs) var(--r-xl);
+  padding: var(--sp-5) var(--sp-6);
+}
+
+.userText {
+  font-size: var(--fs-base);
+  line-height: var(--lh-relaxed);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* -------------------------------------------------------- assistant --- */
+
+.assistantRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4);
+}
+
+.assistantText {
+  font-size: var(--fs-base);
+  line-height: var(--lh-relaxed);
+  color: var(--text-primary);
+  /* kz-caret appended via global.css when streaming */
+}
+
+/* --------------------------------------------------------- thinking --- */
+
+.thinking {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.thinkingToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-5);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  letter-spacing: var(--tracking-wide);
+  text-align: start;
+  text-transform: uppercase;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.thinkingToggle:hover {
+  color: var(--text-secondary);
+}
+
+.thinkingBody {
+  padding: var(--sp-4) var(--sp-5);
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-relaxed);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* ----------------------------------------------------------- error --- */
+
+.errorMsg {
+  font-size: var(--fs-sm);
+  color: var(--error);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--error-soft);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: var(--r-md);
+}

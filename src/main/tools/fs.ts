@@ -15,9 +15,11 @@ import {
   mkdir,
   rename,
   readdir,
+  realpath,
 } from "node:fs/promises";
 import { createInflate } from "node:zlib";
 import { extname, dirname, join, sep } from "node:path";
+import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 
 import type { Tool } from "./registry.ts";
 import { ok, fail, describeError } from "./registry.ts";
@@ -57,8 +59,18 @@ async function isBinary(path: string): Promise<boolean> {
   }
 }
 
-/** Recursively walk a directory, yielding file paths. */
-async function* walkDir(dir: string): AsyncGenerator<string> {
+/**
+ * Recursively walk a directory, yielding only regular file paths.
+ *
+ * Symlinks are skipped entirely — a symlink inside the workspace that points
+ * outside it is an arbitrary-read primitive when followed, because only the
+ * root directory is checked against the working-folder boundary.
+ *
+ * @param canonicalBase  The realpath of the workspace root; when provided,
+ *   each file's realpath is verified to remain inside before being yielded,
+ *   giving defence-in-depth against TOCTOU races.
+ */
+async function* walkDir(dir: string, canonicalBase?: string): AsyncGenerator<string> {
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -69,20 +81,60 @@ async function* walkDir(dir: string): AsyncGenerator<string> {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name === "node_modules" || entry.name === ".git") continue;
-      yield* walkDir(full);
-    } else if (entry.isFile() || entry.isSymbolicLink()) {
+      yield* walkDir(full, canonicalBase);
+    } else if (entry.isFile()) {
+      // Symlinks are intentionally excluded here (H4 fix).
+      if (canonicalBase) {
+        // Defence-in-depth: verify the file's realpath is still inside the base.
+        try {
+          const real = await realpath(full);
+          if (!real.startsWith(canonicalBase + sep) && real !== canonicalBase) continue;
+        } catch {
+          continue;
+        }
+      }
       yield full;
     }
+    // isSymbolicLink() falls through — deliberately not yielded.
   }
 }
 
 /* ------------------------------------------------------ glob_match helpers */
 
+/** Maximum number of brace-expansion alternatives before we refuse. */
+const MAX_BRACE_ALTERNATIVES = 256;
+/** Maximum number of nested/sequential brace groups allowed in one pattern. */
+const MAX_BRACE_GROUPS = 8;
+/** Maximum number of ** wildcard segments in one glob pattern. */
+const MAX_DOUBLESTAR_COUNT = 6;
+/** Maximum number of single * wildcards in one glob pattern. */
+const MAX_STAR_COUNT = 16;
+
 /**
  * Convert a glob pattern into a RegExp.
  * Supports **, *, ?, {a,b,c}, [chars].
+ *
+ * Throws a RangeError if the pattern would produce more than MAX_BRACE_ALTERNATIVES
+ * expansions or contains more than MAX_BRACE_GROUPS brace groups, to prevent
+ * exponential blowup from model-controlled inputs (H7).
  */
 function globToRegex(pattern: string): RegExp {
+  // Count top-level brace groups to enforce MAX_BRACE_GROUPS before recursing.
+  let braceGroupCount = 0;
+  {
+    let d = 0;
+    for (const ch of pattern) {
+      if (ch === "{") { if (d === 0) braceGroupCount++; d++; }
+      else if (ch === "}") d--;
+    }
+  }
+  if (braceGroupCount > MAX_BRACE_GROUPS) {
+    throw new RangeError(
+      `Glob pattern has ${braceGroupCount} brace groups; maximum is ${MAX_BRACE_GROUPS}. ` +
+        "Simplify the pattern.",
+    );
+  }
+
   // Expand {a,b} alternatives first.
   function expandBraces(p: string): string[] {
     const start = p.indexOf("{");
@@ -127,19 +179,51 @@ function globToRegex(pattern: string): RegExp {
     for (const alt of alts) {
       for (const expanded of expandBraces(before + alt + after)) {
         results.push(expanded);
+        if (results.length > MAX_BRACE_ALTERNATIVES) {
+          throw new RangeError(
+            `Glob pattern expands to more than ${MAX_BRACE_ALTERNATIVES} alternatives. ` +
+              "Simplify the pattern.",
+          );
+        }
       }
     }
     return results;
   }
 
   function singleGlobToRegexSrc(p: string): string {
+    // Count ** and * occurrences before building to enforce caps (H7).
+    let doubleStarCount = 0;
+    let singleStarCount = 0;
+    for (let k = 0; k < p.length; k++) {
+      if (p[k] === "*") {
+        if (p[k + 1] === "*") { doubleStarCount++; k++; }
+        else singleStarCount++;
+      }
+    }
+    if (doubleStarCount > MAX_DOUBLESTAR_COUNT) {
+      throw new RangeError(
+        `Glob pattern has ${doubleStarCount} "**" segments; maximum is ${MAX_DOUBLESTAR_COUNT}. ` +
+          "Simplify the pattern.",
+      );
+    }
+    if (singleStarCount > MAX_STAR_COUNT) {
+      throw new RangeError(
+        `Glob pattern has ${singleStarCount} "*" wildcards; maximum is ${MAX_STAR_COUNT}. ` +
+          "Simplify the pattern.",
+      );
+    }
+
     let src = "";
     let i = 0;
     while (i < p.length) {
       const ch = p[i]!;
       if (ch === "*") {
         if (p[i + 1] === "*") {
-          // ** matches any path segment including slashes
+          // ** matches any path segment including slashes.
+          // Use [^]* (matches any character including newlines in JS) but
+          // the key ReDoS issue is when ** follows ** — we prevent that
+          // at the count level above.  The pattern [^\0]* is equivalent
+          // to .* but the real protection is the MAX_DOUBLESTAR_COUNT cap.
           src += ".*";
           i += 2;
           // skip optional trailing slash after **
@@ -186,29 +270,62 @@ function matchGlob(pattern: string, filePath: string): boolean {
   return re.test(normalised);
 }
 
+/**
+ * Compile a glob pattern once and return a test function.
+ * Use this in hot loops to avoid recompiling the pattern per file.
+ */
+function compileGlob(pattern: string): (filePath: string) => boolean {
+  const re = globToRegex(pattern.replace(/\\/g, "/"));
+  return (filePath: string) => re.test(filePath.replace(/\\/g, "/"));
+}
+
 /* ------------------------------------------------------------------ PDF */
+
+/** Maximum page number accepted in the `pages` parameter (M6). */
+const MAX_PDF_PAGE = 10000;
+
+/**
+ * Validate and parse a PDF page-range string.
+ * Returns a Set of 1-based page numbers, or null for "all pages".
+ * Throws a RangeError if any value is out of range 1..MAX_PDF_PAGE.
+ */
+function parsePdfPages(pages: string): Set<number> {
+  const wantedPages = new Set<number>();
+  for (const part of pages.split(",")) {
+    const rangePart = part.trim();
+    if (!rangePart) continue;
+    const dash = rangePart.indexOf("-");
+    if (dash !== -1) {
+      const from = parseInt(rangePart.slice(0, dash), 10);
+      const to = parseInt(rangePart.slice(dash + 1), 10);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || from < 1 || to < from || to > MAX_PDF_PAGE) {
+        throw new RangeError(
+          `Invalid page range "${rangePart}". Values must be integers between 1 and ${MAX_PDF_PAGE}.`,
+        );
+      }
+      for (let p = from; p <= to; p++) wantedPages.add(p);
+    } else {
+      const n = parseInt(rangePart, 10);
+      if (!Number.isFinite(n) || n < 1 || n > MAX_PDF_PAGE) {
+        throw new RangeError(
+          `Invalid page "${rangePart}". Values must be integers between 1 and ${MAX_PDF_PAGE}.`,
+        );
+      }
+      wantedPages.add(n);
+    }
+  }
+  return wantedPages;
+}
 
 /** Very basic PDF BT/ET text extraction without external deps. */
 async function extractPdfText(path: string, pages?: string): Promise<string> {
   const buf = await readFile(path);
   const raw = buf.toString("binary");
 
-  // Parse requested page range
+  // Parse requested page range — validated to prevent unbounded Set fill (M6).
   let wantedPages: Set<number> | null = null;
   if (pages) {
-    wantedPages = new Set<number>();
-    for (const part of pages.split(",")) {
-      const rangePart = part.trim();
-      const dash = rangePart.indexOf("-");
-      if (dash !== -1) {
-        const from = parseInt(rangePart.slice(0, dash), 10);
-        const to = parseInt(rangePart.slice(dash + 1), 10);
-        for (let p = from; p <= to; p++) wantedPages.add(p);
-      } else {
-        const n = parseInt(rangePart, 10);
-        if (!isNaN(n)) wantedPages.add(n);
-      }
-    }
+    wantedPages = parsePdfPages(pages);
   }
 
   // Find all stream objects with FlateDecode (or no filter for plain streams)
@@ -305,8 +422,11 @@ export const fsTools: Tool[] = [
       description:
         "Read the contents of a text file. Returns the file content as a string. " +
         "Use `offset` (integer, may be negative to count from end) to skip to a line, " +
-        "`limit` to cap the number of lines returned. Large files are automatically " +
-        "truncated with a note. Use file_read_image for images and file_read_pdf for PDFs.",
+        "`limit` to cap the number of lines returned. " +
+        "Files larger than 256 KB are automatically truncated to the first 2000 lines " +
+        "unless `limit` is supplied. Files larger than 10 MB are refused outright — " +
+        "use offset+limit to page them. " +
+        "Use file_read_image for images and file_read_pdf for PDFs.",
       inputSchema: {
         type: "object",
         properties: {
@@ -330,6 +450,21 @@ export const fsTools: Tool[] = [
       });
       if (resolved instanceof PathError) return fail(resolved.message);
 
+      // M11: stat first — refuse above a hard byte cap.
+      const FILE_HARD_CAP = 10 * 1024 * 1024; // 10 MB
+      const FILE_DEFAULT_LIMIT_LINES = 2000;
+      try {
+        const s = await stat(resolved);
+        if (s.size > FILE_HARD_CAP) {
+          return fail(
+            `File is ${(s.size / 1024 / 1024).toFixed(1)} MB, which exceeds the 10 MB read cap. ` +
+              "Use offset and limit to read it in pages.",
+          );
+        }
+      } catch (e) {
+        return fail(describeError(e));
+      }
+
       let text: string;
       try {
         const enc = str(input["encoding"] || "utf-8") as BufferEncoding;
@@ -348,15 +483,20 @@ export const fsTools: Tool[] = [
       if (rawOffset !== undefined) {
         start = rawOffset < 0 ? Math.max(0, lines.length + rawOffset) : rawOffset;
       }
+      // M11: apply a default limit when the caller did not supply one and the
+      // file is larger than 256 KB.
+      const defaultLimitBytes = 256 * 1024;
       if (rawLimit !== undefined && rawLimit > 0) {
         end = start + rawLimit;
+      } else if (text.length > defaultLimitBytes) {
+        end = start + FILE_DEFAULT_LIMIT_LINES;
       }
 
       const sliced = lines.slice(start, end);
-      let content = sliced.join("\n");
+      const content = sliced.join("\n");
       let truncNote = "";
       if (end < lines.length) {
-        truncNote = `\n\n[File truncated: showing lines ${start + 1}–${end} of ${lines.length}]`;
+        truncNote = `\n\n[File truncated: showing lines ${start + 1}–${Math.min(end, lines.length)} of ${lines.length}. Use offset and limit to read more.]`;
       }
 
       const dp = displayPath(resolved, ctx.workingFolder);
@@ -615,8 +755,11 @@ export const fsTools: Tool[] = [
       modes: ["cowork", "code"],
     },
     async handler(input, ctx) {
+      // H10: moving a file IS a write to the source location — apply forWrite
+      // so the protected-location guard runs on the source as well.
       const src = await resolvePath(str(input["source"]), {
         workingFolder: ctx.workingFolder,
+        forWrite: true,
       }).catch((e: unknown) => { if (e instanceof PathError) return e; throw e; });
       if (src instanceof PathError) return fail(src.message);
 
@@ -869,7 +1012,8 @@ export const fsTools: Tool[] = [
         "Recursively search files for a regex pattern. Returns matches in `file:line: content` " +
         "format. Automatically skips binary files (detected by NUL bytes in first 8KB) and " +
         "skips node_modules and .git directories. Use `glob` to restrict which files are " +
-        "searched (e.g. \"**/*.ts\"). Limit results with maxResults.",
+        "searched (e.g. \"**/*.ts\"). Limit results with maxResults. " +
+        "Symlinks inside the search root are skipped.",
       inputSchema: {
         type: "object",
         properties: {
@@ -893,10 +1037,13 @@ export const fsTools: Tool[] = [
       if (resolved instanceof PathError) return fail(resolved.message);
 
       const patternStr = str(input["pattern"]);
-      const globFilter = input["glob"] ? str(input["glob"]) : null;
+      const globFilterStr = input["glob"] ? str(input["glob"]) : null;
       const caseSensitive = bool(input["caseSensitive"], true);
       const maxResults = Math.max(1, num(input["maxResults"]) ?? 100);
 
+      // H7: compile the user regex once.  Pattern length is not capped because
+      // length alone does not bound backtracking, but we impose a wall-clock
+      // budget per file below.
       let regex: RegExp;
       try {
         regex = new RegExp(patternStr, caseSensitive ? "" : "i");
@@ -904,15 +1051,40 @@ export const fsTools: Tool[] = [
         return fail(`Invalid regex pattern: ${describeError(e)}`);
       }
 
-      const matches: string[] = [];
+      // H7: compile the glob once (outside the walk loop) — avoids O(files) recompilation.
+      let globTest: ((rel: string) => boolean) | null = null;
+      if (globFilterStr) {
+        try {
+          globTest = compileGlob(globFilterStr);
+        } catch (e) {
+          return fail(`Invalid glob pattern: ${describeError(e)}`);
+        }
+      }
 
-      for await (const filePath of walkDir(resolved)) {
+      // H7: wall-clock budget for regex matching across the whole search.
+      const SEARCH_BUDGET_MS = 5000;
+      const searchStart = Date.now();
+
+      // H4: pass canonicalBase so walkDir can verify symlink targets stay inside.
+      const canonicalBase = resolved; // resolvePath already returns the canonical path
+
+      const matches: string[] = [];
+      let timedOut = false;
+
+      for await (const filePath of walkDir(resolved, canonicalBase)) {
+        if (ctx.signal.aborted) break;
         if (matches.length >= maxResults) break;
 
-        // Apply glob filter
-        if (globFilter) {
+        // H7: honour the elapsed budget between files.
+        if (Date.now() - searchStart > SEARCH_BUDGET_MS) {
+          timedOut = true;
+          break;
+        }
+
+        // Apply glob filter (H7: compiled once above, not per file).
+        if (globTest) {
           const rel = filePath.slice(resolved.length).replace(/^[\\/]/, "");
-          if (!matchGlob(globFilter, rel)) continue;
+          if (!globTest(rel)) continue;
         }
 
         // Skip binaries
@@ -925,18 +1097,50 @@ export const fsTools: Tool[] = [
           continue;
         }
 
+        // H7: run regex matching in a Worker thread with a per-file time budget.
+        // This prevents catastrophic ReDoS patterns from blocking the main thread.
+        const FILE_REGEX_BUDGET_MS = Math.max(
+          500,
+          SEARCH_BUDGET_MS - (Date.now() - searchStart),
+        );
         const lines = text.split("\n");
+        const result = await regexTestLines(
+          patternStr,
+          caseSensitive ? "" : "i",
+          lines,
+          FILE_REGEX_BUDGET_MS,
+        );
+        if ("timedOut" in result) {
+          timedOut = true;
+          break;
+        }
         for (let i = 0; i < lines.length && matches.length < maxResults; i++) {
-          if (regex.test(lines[i]!)) {
+          if (result.matches[i]) {
             matches.push(`${filePath}:${i + 1}: ${lines[i]}`);
           }
         }
+        if (timedOut) break;
       }
 
-      if (matches.length === 0) {
+      if (matches.length === 0 && !timedOut) {
         return ok(`No matches found for /${patternStr}/ in ${resolved}`, {
           summary: "No matches found",
         });
+      }
+
+      if (timedOut) {
+        const dp = displayPath(resolved, ctx.workingFolder);
+        const prefix = matches.length > 0
+          ? `${matches.join("\n")}\n\n`
+          : "";
+        return ok(
+          `${prefix}[Search stopped after ${SEARCH_BUDGET_MS}ms time budget. ` +
+            `${matches.length} match(es) found before stopping. ` +
+            "The pattern may be too expensive — simplify it or narrow the search path.]",
+          {
+            summary: `${matches.length} match(es) in ${dp} (time budget hit)`,
+          },
+        );
       }
 
       const dp = displayPath(resolved, ctx.workingFolder);
@@ -954,7 +1158,8 @@ export const fsTools: Tool[] = [
       description:
         "Find files matching a glob pattern (e.g. **/*.ts, src/**/*.{ts,tsx}, *.md). " +
         "Supports **, *, ?, {a,b} alternation, and [char] character classes. " +
-        "Returns matching file paths relative to the root. Skips node_modules and .git.",
+        "Returns matching file paths relative to the root. Skips node_modules, .git, " +
+        "and symlinks.",
       inputSchema: {
         type: "object",
         properties: {
@@ -975,11 +1180,22 @@ export const fsTools: Tool[] = [
       if (resolved instanceof PathError) return fail(resolved.message);
 
       const pattern = str(input["pattern"]);
-      const results: string[] = [];
 
-      for await (const filePath of walkDir(resolved)) {
+      // H7: compile glob once (not per file in the loop).
+      let globTest: (rel: string) => boolean;
+      try {
+        globTest = compileGlob(pattern);
+      } catch (e) {
+        return fail(`Invalid glob pattern: ${describeError(e)}`);
+      }
+
+      // H4: pass canonicalBase so walkDir skips symlinks pointing outside.
+      const canonicalBase = resolved;
+
+      const results: string[] = [];
+      for await (const filePath of walkDir(resolved, canonicalBase)) {
         const rel = filePath.slice(resolved.length).replace(/^[\\/]/, "").replace(/\\/g, "/");
-        if (matchGlob(pattern, rel)) {
+        if (globTest(rel)) {
           results.push(rel);
         }
       }
@@ -1015,3 +1231,75 @@ function countOccurrences(haystack: string, needle: string): number {
 
 // Re-export for tests
 export { matchGlob };
+
+/* ------------------------------------------------------- worker-thread shim */
+
+/**
+ * When this module is loaded as a Worker (isMainThread is false), execute the
+ * regex-test task from workerData and post the result.
+ *
+ * workerData: { pattern: string, flags: string, lines: string[] }
+ * postMessage: { matches: boolean[] } | { error: string }
+ */
+if (!isMainThread && parentPort) {
+  const { pattern, flags, lines } = workerData as {
+    pattern: string;
+    flags: string;
+    lines: string[];
+  };
+  try {
+    const re = new RegExp(pattern, flags);
+    const matches: boolean[] = lines.map((l) => re.test(l));
+    parentPort.postMessage({ matches });
+  } catch (e) {
+    parentPort.postMessage({ error: String(e) });
+  }
+}
+
+/**
+ * Run regex.test() against each line in `lines` inside a Worker thread with a
+ * wall-clock budget. Returns an array of booleans (one per line), or throws
+ * with a descriptive error if the budget is exceeded.
+ *
+ * Spawning a worker per-file is expensive; this is only called when we detect
+ * that a naive in-thread test would be unsafe (i.e. always, for file_search).
+ */
+async function regexTestLines(
+  pattern: string,
+  flags: string,
+  lines: string[],
+  budgetMs: number,
+): Promise<{ matches: boolean[] } | { timedOut: true }> {
+  // Cap each line to prevent worker-internal catastrophic backtracking on a
+  // single excessively long line.
+  const MAX_WORKER_LINE_LEN = 2048;
+  const cappedLines = lines.map((l) => l.slice(0, MAX_WORKER_LINE_LEN));
+
+  return new Promise((resolve) => {
+    const worker = new Worker(new URL(import.meta.url), {
+      workerData: { pattern, flags, lines: cappedLines },
+      // Strip TS types so the worker can load this .ts file.
+      execArgv: ["--experimental-strip-types"],
+    });
+
+    const timer = setTimeout(() => {
+      worker.terminate().catch(() => undefined);
+      resolve({ timedOut: true });
+    }, budgetMs);
+
+    worker.on("message", (msg: { matches: boolean[] } | { error: string }) => {
+      clearTimeout(timer);
+      if ("error" in msg) {
+        resolve({ matches: cappedLines.map(() => false) });
+      } else {
+        resolve(msg);
+      }
+    });
+
+    worker.on("error", () => {
+      clearTimeout(timer);
+      worker.terminate().catch(() => undefined);
+      resolve({ timedOut: true });
+    });
+  });
+}

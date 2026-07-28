@@ -11,6 +11,7 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { StringDecoder } from "node:string_decoder";
 import type { Tool } from "./registry.ts";
 import { ok, fail, describeError } from "./registry.ts";
 
@@ -22,6 +23,7 @@ type ShellName = "cmd" | "powershell" | "bash";
 
 interface Job {
   id: string;
+  sessionId: string;
   label: string;
   command: string;
   status: JobStatus;
@@ -70,6 +72,9 @@ function killTree(child: ReturnType<typeof spawn>) {
   }
 }
 
+/** Maximum number of completed jobs to keep per session before eviction. */
+const MAX_RESOLVED_PER_SESSION = 200;
+
 export class JobRegistry {
   private jobs = new Map<string, Job>();
 
@@ -79,8 +84,12 @@ export class JobRegistry {
     cwd: string | undefined,
     env: Record<string, string> | undefined,
     label: string,
+    sessionId: string,
   ): string {
     const id = randomUUID();
+
+    // Evict oldest resolved jobs for this session if over the cap.
+    this._evictIfNeeded(sessionId);
 
     const { file, args } = shellArgs(shell, command);
     const mergedEnv = env ? { ...process.env, ...env } : undefined;
@@ -94,6 +103,7 @@ export class JobRegistry {
 
     const job: Job = {
       id,
+      sessionId,
       label: label || command.slice(0, 80),
       command,
       status: "running",
@@ -111,6 +121,11 @@ export class JobRegistry {
     let stdoutBytes = 0;
     let stderrBytes = 0;
 
+    // Use StringDecoder to avoid U+FFFD from multi-byte sequences split across
+    // chunk boundaries.
+    const stdoutDecoder = new StringDecoder("utf8");
+    const stderrDecoder = new StringDecoder("utf8");
+
     child.stdout.on("data", (chunk: Buffer) => {
       const remaining = MAX_BYTES - stdoutBytes;
       if (remaining <= 0) {
@@ -118,7 +133,7 @@ export class JobRegistry {
         return;
       }
       const slice = remaining < chunk.length ? chunk.subarray(0, remaining) : chunk;
-      job.stdout += slice.toString("utf8");
+      job.stdout += stdoutDecoder.write(slice);
       stdoutBytes += slice.length;
       if (stdoutBytes >= MAX_BYTES) job.stdoutTruncated = true;
     });
@@ -130,13 +145,16 @@ export class JobRegistry {
         return;
       }
       const slice = remaining < chunk.length ? chunk.subarray(0, remaining) : chunk;
-      job.stderr += slice.toString("utf8");
+      job.stderr += stderrDecoder.write(slice);
       stderrBytes += slice.length;
       if (stderrBytes >= MAX_BYTES) job.stderrTruncated = true;
     });
 
     const settle = (status: JobStatus, exitCode: number | null | undefined) => {
       if (job.status !== "running") return;
+      // Flush any remaining bytes held in the decoders.
+      job.stdout += stdoutDecoder.end();
+      job.stderr += stderrDecoder.end();
       job.status = status;
       job.endedAt = Date.now();
       job.exitCode = exitCode ?? null;
@@ -159,21 +177,51 @@ export class JobRegistry {
     return id;
   }
 
-  get(id: string): Job | undefined {
-    return this.jobs.get(id);
+  /** Evict oldest resolved jobs for a session if over the cap. */
+  private _evictIfNeeded(sessionId: string): void {
+    const sessionJobs = [...this.jobs.values()]
+      .filter((j) => j.sessionId === sessionId && j.status !== "running")
+      .sort((a, b) => (a.endedAt ?? a.startedAt) - (b.endedAt ?? b.startedAt));
+
+    const excess = sessionJobs.length - MAX_RESOLVED_PER_SESSION + 1;
+    if (excess > 0) {
+      for (const job of sessionJobs.slice(0, excess)) {
+        this.jobs.delete(job.id);
+      }
+    }
   }
 
-  list(includeResolved: boolean): Job[] {
-    const all = [...this.jobs.values()];
+  /**
+   * Get a job by id, but only if it belongs to the given session.
+   * Returns undefined for both "not found" and "wrong session" so
+   * cross-session access is indistinguishable from a missing job.
+   */
+  get(id: string, sessionId?: string): Job | undefined {
+    const job = this.jobs.get(id);
+    if (!job) return undefined;
+    if (sessionId !== undefined && job.sessionId !== sessionId) return undefined;
+    return job;
+  }
+
+  list(includeResolved: boolean, sessionId?: string): Job[] {
+    let all = [...this.jobs.values()];
+    // Filter to this session's jobs only.
+    if (sessionId !== undefined) {
+      all = all.filter((j) => j.sessionId === sessionId);
+    }
     if (includeResolved) return all;
     return all.filter((j) => j.status === "running");
   }
 
-  async waitFor(id: string, timeoutSeconds: number): Promise<Job | undefined> {
-    const job = this.jobs.get(id);
+  async waitFor(id: string, timeoutSeconds: number, sessionId?: string): Promise<Job | undefined> {
+    const job = this.get(id, sessionId);
     if (!job) return undefined;
     if (job.status !== "running") return job;
     if (timeoutSeconds <= 0) return job;
+
+    // Clamp to avoid setTimeout overflow (max ~24.8 days).
+    const maxMs = 2_147_483_647;
+    const waitMs = Math.min(timeoutSeconds * 1000, maxMs);
 
     return new Promise<Job>((resolve) => {
       let timer: NodeJS.Timeout | null = null;
@@ -189,12 +237,12 @@ export class JobRegistry {
         const idx = job.waiters.indexOf(done);
         if (idx !== -1) job.waiters.splice(idx, 1);
         resolve(job);
-      }, timeoutSeconds * 1000);
+      }, waitMs);
     });
   }
 
-  kill(id: string, force: boolean): boolean {
-    const job = this.jobs.get(id);
+  kill(id: string, force: boolean, sessionId?: string): boolean {
+    const job = this.get(id, sessionId);
     if (!job) return false;
     if (job.status !== "running" || !job.child) return false;
 
@@ -213,8 +261,8 @@ export class JobRegistry {
     return true;
   }
 
-  clear(id: string): "ok" | "running" | "not_found" {
-    const job = this.jobs.get(id);
+  clear(id: string, sessionId?: string): "ok" | "running" | "not_found" {
+    const job = this.get(id, sessionId);
     if (!job) return "not_found";
     if (job.status === "running") return "running";
     this.jobs.delete(id);
@@ -288,7 +336,7 @@ export const jobTools: Tool[] = [
       const cwd = cwdRaw ?? ctx.workingFolder ?? undefined;
 
       try {
-        const jobId = jobRegistry.start(command, shellName, cwd, env, label);
+        const jobId = jobRegistry.start(command, shellName, cwd, env, label, ctx.sessionId);
         return ok(`Started background job ${jobId}\ncommand: ${command}`, {
           summary: `Started background job: ${label || command.slice(0, 60)}`,
         });
@@ -320,15 +368,15 @@ export const jobTools: Tool[] = [
       modes: ["cowork", "code"],
     },
 
-    handler: async (input, _ctx) => {
+    handler: async (input, ctx) => {
       const jobId = input["jobId"] as string;
       const wait = (input["wait"] as number | undefined) ?? 0;
 
-      let job = jobRegistry.get(jobId);
+      let job = jobRegistry.get(jobId, ctx.sessionId);
       if (!job) return fail(`Job not found: ${jobId}`);
 
       if (wait > 0 && job.status === "running") {
-        job = (await jobRegistry.waitFor(jobId, wait)) ?? job;
+        job = (await jobRegistry.waitFor(jobId, wait, ctx.sessionId)) ?? job;
       }
 
       return ok(jobSummaryText(job), { summary: `Job ${jobId}: ${job.status}` });
@@ -358,16 +406,16 @@ export const jobTools: Tool[] = [
       modes: ["cowork", "code"],
     },
 
-    handler: async (input, _ctx) => {
+    handler: async (input, ctx) => {
       const jobId = input["jobId"] as string;
       const wait = (input["wait"] as number | undefined) ?? 0;
       const maxBytes = (input["maxBytes"] as number | undefined) ?? MAX_BYTES;
 
-      let job = jobRegistry.get(jobId);
+      let job = jobRegistry.get(jobId, ctx.sessionId);
       if (!job) return fail(`Job not found: ${jobId}`);
 
       if (wait > 0 && job.status === "running") {
-        job = (await jobRegistry.waitFor(jobId, wait)) ?? job;
+        job = (await jobRegistry.waitFor(jobId, wait, ctx.sessionId)) ?? job;
       }
 
       let stdout = job.stdout;
@@ -425,9 +473,9 @@ export const jobTools: Tool[] = [
       modes: ["cowork", "code"],
     },
 
-    handler: async (input, _ctx) => {
+    handler: async (input, ctx) => {
       const includeResolved = (input["includeResolved"] as boolean | undefined) ?? true;
-      const jobs = jobRegistry.list(includeResolved);
+      const jobs = jobRegistry.list(includeResolved, ctx.sessionId);
 
       if (jobs.length === 0) {
         return ok("No jobs.", { summary: "0 jobs" });
@@ -464,17 +512,17 @@ export const jobTools: Tool[] = [
       modes: ["cowork", "code"],
     },
 
-    handler: async (input, _ctx) => {
+    handler: async (input, ctx) => {
       const jobId = input["jobId"] as string;
       const force = (input["force"] as boolean | undefined) ?? false;
 
-      const job = jobRegistry.get(jobId);
+      const job = jobRegistry.get(jobId, ctx.sessionId);
       if (!job) return fail(`Job not found: ${jobId}`);
       if (job.status !== "running") {
         return fail(`Job ${jobId} is not running (status: ${job.status})`);
       }
 
-      const killed = jobRegistry.kill(jobId, force);
+      const killed = jobRegistry.kill(jobId, force, ctx.sessionId);
       if (!killed) return fail(`Failed to kill job ${jobId}`);
 
       return ok(`Killed job ${jobId}`, { summary: `Killed job ${jobId}` });
@@ -501,10 +549,10 @@ export const jobTools: Tool[] = [
       modes: ["cowork", "code"],
     },
 
-    handler: async (input, _ctx) => {
+    handler: async (input, ctx) => {
       const jobId = input["jobId"] as string;
 
-      const result = jobRegistry.clear(jobId);
+      const result = jobRegistry.clear(jobId, ctx.sessionId);
       switch (result) {
         case "ok":
           return ok(`Cleared job ${jobId}`, { summary: `Cleared job ${jobId}` });

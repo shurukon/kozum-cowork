@@ -1,0 +1,208 @@
+.wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+  background: var(--bg-primary);
+  border-radius: var(--r-xl);
+  overflow: hidden;
+}
+
+/* -------------------------------------------------------- transcript --- */
+
+.transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-8) 0;
+}
+
+.messages {
+  max-width: var(--content-max-w);
+  margin: 0 auto;
+  padding: 0 var(--sp-10);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+
+.emptyHint {
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  padding-top: var(--sp-20);
+}
+
+/* ----------------------------------------------------- jump pill --- */
+
+.jumpPill {
+  position: absolute;
+  inset-block-end: 96px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 30px;
+  padding: 0 var(--sp-6);
+  border-radius: var(--r-full);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-md);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+  z-index: var(--z-sticky);
+  animation: kz-rise var(--dur-fast) var(--ease-out) both;
+}
+
+.jumpPill:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* -------------------------------------------------------- composer --- */
+
+.composerWrap {
+  flex: 0 0 auto;
+  padding: var(--sp-6) var(--sp-8) var(--sp-8);
+  background: var(--bg-primary);
+}
+
+.composer {
+  max-width: var(--composer-max-w);
+  margin: 0 auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: var(--sp-6) var(--sp-6) var(--sp-4);
+  transition: border-color var(--dur-normal) var(--ease-out),
+    box-shadow var(--dur-normal) var(--ease-out);
+}
+
+.composer:focus-within {
+  border-color: rgba(61, 127, 255, 0.45);
+  box-shadow: 0 0 0 1px rgba(61, 127, 255, 0.25), 0 0 28px rgba(61, 127, 255, 0.1);
+}
+
+.input {
+  display: block;
+  width: 100%;
+  min-height: 26px;
+  max-height: 260px;
+  resize: none;
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  color: var(--text-primary);
+  background: none;
+  overflow-y: auto;
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+.input:disabled {
+  opacity: 0.6;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  margin-top: var(--sp-4);
+}
+
+.rowRight {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-inline-start: auto;
+}
+
+.attach {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.attach:not(:disabled):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.attach:disabled {
+  opacity: 0.4;
+}
+
+.model {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-base);
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.model:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.send {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-spring);
+}
+
+.send:not(:disabled) {
+  background: var(--accent-gradient);
+  color: #fff;
+  box-shadow: 0 0 14px var(--glow-blue);
+}
+
+.send:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 20px var(--glow-blue), 0 0 34px var(--glow-teal);
+}
+
+.send:disabled {
+  opacity: 0.55;
+}
+
+.stop {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md);
+  background: var(--error-soft);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--error);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.stop:hover {
+  background: var(--error);
+  color: #fff;
+}
