@@ -173,7 +173,7 @@ jobs:
               && wc -c /tmp/main-from-asar.js \
               || echo "(extract failed)"
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Inventory
         shell: bash
