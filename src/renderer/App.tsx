@@ -42,6 +42,10 @@ import { useSessionStore } from "./store/session.ts";
 import { useTheme } from "./hooks/useTheme.ts";
 import styles from "./App.module.css";
 
+/**
+ * Real session statistics are not collected yet, so Code home renders its
+ * documented empty state rather than invented numbers.
+ */
 const ZERO_STATS: CodeHomeStats = {
   sessions: 0,
   messages: 0,
@@ -49,9 +53,7 @@ const ZERO_STATS: CodeHomeStats = {
   activeDays: 0,
   currentStreak: 0,
   longestStreak: 0,
-  peakHour: null,
-  favouriteModel: null,
-  activity: [],
+  activityGrid: [],
 };
 
 export function App() {
@@ -444,7 +446,7 @@ export function App() {
           <RightPanel
             tasks={modeState.tasks}
             workingFolder={null}
-            connectors={connectors.filter((c) => c.enabled).map((c) => c.name)}
+            connectors={connectors.filter((c) => c.enabled)}
           />
         )}
       </div>

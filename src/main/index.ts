@@ -265,7 +265,17 @@ if (!app.requestSingleInstanceLock()) {
       skills,
       tasks,
       projects,
-      dialog,
+      // Electron types `properties` as a literal union rather than string[],
+      // so the Dialog object is not structurally assignable to DialogFacade.
+      // Adapt it here instead of loosening the facade.
+      dialog: {
+        showOpenDialog: (options: { properties: string[] }) =>
+          dialog.showOpenDialog({
+            properties: options.properties as Array<
+              "openFile" | "openDirectory" | "multiSelections" | "createDirectory"
+            >,
+          }),
+      },
     });
 
     // ── window chrome IPC ────────────────────────────────────────────────────
