@@ -17,14 +17,21 @@ if [ -z "${GH_TOKEN:-}" ]; then
   exit 2
 fi
 
+# Pin to the run for the commit we just pushed. Taking "the latest run"
+# races: if the new run has not registered yet we would read the *previous*
+# completed run and report a stale conclusion as if it were this one.
+SHA="$(git rev-parse HEAD)"
+echo "watching runs for ${SHA:0:9}"
+
 for i in $(seq 1 "$MAX"); do
-  curl -s "${AUTH[@]}" "${API}/actions/runs?per_page=1" -o /tmp/ci_runs.json
+  curl -s "${AUTH[@]}" "${API}/actions/runs?per_page=10" -o /tmp/ci_runs.json
   # Process substitution is unavailable in some sandboxes, so round-trip
   # through a plain file instead of `read < <(...)`.
-  node -e '
+  SHA="$SHA" node -e '
     const r = require("/tmp/ci_runs.json");
-    const x = (r.workflow_runs || [])[0];
-    if (!x) { console.log("none - - -"); process.exit(0); }
+    const want = process.env.SHA;
+    const x = (r.workflow_runs || []).find(w => w.head_sha === want);
+    if (!x) { console.log("pending - - -"); process.exit(0); }
     console.log([x.status, x.conclusion ?? "-", x.id, x.run_number].join(" "));
   ' > /tmp/ci_state.txt
   STATUS=$(cut -d' ' -f1 /tmp/ci_state.txt)
@@ -33,11 +40,12 @@ for i in $(seq 1 "$MAX"); do
   NUM=$(cut -d' ' -f4 /tmp/ci_state.txt)
   printf "\r[%02d] run #%s  %s/%s        " "$i" "$NUM" "$STATUS" "$CONCL"
   [ "$STATUS" = "completed" ] && break
+  [ "$STATUS" = "pending" ] && { sleep 5; continue; }
   sleep 15
 done
 echo
 
-if [ "${RID:-}" = "-" ] || [ -z "${RID:-}" ]; then
+if [ "${RID:-}" = "-" ] || [ -z "${RID:-}" ] || [ "${STATUS:-}" = "pending" ]; then
   echo "no run found" >&2
   exit 1
 fi
