@@ -42,7 +42,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          node --experimental-strip-types --test tests/integration/*.test.ts 2>&1 | tee /tmp/tests.log
+          node --experimental-strip-types --test tests/integration/*.test.ts tests/unit/*.test.ts 2>&1 | tee /tmp/tests.log
         continue-on-error: true
 
       - name: Capability gate validation

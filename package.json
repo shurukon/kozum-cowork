@@ -1,6 +1,6 @@
 {
   "name": "kozum-cowork",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Kozum Cowork \u2014 a provider-agnostic desktop agent for Windows. Cowork and Code modes, no VM required.",
   "main": "./out/main/index.js",
   "author": "Kozum",
@@ -15,7 +15,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "test": "node --experimental-strip-types --test tests/**/*.test.ts",
+    "test": "node --experimental-strip-types --test tests/integration/*.test.ts tests/unit/*.test.ts",
     "test:capabilities": "node --experimental-strip-types scripts/validate-capabilities.ts",
     "verify": "npm run typecheck && npm run test && npm run test:capabilities",
     "dev": "electron-vite dev",
