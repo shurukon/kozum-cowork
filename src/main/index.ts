@@ -150,9 +150,15 @@ if (!app.requestSingleInstanceLock()) {
     // ── skills ──────────────────────────────────────────────────────────────
     const skills = new SkillStore();
     try {
-      const builtinSkillsDir = join(app.getAppPath(), "skills");
-      if (existsSync(builtinSkillsDir)) {
-        await skills.discover([builtinSkillsDir]);
+      // Bundled skills ship inside bundled/skills/ (packaged in app.asar).
+      // The legacy "skills/" root is kept for back-compat and manual installs.
+      const bundledSkillsDir = join(app.getAppPath(), "bundled", "skills");
+      const legacySkillsDir = join(app.getAppPath(), "skills");
+      const skillRoots: string[] = [];
+      if (existsSync(bundledSkillsDir)) skillRoots.push(bundledSkillsDir);
+      if (existsSync(legacySkillsDir)) skillRoots.push(legacySkillsDir);
+      if (skillRoots.length > 0) {
+        await skills.discover(skillRoots);
       }
     } catch (e) {
       console.error("[boot] Skill discovery failed:", e);
@@ -181,6 +187,23 @@ if (!app.requestSingleInstanceLock()) {
       await plugins.list();
     } catch (e) {
       console.error("[boot] Plugin load failed:", e);
+    }
+    // Register bundled (builtin) plugins — each subdirectory of bundled/plugins/
+    // that contains a .claude-plugin/plugin.json is registered in memory.
+    try {
+      const { readdir: readdirAsync } = await import("node:fs/promises");
+      const bundledPluginsDir = join(app.getAppPath(), "bundled", "plugins");
+      if (existsSync(bundledPluginsDir)) {
+        const pluginDirEntries = await readdirAsync(bundledPluginsDir, { withFileTypes: true });
+        for (const entry of pluginDirEntries) {
+          if (!entry.isDirectory()) continue;
+          const pluginPath = join(bundledPluginsDir, entry.name);
+          const err = await plugins.registerBuiltin(pluginPath);
+          if (err) console.warn(`[boot] Builtin plugin skipped: ${err}`);
+        }
+      }
+    } catch (e) {
+      console.error("[boot] Bundled plugin registration failed:", e);
     }
 
     // ── browser ─────────────────────────────────────────────────────────────

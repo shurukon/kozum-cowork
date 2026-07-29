@@ -10,6 +10,7 @@ files:
   - out/**/*
   - resources/**/*
   - package.json
+  - bundled/**/*
 
 # Native modules must be unpacked to be loadable from inside the asar.
 asarUnpack:

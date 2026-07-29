@@ -22,6 +22,20 @@ import { join } from "node:path";
 const RENDERER = join(import.meta.dirname, "..", "..", "src", "renderer");
 const APP = readFileSync(join(RENDERER, "App.tsx"), "utf8");
 
+// Dialog files that now own the bridge calls that moved out of App.tsx.
+const SCHEDULE_DIALOG = readFileSync(
+  join(RENDERER, "components", "ScheduleDialog.tsx"),
+  "utf8",
+);
+const CONNECTOR_DIALOG = readFileSync(
+  join(RENDERER, "components", "ConnectorDialog.tsx"),
+  "utf8",
+);
+const PLUGIN_DIALOG = readFileSync(
+  join(RENDERER, "components", "PluginDialog.tsx"),
+  "utf8",
+);
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir)) {
     const p = join(dir, e);
@@ -64,7 +78,8 @@ describe("no placeholder handlers survive", () => {
 });
 
 describe("App.tsx actually calls the backend", () => {
-  const required = [
+  // These calls must appear in App.tsx (or via `const b = bridge(); b.x.y()`)
+  const requiredInApp = [
     "bridge().settings.get",
     "bridge().settings.set",
     "bridge().providers.presets",
@@ -78,17 +93,14 @@ describe("App.tsx actually calls the backend", () => {
     "bridge().sessions.list",
     "bridge().sessions.onEvent",
     "bridge().schedule.list",
-    "bridge().schedule.create",
     "bridge().mcp.list",
-    "bridge().mcp.add",
     "bridge().plugins.list",
-    "bridge().plugins.installFromUrl",
     "bridge().skills.list",
     "bridge().projects.create",
     "bridge().dialog.selectFolder",
   ];
 
-  for (const call of required) {
+  for (const call of requiredInApp) {
     it(`calls ${call}`, () => {
       // Tolerate `const b = bridge(); b.x.y()` by also accepting the method path.
       const method = call.replace("bridge().", "");
@@ -98,6 +110,37 @@ describe("App.tsx actually calls the backend", () => {
       );
     });
   }
+
+  // These three calls moved into their respective dialog components.
+  // The guard now confirms they exist there.
+
+  it("calls bridge().schedule.create (in ScheduleDialog)", () => {
+    assert.ok(
+      SCHEDULE_DIALOG.includes("bridge().schedule.create"),
+      "ScheduleDialog.tsx never calls bridge().schedule.create",
+    );
+  });
+
+  it("calls bridge().mcp.add (in ConnectorDialog)", () => {
+    assert.ok(
+      CONNECTOR_DIALOG.includes("bridge().mcp.add"),
+      "ConnectorDialog.tsx never calls bridge().mcp.add",
+    );
+  });
+
+  it("calls bridge().plugins.installFromUrl (in PluginDialog)", () => {
+    assert.ok(
+      PLUGIN_DIALOG.includes("bridge().plugins.installFromUrl"),
+      "PluginDialog.tsx never calls bridge().plugins.installFromUrl",
+    );
+  });
+
+  it("calls bridge().dialog.selectFolder (in ScheduleDialog for working folder)", () => {
+    assert.ok(
+      SCHEDULE_DIALOG.includes("bridge().dialog.selectFolder"),
+      "ScheduleDialog.tsx never calls bridge().dialog.selectFolder",
+    );
+  });
 });
 
 describe("navigation and settings reachability", () => {

@@ -1,0 +1,6 @@
+{
+  "name": "kozum-engineering",
+  "description": "Engineering plugin for Kozum Cowork — code review, debugging, refactoring, and specialist subagents for security, backend, frontend, database, and testing work.",
+  "version": "1.0.0",
+  "author": "Kozum"
+}

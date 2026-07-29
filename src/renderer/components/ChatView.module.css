@@ -206,3 +206,30 @@
   background: var(--error);
   color: #fff;
 }
+
+/* ── In-flight indicator ─────────────────────────────────────────────── */
+
+/*
+ * A thin sweeping accent line at the composer's bottom edge while a turn is
+ * running. Position is absolute within .composerWrap (which is relative).
+ * Uses kz-sweep from global.css; respects reduced-motion via dur token collapse.
+ */
+.composerInflight {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.composerInflightBar {
+  position: absolute;
+  inset-block: 0;
+  width: 30%;
+  background: var(--accent-gradient);
+  border-radius: var(--r-full);
+  animation: kz-sweep 1.6s var(--ease-in-out) infinite;
+  opacity: 0.8;
+}

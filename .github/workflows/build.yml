@@ -53,6 +53,14 @@ jobs:
           node --experimental-strip-types scripts/validate-capabilities.ts 2>&1 | tee /tmp/caps.log
         continue-on-error: true
 
+      - name: Component tests (vitest + jsdom)
+        id: component
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:component 2>&1 | tee /tmp/component.log
+        continue-on-error: true
+
       - name: Report
         run: |
           {
@@ -63,6 +71,7 @@ jobs:
             echo "| typecheck | ${{ steps.typecheck.outcome }} |"
             echo "| tests | ${{ steps.tests.outcome }} |"
             echo "| capability gate | ${{ steps.caps.outcome }} |"
+            echo "| component tests | ${{ steps.component.outcome }} |"
             echo ""
             echo "<details><summary>typecheck log</summary>"
             echo ""; echo '```'; tail -80 /tmp/typecheck.log 2>/dev/null || echo "(none)"; echo '```'
@@ -74,6 +83,10 @@ jobs:
             echo ""
             echo "<details><summary>capability log</summary>"
             echo ""; echo '```'; tail -60 /tmp/caps.log 2>/dev/null || echo "(none)"; echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details><summary>component test log</summary>"
+            echo ""; echo '```'; tail -120 /tmp/component.log 2>/dev/null || echo "(none)"; echo '```'
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -92,10 +105,55 @@ jobs:
           if-no-files-found: warn
 
       - name: Fail if anything broke
-        if: steps.typecheck.outcome == 'failure' || steps.tests.outcome == 'failure' || steps.caps.outcome == 'failure'
+        if: steps.typecheck.outcome == 'failure' || steps.tests.outcome == 'failure' || steps.caps.outcome == 'failure' || steps.component.outcome == 'failure'
         run: |
           echo "::error::verify failed — see the job summary"
           exit 1
+
+  e2e:
+    name: end-to-end (Playwright + Electron)
+    needs: verify
+    runs-on: ubuntu-latest
+    # New and unverified — do not block the installer on E2E failures yet.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build app
+        run: npm run build
+
+      - name: Run E2E tests (xvfb)
+        shell: bash
+        run: |
+          set -o pipefail
+          xvfb-run -a npm run test:e2e 2>&1 | tee /tmp/e2e.log
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: warn
+
+      - name: Upload E2E log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: /tmp/e2e.log
+          if-no-files-found: warn
 
   build-windows:
     name: windows installer
@@ -172,6 +230,36 @@ jobs:
             npx asar extract-file release/win-unpacked/resources/app.asar out/main/index.js /tmp/main-from-asar.js 2>/dev/null \
               && wc -c /tmp/main-from-asar.js \
               || echo "(extract failed)"
+            echo '```'
+            echo ""
+            echo "### Bundled skills present in app.asar"
+            echo '```'
+            for skill in open-design ui-ux-pro-max app-testing document-craft; do
+              path="bundled/skills/${skill}/SKILL.md"
+              if npx asar list release/win-unpacked/resources/app.asar 2>/dev/null | grep -q "$path"; then
+                echo "PRESENT: $path"
+              else
+                echo "MISSING: $path"
+              fi
+            done
+            echo '```'
+            echo ""
+            echo "### Bundled plugins present in app.asar"
+            echo '```'
+            manifest_path="bundled/plugins/kozum-engineering/.claude-plugin/plugin.json"
+            if npx asar list release/win-unpacked/resources/app.asar 2>/dev/null | grep -q "$manifest_path"; then
+              echo "PRESENT: $manifest_path"
+            else
+              echo "MISSING: $manifest_path"
+            fi
+            for agent in security backend frontend database testing; do
+              agent_path="bundled/plugins/kozum-engineering/agents/${agent}.md"
+              if npx asar list release/win-unpacked/resources/app.asar 2>/dev/null | grep -q "$agent_path"; then
+                echo "PRESENT: $agent_path"
+              else
+                echo "MISSING: $agent_path"
+              fi
+            done
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 

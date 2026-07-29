@@ -1,26 +1,30 @@
 /*
- * CodeHome — Code-mode home screen with stats overview and activity heat-grid.
+ * CodeHome — Code-mode home screen.
+ *
+ * Stats grid and heat-map removed. Clean greeting + composer.
+ * Composer layout mirrors HomeView.
  */
 
 .wrap {
   flex: 1;
   min-width: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
+  display: grid;
+  place-items: center;
   overflow-y: auto;
-  padding: var(--sp-20) var(--sp-12) var(--sp-16);
+  padding: var(--sp-16) var(--sp-10);
   background: var(--bg-primary);
 }
 
 .inner {
   width: 100%;
-  max-width: var(--content-max-w);
+  max-width: var(--composer-max-w);
+  /* Sit slightly above true centre — optically centred beats mathematically
+     centred when there is a tall empty area below. */
+  transform: translateY(-6vh);
+  animation: kz-rise var(--dur-slow) var(--ease-out) both;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-12);
+  gap: var(--sp-10);
 }
 
 /* ─── Greeting ─────────────────────────────────────────────────────────── */
@@ -28,150 +32,167 @@
 .heading {
   display: flex;
   align-items: center;
-  gap: var(--sp-4);
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-semibold);
+  gap: var(--sp-6);
+  font-family: var(--font-serif);
+  font-size: var(--fs-display);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-tight);
   letter-spacing: var(--tracking-tight);
   color: var(--text-primary);
-  line-height: var(--lh-tight);
 }
 
 .mark {
   flex: 0 0 auto;
   border-radius: var(--r-sm);
+  filter: drop-shadow(0 0 10px var(--glow-blue));
 }
 
-/* ─── Stats grid ────────────────────────────────────────────────────────── */
+/* ─── Composer shell ────────────────────────────────────────────────────── */
 
-.statsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: var(--sp-4);
+/*
+ * Two-layer structure matching HomeView's composerShell: an outer tray and
+ * an inner card. The in-flight indicator is appended inside the shell.
+ */
+.composerShell {
+  position: relative;
+  background: rgba(255, 255, 255, 0.022);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-2xl);
+  padding: 5px 5px 0;
+  overflow: hidden; /* contain the in-flight indicator */
 }
 
-.statCard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-6);
+.composer {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  transition: border-color var(--dur-fast) var(--ease-out),
-    background var(--dur-fast) var(--ease-out);
+  border-radius: var(--r-xl);
+  padding: var(--sp-6) var(--sp-6) var(--sp-4);
+  transition: border-color var(--dur-normal) var(--ease-out),
+    box-shadow var(--dur-normal) var(--ease-out);
 }
 
-.statCard:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-elevated);
+.composer:focus-within {
+  border-color: rgba(61, 127, 255, 0.45);
+  box-shadow: 0 0 0 1px rgba(61, 127, 255, 0.25), 0 0 28px rgba(61, 127, 255, 0.1);
 }
 
-.statLabel {
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
+/* When a turn is running the composer dims slightly */
+.composerRunning {
+  opacity: 0.75;
 }
 
-.statValue {
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-semibold);
+.input {
+  display: block;
+  width: 100%;
+  min-height: 26px;
+  max-height: 260px;
+  resize: none;
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
   color: var(--text-primary);
-  line-height: var(--lh-tight);
-  font-variant-numeric: tabular-nums;
+  background: none;
+  overflow-y: auto;
 }
 
-.statValueEmpty {
+.input::placeholder {
   color: var(--text-muted);
 }
 
-.statSub {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-}
-
-/* ─── Heat grid ─────────────────────────────────────────────────────────── */
-
-.heatSection {
+.row {
   display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
+  align-items: center;
+  margin-top: var(--sp-4);
 }
 
-.heatTitle {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--text-secondary);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-}
-
-.heatGrid {
-  display: flex;
-  gap: var(--sp-1);
-  flex-wrap: wrap;
-}
-
-.heatWeek {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-}
-
-.heatCell {
-  width: 14px;
-  height: 14px;
-  border-radius: var(--r-xs);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  transition: background var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out);
-}
-
-.heatLevel1 {
-  background: var(--accent-softer);
-  border-color: transparent;
-}
-
-.heatLevel2 {
-  background: rgba(61, 127, 255, 0.25);
-  border-color: transparent;
-}
-
-.heatLevel3 {
-  background: rgba(61, 127, 255, 0.5);
-  border-color: transparent;
-}
-
-.heatLevel4 {
-  background: var(--accent-primary);
-  border-color: transparent;
-}
-
-.heatLegend {
+.rowRight {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  margin-top: var(--sp-3);
+  margin-left: auto;
 }
 
-.heatLegendLabel {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
+.attach {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
-.heatLegendCells {
+.attach:not(:disabled):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.attach:disabled {
+  opacity: 0.4;
+}
+
+.model {
   display: flex;
-  gap: var(--sp-1);
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-base);
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
-/* ─── Empty state ───────────────────────────────────────────────────────── */
+.model:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 
-.emptyHint {
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  text-align: center;
-  padding: var(--sp-8) 0;
-  line-height: var(--lh-snug);
+.send {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md);
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-spring);
+}
+
+.send:not(:disabled) {
+  background: var(--accent-gradient);
+  color: #fff;
+  box-shadow: 0 0 14px var(--glow-blue);
+}
+
+.send:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 20px var(--glow-blue), 0 0 34px var(--glow-teal);
+}
+
+.send:disabled {
+  opacity: 0.55;
+}
+
+/* ─── In-flight indicator ───────────────────────────────────────────────── */
+
+/*
+ * A thin sweeping accent line at the composer's bottom edge while a turn
+ * runs. Uses kz-sweep defined in global.css; respects reduced-motion via
+ * the duration token collapse.
+ */
+.inflight {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  width: 30%;
+  height: 2px;
+  background: var(--accent-gradient);
+  border-radius: var(--r-full);
+  animation: kz-sweep 1.6s var(--ease-in-out) infinite;
+  opacity: 0.85;
 }

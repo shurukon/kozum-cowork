@@ -30,7 +30,7 @@ import { bridge } from "./bridge.ts";
 import { TitleBar } from "./components/TitleBar.tsx";
 import { Sidebar, type NavKey } from "./components/Sidebar.tsx";
 import { HomeView } from "./components/HomeView.tsx";
-import { CodeHome, type CodeHomeStats } from "./components/CodeHome.tsx";
+import { CodeHome } from "./components/CodeHome.tsx";
 import { ChatView } from "./components/ChatView.tsx";
 import { RightPanel } from "./components/RightPanel.tsx";
 import { Settings } from "./components/Settings.tsx";
@@ -38,23 +38,14 @@ import { FirstRun } from "./components/FirstRun.tsx";
 import { PermissionPicker } from "./components/PermissionPicker.tsx";
 import { Scheduled } from "./pages/Scheduled.tsx";
 import { Projects } from "./pages/Projects.tsx";
+import { ToastRegion } from "./components/Toast.tsx";
+import { ScheduleDialog, type ScheduleDialogPrefill } from "./components/ScheduleDialog.tsx";
+import { ConnectorDialog } from "./components/ConnectorDialog.tsx";
+import { PluginDialog } from "./components/PluginDialog.tsx";
 import { useSessionStore } from "./store/session.ts";
 import { useTheme } from "./hooks/useTheme.ts";
+import { useToasts } from "./hooks/useToasts.ts";
 import styles from "./App.module.css";
-
-/**
- * Real session statistics are not collected yet, so Code home renders its
- * documented empty state rather than invented numbers.
- */
-const ZERO_STATS: CodeHomeStats = {
-  sessions: 0,
-  messages: 0,
-  totalTokens: 0,
-  activeDays: 0,
-  currentStreak: 0,
-  longestStreak: 0,
-  activityGrid: [],
-};
 
 export function App() {
   const [mode, setMode] = useState<Mode>("cowork");
@@ -74,7 +65,23 @@ export function App() {
   const [recents, setRecents] = useState<Array<{ id: string; title: string }>>([]);
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [banner, setBanner] = useState<string | null>(null);
+  const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
+
+  // Dialog open state
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [schedulePrefill, setSchedulePrefill] = useState<ScheduleDialogPrefill | undefined>(
+    undefined,
+  );
+  const [connectorDialogOpen, setConnectorDialogOpen] = useState(false);
+  const [pluginDialogOpen, setPluginDialogOpen] = useState(false);
+
+  // Compatibility shim: setBanner is called throughout this file to surface
+  // errors and info notices. Route it through the toast system so all existing
+  // call-sites keep working without being individually rewritten.
+  function setBanner(msg: string | null) {
+    if (!msg) return; // clearing is a no-op — toasts auto-dismiss
+    pushToast("error", msg);
+  }
 
   const modeState = useSessionStore((s) => s[mode]);
   const applyEvent = useSessionStore((s) => s.applyEvent);
@@ -287,7 +294,7 @@ export function App() {
       await patchSettings({
         [mode]: { ...settings![mode] },
       } as Partial<AppSettings>);
-      setBanner(`Working folder set to ${dir}`);
+      pushToast("success", `Working folder set to ${dir}`);
     } catch (e) {
       setBanner(e instanceof Error ? e.message : String(e));
     }
@@ -330,14 +337,7 @@ export function App() {
         sidebarOpen={sidebarOpen}
       />
 
-      {banner && (
-        <div className={styles.banner} role="alert">
-          <span>{banner}</span>
-          <button onClick={() => setBanner(null)} aria-label="Dismiss">
-            ×
-          </button>
-        </div>
-      )}
+      <ToastRegion toasts={toasts} onDismiss={dismissToast} />
 
       <div className={styles.body}>
         {sidebarOpen && (
@@ -388,7 +388,14 @@ export function App() {
                 )}
               </div>
             ) : mode === "code" ? (
-              <CodeHome userName={settings?.general.userName ?? ""} stats={ZERO_STATS} />
+              <CodeHome
+                userName={settings?.general.userName ?? ""}
+                modelLabel={modelLabel}
+                onSubmit={(t) => void handleSubmit(t)}
+                onPickModel={openSettings}
+                onAttach={() => void attachFiles()}
+                isRunning={modeState.streamingMessageId !== null}
+              />
             ) : (
               <HomeView
                 mode={mode}
@@ -414,20 +421,26 @@ export function App() {
                   },
                 });
               }}
-              onNewTask={() => void createScheduledTask("New task", "0 9 * * *")}
+              onNewTask={() => openScheduleDialog()}
               onDailyBrief={() =>
-                void createScheduledTask(
-                  "Daily brief",
-                  "0 8 * * *",
-                  "Summarise what changed since yesterday and what needs my attention today.",
-                )
+                openScheduleDialog({
+                  name: "Daily brief",
+                  prompt:
+                    "Summarise what changed since yesterday and what needs my attention today.",
+                  cadenceKind: "daily",
+                  hour: 8,
+                  minute: 0,
+                })
               }
               onWeeklyReview={() =>
-                void createScheduledTask(
-                  "Weekly review",
-                  "0 17 * * 5",
-                  "Review this week's work and produce a short written summary.",
-                )
+                openScheduleDialog({
+                  name: "Weekly review",
+                  prompt: "Review this week's work and produce a short written summary.",
+                  cadenceKind: "weekly",
+                  hour: 17,
+                  minute: 0,
+                  dayOfWeek: 5,
+                })
               }
             />
           )}
@@ -438,7 +451,7 @@ export function App() {
               onNew={() => void createProject()}
               onOpen={(id) => {
                 const p = projects.find((x) => x.id === id);
-                if (p) setBanner(`Opened project ${p.name}`);
+                if (p) pushToast("info", `Opened project ${p.name}`);
               }}
             />
           )}
@@ -467,10 +480,48 @@ export function App() {
           onToggleSkill={(id, en) => void toggle(() => bridge().skills.setEnabled(id, en))}
           onToggleConnector={(id, en) => void toggle(() => bridge().mcp.setEnabled(id, en))}
           onTogglePlugin={(id, en) => void toggle(() => bridge().plugins.setEnabled(id, en))}
-          onAddSkill={() => setBanner("Ask Kozum to install a skill, or drop a SKILL.md into the skills folder.")}
-          onAddConnector={() => void addConnector()}
-          onAddPlugin={() => void addPlugin()}
+          onAddSkill={() => pushToast("info", "Ask Kozum to install a skill, or drop a SKILL.md into the skills folder.")}
+          onAddConnector={() => setConnectorDialogOpen(true)}
+          onAddPlugin={() => setPluginDialogOpen(true)}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {scheduleDialogOpen && (
+        <ScheduleDialog
+          prefill={schedulePrefill}
+          onSave={(task) => {
+            setScheduleDialogOpen(false);
+            setScheduled((prev) => [...prev, task]);
+            pushToast("success", `Scheduled task "${task.name}" created.`);
+          }}
+          onClose={() => setScheduleDialogOpen(false)}
+        />
+      )}
+
+      {connectorDialogOpen && (
+        <ConnectorDialog
+          onSave={(server) => {
+            setConnectorDialogOpen(false);
+            void reloadExtensions();
+            pushToast(
+              "success",
+              `Connected to "${server.name}"` +
+                (server.toolCount > 0 ? ` — ${server.toolCount} tool${server.toolCount !== 1 ? "s" : ""}` : ""),
+            );
+          }}
+          onClose={() => setConnectorDialogOpen(false)}
+        />
+      )}
+
+      {pluginDialogOpen && (
+        <PluginDialog
+          onSave={(plugin) => {
+            setPluginDialogOpen(false);
+            void reloadExtensions();
+            pushToast("success", `Plugin "${plugin.name}" installed.`);
+          }}
+          onClose={() => setPluginDialogOpen(false)}
         />
       )}
     </div>
@@ -499,43 +550,9 @@ export function App() {
     setProjects(await bridge().projects.list());
   }
 
-  async function createScheduledTask(name: string, cron: string, prompt?: string) {
-    const res = await bridge().schedule.create({
-      name,
-      prompt: prompt ?? "Describe what this task should do.",
-      cron,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-      enabled: true,
-      mode: "cowork",
-      projectId: null,
-      workingFolder: null,
-      selection: null,
-    });
-    if (!res.ok) {
-      setBanner(res.error);
-      return;
-    }
-    setScheduled(await bridge().schedule.list());
-  }
-
-  async function addConnector() {
-    const url = window.prompt("MCP server URL");
-    if (!url) return;
-    const token = window.prompt("Auth token (optional)") ?? "";
-    const res = await bridge().mcp.add({
-      name: new URL(url).hostname,
-      enabled: true,
-      transport: "http",
-      url,
-      hasAuthToken: Boolean(token),
-      authToken: token || undefined,
-      installedByAgent: false,
-    } as never);
-    if (!res.ok) {
-      setBanner(res.error);
-      return;
-    }
-    await reloadExtensions();
+  function openScheduleDialog(prefill?: ScheduleDialogPrefill) {
+    setSchedulePrefill(prefill);
+    setScheduleDialogOpen(true);
   }
 
   /**
@@ -547,7 +564,8 @@ export function App() {
     try {
       const files = await bridge().dialog.selectFiles();
       if (!files.length) return;
-      setBanner(
+      pushToast(
+        "info",
         `Attached ${files.length} file${files.length > 1 ? "s" : ""}. ` +
           `Mention them in your message: ${files.slice(0, 3).join(", ")}` +
           (files.length > 3 ? ` and ${files.length - 3} more` : ""),
@@ -557,14 +575,4 @@ export function App() {
     }
   }
 
-  async function addPlugin() {
-    const src = window.prompt("GitHub repository (owner/repo) or path to a .zip");
-    if (!src) return;
-    const res = await bridge().plugins.installFromUrl(src);
-    if (!res.ok) {
-      setBanner(res.error);
-      return;
-    }
-    await reloadExtensions();
-  }
 }

@@ -5,6 +5,10 @@
 import type { ModelInfo } from "../../shared/types.ts";
 import type { ProviderAdapter, ProviderContext } from "./adapter.ts";
 import { OpenAiChatAdapter } from "./adapters/openai-chat.ts";
+import { AnthropicMessagesAdapter } from "./adapters/anthropic-messages.ts";
+import { OpenAiResponsesAdapter } from "./adapters/openai-responses.ts";
+import { GeminiAdapter } from "./adapters/gemini.ts";
+import { VertexGeminiAdapter } from "./adapters/vertex-gemini.ts";
 import { getPreset, resolveBaseUrl } from "./presets.ts";
 import { resolveCapabilities } from "./capabilities.ts";
 import type { SecretStore } from "../store/secrets.ts";
@@ -13,6 +17,10 @@ import { modelsFilePath } from "../store/paths.ts";
 import { readJson, writeJson } from "../store/json.ts";
 
 const _openAiChatAdapter = new OpenAiChatAdapter();
+const _anthropicMessagesAdapter = new AnthropicMessagesAdapter();
+const _openAiResponsesAdapter = new OpenAiResponsesAdapter();
+const _geminiAdapter = new GeminiAdapter();
+const _vertexGeminiAdapter = new VertexGeminiAdapter();
 
 export class ProviderRegistry {
   private readonly secrets: SecretStore;
@@ -28,25 +36,20 @@ export class ProviderRegistry {
    * Throws for protocols not yet implemented rather than silently falling back.
    */
   adapterFor(protocol: string): ProviderAdapter {
-    if (protocol === "openai-chat") {
-      return _openAiChatAdapter;
+    switch (protocol) {
+      case "openai-chat":
+        return _openAiChatAdapter;
+      case "anthropic-messages":
+        return _anthropicMessagesAdapter;
+      case "openai-responses":
+        return _openAiResponsesAdapter;
+      case "gemini-generative":
+        return _geminiAdapter;
+      case "vertex-gemini":
+        return _vertexGeminiAdapter;
+      default:
+        throw new Error(`Unknown protocol: "${protocol}"`);
     }
-
-    const unimplemented = [
-      "anthropic-messages",
-      "openai-responses",
-      "gemini-generative",
-      "vertex-gemini",
-    ];
-    if (unimplemented.includes(protocol)) {
-      throw new Error(
-        `Protocol "${protocol}" is not yet implemented. ` +
-          `Only "openai-chat" is currently supported. ` +
-          `Using an unimplemented adapter would produce confusing 400 errors.`,
-      );
-    }
-
-    throw new Error(`Unknown protocol: "${protocol}"`);
   }
 
   /** Build a ProviderContext for a specific key. */

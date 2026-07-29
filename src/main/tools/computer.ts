@@ -11,6 +11,7 @@ import type { Tool } from "./registry.ts";
 import { ok, fail } from "./registry.ts";
 import type { ComputerBackend } from "../computer/windows.ts";
 import { isAppBlocked, BackendUnavailableError } from "../computer/windows.ts";
+import type { SelfTestReport } from "../computer/windows.ts";
 
 /* -------------------------------------------------------- error helper ---- */
 
@@ -408,6 +409,58 @@ export function makeComputerTools(
           const content =
             windows.length === 0 ? "No visible windows found." : lines.join("\n");
           return ok(content, { summary: `${windows.length} window(s)` });
+        } catch (e) {
+          return computerFail(e);
+        }
+      },
+    },
+
+    /* --------------------------------------------- computer_self_test */
+    {
+      definition: {
+        name: "computer_self_test",
+        title: "Computer: Self Test",
+        description:
+          "Run a structured capability self-test and return a JSON report. " +
+          "Shows which computer-use capabilities work on this machine: " +
+          "PowerShell reachable, System.Windows.Forms loadable, " +
+          "screen enumeration, capture, and cursor move. " +
+          "Use this to diagnose why computer-use tools might fail.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+        icon: "stethoscope",
+        group: "computer",
+        modes: ["cowork", "code"],
+      },
+
+      handler: async (_input, ctx) => {
+        ctx.onProgress("Running computer-use self-test…");
+        try {
+          const report: SelfTestReport = await backend.selfTest();
+
+          const lines: string[] = [
+            `PowerShell: ${report.powershell.ok ? `OK (${report.powershell.version ?? "unknown version"})` : `FAIL — ${report.powershell.error ?? "unknown error"}`}`,
+            `System.Windows.Forms: ${report.windowsForms.ok ? "OK" : `FAIL — ${report.windowsForms.error ?? "unknown error"}`}`,
+            `Screen enumeration: ${report.screenEnumeration.ok ? `OK (${report.screenEnumeration.count ?? "?"}  monitor(s))` : `FAIL — ${report.screenEnumeration.error ?? "unknown error"}`}`,
+            `Screen capture: ${report.capture.ok ? "OK" : `FAIL — ${report.capture.error ?? "unknown error"}`}`,
+            `Cursor move: ${report.cursorMove.ok ? "OK" : `FAIL — ${report.cursorMove.error ?? "unknown error"}`}`,
+          ];
+
+          const allOk =
+            report.powershell.ok &&
+            report.windowsForms.ok &&
+            report.screenEnumeration.ok &&
+            report.capture.ok &&
+            report.cursorMove.ok;
+
+          const summary = allOk
+            ? "All computer-use capabilities available"
+            : "Some capabilities unavailable — see details";
+
+          return ok(lines.join("\n"), { summary, detail: JSON.stringify(report, null, 2) });
         } catch (e) {
           return computerFail(e);
         }

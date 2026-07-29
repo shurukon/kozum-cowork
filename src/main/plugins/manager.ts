@@ -399,6 +399,71 @@ export class PluginManager {
     );
   }
 
+  /* --------------------------------------- registerBuiltin --- */
+
+  /**
+   * Register a bundled plugin from an absolute path on disk.
+   * Builtin plugins are held in memory only — they are never written to
+   * plugins.json and are re-registered on every boot from the packaged files.
+   * If the directory does not contain a valid manifest the call is a no-op
+   * (the error is returned as a string so the caller can log it).
+   */
+  async registerBuiltin(pluginDir: string): Promise<string | null> {
+    await this.ensureLoaded();
+
+    // Already registered (e.g. called twice at boot) — skip.
+    if (this.state.plugins.some((p) => p.path === pluginDir && p.source.kind === "builtin")) {
+      return null;
+    }
+
+    const manifestPath = join(pluginDir, ".claude-plugin", "plugin.json");
+    let manifestText: string;
+    try {
+      manifestText = await readFile(manifestPath, "utf-8");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return `registerBuiltin: cannot read manifest at ${manifestPath}: ${msg}`;
+    }
+
+    const manifestResult = parsePluginManifest(manifestText, manifestPath);
+    if (!manifestResult.ok) {
+      return `registerBuiltin: invalid manifest at ${manifestPath}: ${manifestResult.error}`;
+    }
+    const manifest = manifestResult.value;
+
+    let contributions;
+    try {
+      contributions = await discoverContributions(pluginDir);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return `registerBuiltin: discoverContributions failed for ${pluginDir}: ${msg}`;
+    }
+
+    const id = `builtin_${manifest.name.replace(/[^a-z0-9]/gi, "_").toLowerCase()}`;
+    const plugin: Plugin = {
+      id,
+      name: manifest.name,
+      description: manifest.description,
+      version: manifest.version,
+      ...(manifest.author ? { author: manifest.author } : {}),
+      enabled: true,
+      source: { kind: "builtin" },
+      installedAt: 0,
+      updatedAt: 0,
+      path: pluginDir,
+      skills: contributions.skills.map((s) => s.name),
+      agents: contributions.agents.map((a) => a.name),
+      commands: contributions.commands,
+      mcpServers: contributions.mcpServers.map((m) => m.id),
+      hasHooks: contributions.hasHooks,
+      installedByAgent: false,
+    };
+
+    // Builtins go in memory only — do not persist them to plugins.json.
+    this.state.plugins.unshift(plugin);
+    return null;
+  }
+
   /* -------------------------------------------- list / enable / disable / uninstall --- */
 
   async list(): Promise<Plugin[]> {

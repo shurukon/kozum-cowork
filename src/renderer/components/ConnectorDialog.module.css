@@ -1,0 +1,184 @@
+/*
+ * ConnectorDialog — Add MCP server form.
+ * Follows FirstRun.module.css styling idiom.
+ */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+.input {
+  width: 100%;
+  height: 38px;
+  padding-inline: var(--sp-5);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: var(--fs-base);
+  color: var(--text-primary);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.input:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--glow-focus);
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+.hint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: var(--lh-snug);
+}
+
+/* Advanced disclosure */
+.advanced {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+.advancedToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.advancedToggle:hover {
+  color: var(--text-secondary);
+}
+
+.advancedChevron {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.advancedChevronOpen {
+  transform: rotate(90deg);
+}
+
+/* Test result inline */
+.testResult {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+
+.testResultOk {
+  background: var(--success-soft);
+  border: 1px solid var(--success);
+  color: var(--text-primary);
+}
+
+.testResultOk svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--success);
+}
+
+.testResultWarn {
+  background: var(--warning-soft);
+  border: 1px solid var(--warning);
+  color: var(--text-primary);
+}
+
+.testResultWarn svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--warning);
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  background: var(--error-soft);
+  border: 1px solid var(--error);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  line-height: var(--lh-snug);
+}
+
+.error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--error);
+}
+
+/* Footer */
+.cancelBtn {
+  height: 36px;
+  padding-inline: var(--sp-8);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.cancelBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.testBtn {
+  height: 36px;
+  padding-inline: var(--sp-8);
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.testBtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.testBtn:disabled {
+  opacity: 0.45;
+}
+
+.saveBtn {
+  display: grid;
+  place-items: center;
+  height: 36px;
+  padding-inline: var(--sp-8);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: #fff;
+  background: var(--accent-gradient);
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.saveBtn:disabled {
+  opacity: 0.45;
+}

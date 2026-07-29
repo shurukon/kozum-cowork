@@ -1,22 +1,79 @@
+/* ── Card ─────────────────────────────────────────────────────────────── */
+
+/*
+ * Staged reveal: kz-rise on mount.
+ * Running state: shimmer bar along the top edge.
+ * Completed: settle to a slightly lighter border.
+ * Error: flash once then hold a muted error accent — not a permanent glare.
+ */
 .card {
+  position: relative;
   border-radius: var(--r-md);
   border: 1px solid var(--border);
   background: var(--bg-card);
   overflow: hidden;
-  animation: kz-rise var(--dur-fast) var(--ease-out) both;
+  /* Staged reveal — each card rises up from slightly below */
+  animation: kz-rise var(--dur-normal) var(--ease-out) both;
 }
 
 .cardRunning {
-  border-color: rgba(61, 127, 255, 0.25);
+  border-color: rgba(61, 127, 255, 0.28);
 }
 
+/* Settle animation when the tool completes: brief border brightening */
 .cardOk {
-  border-color: var(--border);
+  border-color: var(--border-strong);
+  animation: kz-rise var(--dur-normal) var(--ease-out) both,
+    cardSettle var(--dur-slow) var(--ease-out) both;
 }
 
-.cardError {
-  border-color: rgba(239, 68, 68, 0.3);
+@keyframes cardSettle {
+  0% {
+    border-color: rgba(34, 197, 94, 0.5);
+    box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.2);
+  }
+  100% {
+    border-color: var(--border-strong);
+    box-shadow: none;
+  }
 }
+
+/* Error: flash once, then settle to a muted accent — not a permanent glare */
+.cardError {
+  border-color: rgba(239, 68, 68, 0.22);
+  animation: kz-rise var(--dur-normal) var(--ease-out) both,
+    cardErrorFlash var(--dur-slow) var(--ease-out) both;
+}
+
+@keyframes cardErrorFlash {
+  0% {
+    border-color: rgba(239, 68, 68, 0.7);
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3);
+  }
+  100% {
+    border-color: rgba(239, 68, 68, 0.22);
+    box-shadow: none;
+  }
+}
+
+/* ── Running shimmer bar ──────────────────────────────────────────────── */
+
+/*
+ * A thin gradient line that sweeps across the top edge of the card while the
+ * tool is in flight. Uses kz-sweep from global.css.
+ */
+.shimmerBar {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  width: 40%;
+  height: 2px;
+  background: var(--accent-gradient);
+  border-radius: 0 var(--r-full) var(--r-full) 0;
+  animation: kz-sweep 1.4s var(--ease-in-out) infinite;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────── */
 
 .header {
   display: flex;

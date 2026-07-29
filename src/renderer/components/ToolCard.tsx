@@ -5,6 +5,12 @@
  * status indicator (spinner / check / error). Expandable detail renders
  * terminal output, diffs, file chips, or raw JSON depending on the tool's
  * display payload.
+ *
+ * Animations:
+ * - Staged reveal on mount (kz-rise).
+ * - Running shimmer along the card's top edge while in flight (kz-sweep).
+ * - Settle animation on completion.
+ * - Error state flashes once, then holds a muted accent — not a permanent glare.
  */
 
 import { useState } from "react";
@@ -179,10 +185,20 @@ export function ToolCard({ card }: Props) {
       card.result?.error,
   );
 
+  const statusClass =
+    card.status === "error"
+      ? styles.cardError
+      : card.status === "ok"
+        ? styles.cardOk
+        : styles.cardRunning;
+
   return (
-    <div
-      className={`${styles.card} ${card.status === "error" ? styles.cardError : card.status === "ok" ? styles.cardOk : styles.cardRunning}`}
-    >
+    <div className={`${styles.card} ${statusClass}`}>
+      {/* Running shimmer bar along the top edge */}
+      {card.status === "running" && (
+        <div className={styles.shimmerBar} aria-hidden={true} />
+      )}
+
       <button
         className={styles.header}
         onClick={() => hasDetail && setExpanded((v) => !v)}

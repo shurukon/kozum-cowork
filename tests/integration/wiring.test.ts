@@ -254,52 +254,44 @@ describe("ProviderRegistry", () => {
     assert.equal(adapter.protocol, "openai-chat");
   });
 
-  it("throws for anthropic-messages naming itself", () => {
+  it('adapterFor("anthropic-messages") returns an adapter', () => {
     const dir = tmpDir("registry-anthropic");
     const appPaths = makeAppPaths(dir);
     const secrets = new SecretStore(join(dir, "keys.json"), makeFakeEncryptor());
     const registry = new ProviderRegistry(secrets, appPaths);
 
-    assert.throws(
-      () => registry.adapterFor("anthropic-messages"),
-      /anthropic-messages/,
-    );
+    const adapter = registry.adapterFor("anthropic-messages");
+    assert.equal(adapter.protocol, "anthropic-messages");
   });
 
-  it("throws for openai-responses naming itself", () => {
+  it('adapterFor("openai-responses") returns an adapter', () => {
     const dir = tmpDir("registry-oai-resp");
     const appPaths = makeAppPaths(dir);
     const secrets = new SecretStore(join(dir, "keys.json"), makeFakeEncryptor());
     const registry = new ProviderRegistry(secrets, appPaths);
 
-    assert.throws(
-      () => registry.adapterFor("openai-responses"),
-      /openai-responses/,
-    );
+    const adapter = registry.adapterFor("openai-responses");
+    assert.equal(adapter.protocol, "openai-responses");
   });
 
-  it("throws for gemini-generative naming itself", () => {
+  it('adapterFor("gemini-generative") returns an adapter', () => {
     const dir = tmpDir("registry-gemini");
     const appPaths = makeAppPaths(dir);
     const secrets = new SecretStore(join(dir, "keys.json"), makeFakeEncryptor());
     const registry = new ProviderRegistry(secrets, appPaths);
 
-    assert.throws(
-      () => registry.adapterFor("gemini-generative"),
-      /gemini-generative/,
-    );
+    const adapter = registry.adapterFor("gemini-generative");
+    assert.equal(adapter.protocol, "gemini-generative");
   });
 
-  it("throws for vertex-gemini naming itself", () => {
+  it('adapterFor("vertex-gemini") returns an adapter', () => {
     const dir = tmpDir("registry-vertex");
     const appPaths = makeAppPaths(dir);
     const secrets = new SecretStore(join(dir, "keys.json"), makeFakeEncryptor());
     const registry = new ProviderRegistry(secrets, appPaths);
 
-    assert.throws(
-      () => registry.adapterFor("vertex-gemini"),
-      /vertex-gemini/,
-    );
+    const adapter = registry.adapterFor("vertex-gemini");
+    assert.equal(adapter.protocol, "vertex-gemini");
   });
 
   it("refreshModels falls back to staticModels when adapter returns null", async () => {

@@ -130,7 +130,13 @@ export function ChatView({
       )}
 
       {/* Composer */}
-      <div className={styles.composerWrap}>
+      <div className={styles.composerWrap} style={{ position: "relative" }}>
+        {/* In-flight indicator: thin sweep at the bottom edge while running */}
+        {isRunning && (
+          <div className={styles.composerInflight} aria-hidden={true}>
+            <div className={styles.composerInflightBar} />
+          </div>
+        )}
         <div className={styles.composer}>
           <textarea
             ref={taRef}

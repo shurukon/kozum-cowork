@@ -29,11 +29,18 @@ import {
   buildInputScript,
   buildCaptureScript,
   escapePsSingleQuoted,
+  clampCoord,
+  clampToDesktop,
+  assertFiniteCoord,
+  virtualDesktopBounds,
+  buildMultiMonitorScript,
+  buildSelfTestScript,
 } from "../../src/main/computer/windows.ts";
+import type { MonitorInfo, DesktopBounds } from "../../src/main/computer/windows.ts";
 
 import { makeBrowserTools } from "../../src/main/tools/browser.ts";
 import { makeComputerTools } from "../../src/main/tools/computer.ts";
-import type { ComputerBackend, CaptureOptions } from "../../src/main/computer/windows.ts";
+import type { ComputerBackend, CaptureOptions, SelfTestReport } from "../../src/main/computer/windows.ts";
 import type { ToolContext } from "../../src/main/tools/registry.ts";
 
 /* -------------------------------------------------------- test context ---- */
@@ -531,6 +538,20 @@ class UnavailableComputerBackend implements ComputerBackend {
   screenSize(): ReturnType<ComputerBackend["screenSize"]> { return Promise.reject(this._err); }
   activeWindow(): ReturnType<ComputerBackend["activeWindow"]> { return Promise.reject(this._err); }
   listWindows(): ReturnType<ComputerBackend["listWindows"]> { return Promise.reject(this._err); }
+  multiMonitorBounds(): ReturnType<ComputerBackend["multiMonitorBounds"]> {
+    return Promise.reject(this._err);
+  }
+  selfTest(): ReturnType<ComputerBackend["selfTest"]> {
+    // selfTest never rejects in the real impl; degrade gracefully here too.
+    const report: SelfTestReport = {
+      powershell: { ok: false, error: "Computer use (PowerShell) unavailable" },
+      windowsForms: { ok: false, error: "Computer use (PowerShell) unavailable" },
+      screenEnumeration: { ok: false, error: "Computer use (PowerShell) unavailable" },
+      capture: { ok: false, error: "Computer use (PowerShell) unavailable" },
+      cursorMove: { ok: false, error: "Computer use (PowerShell) unavailable" },
+    };
+    return Promise.resolve(report);
+  }
 }
 
 describe("browser tools — graceful degradation", () => {
@@ -574,6 +595,12 @@ describe("computer tools — graceful degradation", () => {
 
   for (const tool of tools) {
     const name = tool.definition.name;
+
+    // computer_self_test is a diagnostic tool — it always returns ok:true
+    // and reports failures within the result content rather than as ok:false.
+    // It has its own tests in the "computer_self_test tool" suite below.
+    if (name === "computer_self_test") continue;
+
     it(`${name} returns ok:false (not a throw) when PowerShell unavailable`, async () => {
       let input: Record<string, unknown> = {};
       if (name === "computer_click") input = { x: 100, y: 200 };
@@ -806,9 +833,9 @@ describe("tool counts", () => {
     assert.equal(tools.length, 11, `Expected 11 browser tools, got ${tools.length}`);
   });
 
-  it("makeComputerTools returns exactly 7 tools", () => {
+  it("makeComputerTools returns exactly 8 tools", () => {
     const tools = makeComputerTools(new UnavailableComputerBackend(), () => []);
-    assert.equal(tools.length, 7, `Expected 7 computer tools, got ${tools.length}`);
+    assert.equal(tools.length, 8, `Expected 8 computer tools, got ${tools.length}`);
   });
 
   it("all browser tools have icon, group='browser', and modes", () => {
@@ -860,12 +887,374 @@ describe("tool counts", () => {
   });
 
   it("computer safe tools do not have dangerous: true", () => {
-    const safeNames = ["computer_screenshot", "computer_screen_size", "computer_list_windows"];
+    const safeNames = [
+      "computer_screenshot",
+      "computer_screen_size",
+      "computer_list_windows",
+      "computer_self_test",
+    ];
     const tools = makeComputerTools(new UnavailableComputerBackend(), () => []);
     for (const name of safeNames) {
       const t = tools.find((tt) => tt.definition.name === name)!;
       assert.ok(t, `tool ${name} not found`);
       assert.ok(!t.definition.dangerous, `${name} should not be dangerous`);
     }
+  });
+});
+
+/* ========================= coordinate clamping (Part 3) =================== */
+
+describe("assertFiniteCoord — rejects non-finite values", () => {
+  it("does not throw for a normal integer", () => {
+    assert.doesNotThrow(() => assertFiniteCoord(100, "x"));
+  });
+
+  it("does not throw for zero", () => {
+    assert.doesNotThrow(() => assertFiniteCoord(0, "y"));
+  });
+
+  it("does not throw for a negative coordinate (multi-monitor)", () => {
+    assert.doesNotThrow(() => assertFiniteCoord(-1920, "x"));
+  });
+
+  it("throws for NaN", () => {
+    assert.throws(
+      () => assertFiniteCoord(NaN, "x"),
+      /x.*not finite|non-finite/i,
+    );
+  });
+
+  it("throws for Infinity", () => {
+    assert.throws(
+      () => assertFiniteCoord(Infinity, "x"),
+      /x.*not finite|non-finite/i,
+    );
+  });
+
+  it("throws for -Infinity", () => {
+    assert.throws(
+      () => assertFiniteCoord(-Infinity, "y"),
+      /y.*not finite|non-finite/i,
+    );
+  });
+});
+
+describe("clampCoord", () => {
+  it("returns value unchanged when within range", () => {
+    assert.equal(clampCoord(500, 0, 1919), 500);
+  });
+
+  it("clamps to lo when value is below range", () => {
+    assert.equal(clampCoord(-50, 0, 1919), 0);
+  });
+
+  it("clamps to hi when value is above range", () => {
+    assert.equal(clampCoord(2000, 0, 1919), 1919);
+  });
+
+  it("handles negative lo (multi-monitor left of primary)", () => {
+    assert.equal(clampCoord(-2000, -1920, 1919), -1920);
+  });
+});
+
+describe("clampToDesktop", () => {
+  const bounds: DesktopBounds = { x: 0, y: 0, width: 1920, height: 1080 };
+  const multiMonitorBounds: DesktopBounds = { x: -1920, y: -100, width: 3840, height: 1180 };
+
+  it("returns unchanged coordinates within single-monitor bounds", () => {
+    const r = clampToDesktop(500, 300, bounds);
+    assert.deepEqual(r, { x: 500, y: 300 });
+  });
+
+  it("clamps x to left edge when negative on single-monitor setup", () => {
+    const r = clampToDesktop(-50, 300, bounds);
+    assert.equal(r.x, 0);
+  });
+
+  it("clamps x to right edge", () => {
+    const r = clampToDesktop(9999, 300, bounds);
+    assert.equal(r.x, 1919); // width - 1
+  });
+
+  it("clamps y to bottom edge", () => {
+    const r = clampToDesktop(100, 9999, bounds);
+    assert.equal(r.y, 1079); // height - 1
+  });
+
+  it("allows negative x in multi-monitor setup", () => {
+    const r = clampToDesktop(-1000, 0, multiMonitorBounds);
+    assert.equal(r.x, -1000);
+  });
+
+  it("clamps to virtual desktop left on multi-monitor setup", () => {
+    const r = clampToDesktop(-5000, 0, multiMonitorBounds);
+    assert.equal(r.x, -1920);
+  });
+
+  it("throws on NaN x", () => {
+    assert.throws(() => clampToDesktop(NaN, 0, bounds));
+  });
+
+  it("throws on NaN y", () => {
+    assert.throws(() => clampToDesktop(0, NaN, bounds));
+  });
+
+  it("throws on Infinity x", () => {
+    assert.throws(() => clampToDesktop(Infinity, 0, bounds));
+  });
+
+  it("throws on Infinity y", () => {
+    assert.throws(() => clampToDesktop(0, -Infinity, bounds));
+  });
+
+  it("rounds float coordinates before clamping", () => {
+    const r = clampToDesktop(100.7, 200.3, bounds);
+    assert.equal(r.x, 101);
+    assert.equal(r.y, 200);
+  });
+});
+
+/* ========================= virtualDesktopBounds =========================== */
+
+describe("virtualDesktopBounds", () => {
+  it("returns default for empty array", () => {
+    const b = virtualDesktopBounds([]);
+    assert.equal(b.width, 1920);
+    assert.equal(b.height, 1080);
+  });
+
+  it("returns single-monitor bounds unchanged", () => {
+    const m: MonitorInfo = {
+      index: 0,
+      isPrimary: true,
+      deviceName: "\\\\.\\DISPLAY1",
+      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      workingArea: { x: 0, y: 0, width: 1920, height: 1040 },
+    };
+    const b = virtualDesktopBounds([m]);
+    assert.deepEqual(b, { x: 0, y: 0, width: 1920, height: 1080 });
+  });
+
+  it("spans both monitors on a dual-monitor setup (side by side)", () => {
+    const left: MonitorInfo = {
+      index: 0,
+      isPrimary: false,
+      deviceName: "\\\\.\\DISPLAY2",
+      bounds: { x: -1920, y: 0, width: 1920, height: 1080 },
+      workingArea: { x: -1920, y: 0, width: 1920, height: 1040 },
+    };
+    const right: MonitorInfo = {
+      index: 1,
+      isPrimary: true,
+      deviceName: "\\\\.\\DISPLAY1",
+      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      workingArea: { x: 0, y: 0, width: 1920, height: 1040 },
+    };
+    const b = virtualDesktopBounds([left, right]);
+    assert.equal(b.x, -1920);
+    assert.equal(b.y, 0);
+    assert.equal(b.width, 3840);
+    assert.equal(b.height, 1080);
+  });
+
+  it("spans monitors with different heights", () => {
+    const a: MonitorInfo = {
+      index: 0,
+      isPrimary: true,
+      deviceName: "\\\\.\\DISPLAY1",
+      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      workingArea: { x: 0, y: 0, width: 1920, height: 1040 },
+    };
+    const b: MonitorInfo = {
+      index: 1,
+      isPrimary: false,
+      deviceName: "\\\\.\\DISPLAY2",
+      bounds: { x: 1920, y: -200, width: 1280, height: 1024 },
+      workingArea: { x: 1920, y: -200, width: 1280, height: 984 },
+    };
+    const result = virtualDesktopBounds([a, b]);
+    assert.equal(result.x, 0);
+    assert.equal(result.y, -200);
+    assert.equal(result.width, 3200); // 0 to 1920+1280
+    assert.equal(result.height, 1280); // -200 to 1080
+  });
+});
+
+/* ========================= buildMultiMonitorScript ======================== */
+
+describe("buildMultiMonitorScript — Add-Type ordering", () => {
+  it("starts with Add-Type -AssemblyName System.Windows.Forms", () => {
+    const script = buildMultiMonitorScript();
+    // The VERY FIRST line must be the Add-Type call.
+    const firstLine = script.split("\n")[0]!;
+    assert.match(
+      firstLine,
+      /Add-Type -AssemblyName System\.Windows\.Forms/,
+      "Add-Type must precede ALL [System.Windows.Forms.*] references",
+    );
+  });
+
+  it("references AllScreens AFTER the Add-Type call", () => {
+    const script = buildMultiMonitorScript();
+    const addTypeIdx = script.indexOf("Add-Type -AssemblyName System.Windows.Forms");
+    const allScreensIdx = script.indexOf("AllScreens");
+    assert.ok(
+      addTypeIdx < allScreensIdx,
+      `Add-Type (pos ${addTypeIdx}) must precede AllScreens (pos ${allScreensIdx})`,
+    );
+  });
+
+  it("emits ConvertTo-Json for structured output", () => {
+    const script = buildMultiMonitorScript();
+    assert.ok(script.includes("ConvertTo-Json"), "output must be JSON");
+  });
+
+  it("captures boundsX, boundsY, boundsW, boundsH keys", () => {
+    const script = buildMultiMonitorScript();
+    for (const key of ["boundsX", "boundsY", "boundsW", "boundsH"]) {
+      assert.ok(script.includes(key), `script must capture ${key}`);
+    }
+  });
+});
+
+/* ========================= buildSelfTestScript shape ====================== */
+
+describe("buildSelfTestScript", () => {
+  it("produces a non-empty script", () => {
+    const s = buildSelfTestScript();
+    assert.ok(s.length > 100, "script should be substantial");
+  });
+
+  it("checks all five capabilities", () => {
+    const s = buildSelfTestScript();
+    assert.ok(s.includes("powershell"), "must test powershell");
+    assert.ok(s.includes("windowsForms"), "must test windowsForms");
+    assert.ok(s.includes("screenEnumeration"), "must test screenEnumeration");
+    assert.ok(s.includes("capture"), "must test capture");
+    assert.ok(s.includes("cursorMove"), "must test cursorMove");
+  });
+
+  it("Add-Type for System.Windows.Forms appears BEFORE AllScreens reference", () => {
+    const s = buildSelfTestScript();
+    const addTypeIdx = s.indexOf("Add-Type -AssemblyName System.Windows.Forms");
+    const allScreensIdx = s.indexOf("AllScreens");
+    assert.ok(
+      addTypeIdx < allScreensIdx,
+      `Add-Type (pos ${addTypeIdx}) must precede AllScreens (pos ${allScreensIdx})`,
+    );
+  });
+
+  it("ends with ConvertTo-Json", () => {
+    const s = buildSelfTestScript();
+    assert.ok(s.includes("ConvertTo-Json"), "must emit JSON report");
+  });
+
+  it("each capability block uses try/catch for independent failure handling", () => {
+    const s = buildSelfTestScript();
+    const tryCount = (s.match(/^try \{/gm) ?? []).length;
+    // At least 4 capabilities have try/catch blocks.
+    assert.ok(tryCount >= 4, `expected at least 4 try blocks, got ${tryCount}`);
+  });
+});
+
+/* ========================= region capture script ========================= */
+
+describe("buildCaptureScript — region parameter", () => {
+  it("includes region coordinates in the script", () => {
+    const s = buildCaptureScript({
+      outputPath: "C:\\temp\\out.jpg",
+      region: { x: 100, y: 200, width: 640, height: 480 },
+    });
+    assert.ok(s.includes("640"), "width should appear");
+    assert.ok(s.includes("480"), "height should appear");
+    assert.ok(s.includes("100"), "x origin should appear");
+    assert.ok(s.includes("200"), "y origin should appear");
+  });
+
+  it("does NOT use Primary screen when region is provided", () => {
+    const s = buildCaptureScript({
+      outputPath: "C:\\temp\\out.jpg",
+      region: { x: 0, y: 0, width: 800, height: 600 },
+    });
+    // A region capture does not need PrimaryScreen.Bounds — only full-screen does.
+    // It should use CopyFromScreen with explicit coordinates.
+    assert.ok(s.includes("CopyFromScreen"), "must copy from screen");
+    assert.ok(!s.includes("PrimaryScreen.Bounds"), "region capture should not use PrimaryScreen");
+  });
+
+  it("full-screen capture uses PrimaryScreen.Bounds", () => {
+    const s = buildCaptureScript({ outputPath: "C:\\temp\\out.jpg" });
+    assert.ok(s.includes("PrimaryScreen.Bounds"), "full-screen must use PrimaryScreen.Bounds");
+  });
+
+  it("Add-Type for System.Windows.Forms precedes PrimaryScreen reference in full-screen", () => {
+    const s = buildCaptureScript({ outputPath: "out.jpg" });
+    const addTypeIdx = s.indexOf("Add-Type -AssemblyName System.Windows.Forms");
+    const primaryIdx = s.indexOf("PrimaryScreen");
+    assert.ok(
+      addTypeIdx < primaryIdx,
+      `Add-Type (pos ${addTypeIdx}) must precede PrimaryScreen (pos ${primaryIdx})`,
+    );
+  });
+});
+
+/* ==================== buildInputScript — clamping rejects NaN ============ */
+
+describe("buildInputScript — coordinate validation", () => {
+  it("throws for NaN x in move action", () => {
+    assert.throws(
+      () => buildInputScript({ kind: "move", x: NaN, y: 100 }),
+      /not finite|x/i,
+    );
+  });
+
+  it("throws for Infinity y in move action", () => {
+    assert.throws(
+      () => buildInputScript({ kind: "move", x: 0, y: Infinity }),
+      /not finite|y/i,
+    );
+  });
+
+  it("throws for NaN in click action", () => {
+    assert.throws(
+      () => buildInputScript({ kind: "click", button: "left", x: NaN, y: 0 }),
+      /not finite|x/i,
+    );
+  });
+
+  it("rounds float coordinates in move", () => {
+    const s = buildInputScript({ kind: "move", x: 100.9, y: 200.1 });
+    // Should emit 101 and 200 after rounding.
+    assert.ok(s.includes("SetCursorPos(101, 200)"), `expected SetCursorPos(101, 200), got: ${s}`);
+  });
+});
+
+/* ==================== computer_self_test tool ============================= */
+
+describe("computer_self_test tool", () => {
+  it("is present in makeComputerTools output", () => {
+    const tools = makeComputerTools(new UnavailableComputerBackend(), () => []);
+    const t = tools.find((tt) => tt.definition.name === "computer_self_test");
+    assert.ok(t, "computer_self_test tool should exist");
+  });
+
+  it("returns ok:true (not a throw) when backend.selfTest resolves", async () => {
+    const ctx = makeCtx();
+    const tools = makeComputerTools(new UnavailableComputerBackend(), () => []);
+    const t = tools.find((tt) => tt.definition.name === "computer_self_test")!;
+
+    // UnavailableComputerBackend.selfTest() resolves with an all-fail report.
+    const result = await t.handler({}, ctx);
+    assert.equal(result.ok, true, "computer_self_test must return ok:true even when all capabilities fail");
+  });
+
+  it("result content mentions each capability", async () => {
+    const ctx = makeCtx();
+    const tools = makeComputerTools(new UnavailableComputerBackend(), () => []);
+    const t = tools.find((tt) => tt.definition.name === "computer_self_test")!;
+
+    const result = await t.handler({}, ctx);
+    assert.ok(result.content.toLowerCase().includes("powershell"), "should mention powershell");
+    assert.ok(result.content.toLowerCase().includes("capture"), "should mention capture");
   });
 });

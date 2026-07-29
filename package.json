@@ -1,6 +1,6 @@
 {
   "name": "kozum-cowork",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Kozum Cowork \u2014 a provider-agnostic desktop agent for Windows. Cowork and Code modes, no VM required.",
   "main": "./out/main/index.js",
   "author": "Kozum",
@@ -17,6 +17,8 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "node --experimental-strip-types --test tests/integration/*.test.ts tests/unit/*.test.ts",
     "test:capabilities": "node --experimental-strip-types scripts/validate-capabilities.ts",
+    "test:component": "vitest run --config vitest.config.ts",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
     "verify": "npm run typecheck && npm run test && npm run test:capabilities",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -38,6 +40,11 @@
     "zustand": "^5.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
     "@types/adm-zip": "^0.5.6",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.9.0",
@@ -47,7 +54,9 @@
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
+    "jsdom": "^25.0.1",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
   }
 }

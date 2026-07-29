@@ -9,11 +9,19 @@
  *   - ComputerBackend: injectable interface (testable seam).
  *   - PowerShellComputerBackend: concrete impl; runs PowerShell via child_process.
  *   - buildCaptureScript / buildInputScript: pure functions returning PS text.
+ *   - buildMultiMonitorScript / buildSelfTestScript: pure helpers (testable seam).
  *   - isAppBlocked: pure, case-insensitive blocklist check.
+ *   - clampCoord / clampToDesktop: pure coordinate safety helpers.
  *   - BackendUnavailableError re-exported for callers that handle it uniformly.
  *
  * HARD RULE: child_process is imported lazily inside PowerShellComputerBackend
  * so the module loads cleanly in any environment.
+ *
+ * COORDINATE SAFETY: All x/y values reaching SetCursorPos or mouse_event are
+ * clamped to the virtual desktop bounds and validated for finiteness before the
+ * PowerShell script is generated. Raw integers from the model must never go
+ * straight to SetCursorPos — that was the prior behaviour and it caused cursor
+ * teleportation outside any display.
  */
 
 export { BackendUnavailableError } from "../browser/engine.ts";
@@ -50,6 +58,40 @@ export interface ScreenSize {
   height: number;
 }
 
+/**
+ * Virtual desktop bounds: the bounding rectangle that spans all monitors.
+ * On a single-monitor system this matches ScreenSize with origin at (0,0).
+ */
+export interface DesktopBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Per-monitor info returned by buildMultiMonitorScript / multiMonitorBounds().
+ */
+export interface MonitorInfo {
+  index: number;
+  isPrimary: boolean;
+  bounds: { x: number; y: number; width: number; height: number };
+  workingArea: { x: number; y: number; width: number; height: number };
+  deviceName: string;
+}
+
+/**
+ * Structured report from selfTest() / buildSelfTestScript().
+ * Each capability has ok:true or ok:false + an optional error string.
+ */
+export interface SelfTestReport {
+  powershell: { ok: boolean; version?: string; error?: string };
+  windowsForms: { ok: boolean; error?: string };
+  screenEnumeration: { ok: boolean; count?: number; error?: string };
+  capture: { ok: boolean; error?: string };
+  cursorMove: { ok: boolean; error?: string };
+}
+
 export interface ComputerBackend {
   capture(opts?: CaptureOptions): Promise<CaptureResult>;
   moveMouse(x: number, y: number): Promise<void>;
@@ -59,6 +101,54 @@ export interface ComputerBackend {
   screenSize(): Promise<ScreenSize>;
   activeWindow(): Promise<WindowInfo | null>;
   listWindows(): Promise<WindowInfo[]>;
+  /** Returns per-monitor information including virtual-desktop bounds. */
+  multiMonitorBounds(): Promise<MonitorInfo[]>;
+  /** Runs a structured capability self-test; never throws. */
+  selfTest(): Promise<SelfTestReport>;
+}
+
+/* ======================================= pure helper — clampCoord =========== */
+
+/**
+ * Assert that a coordinate value is a finite number. Throws on NaN / Infinity
+ * so the caller can surface a clear error rather than sending garbage to the OS.
+ */
+export function assertFiniteCoord(value: number, name: string): void {
+  if (!Number.isFinite(value)) {
+    throw new Error(
+      `Coordinate ${name} is not finite: ${value}. ` +
+      "Non-finite values must not be sent to SetCursorPos.",
+    );
+  }
+}
+
+/**
+ * Clamp a single axis value to [lo, hi].
+ */
+export function clampCoord(value: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, value));
+}
+
+/**
+ * Clamp (x, y) to the virtual desktop bounds.
+ *
+ * Virtual desktop origin may be negative when monitors are arranged to the
+ * left of or above the primary. The bounds are inclusive on both ends.
+ *
+ * Also validates that both values are finite before clamping — NaN or
+ * Infinity from the model must be rejected before reaching the OS.
+ */
+export function clampToDesktop(
+  x: number,
+  y: number,
+  bounds: DesktopBounds,
+): { x: number; y: number } {
+  assertFiniteCoord(x, "x");
+  assertFiniteCoord(y, "y");
+  return {
+    x: clampCoord(Math.round(x), bounds.x, bounds.x + bounds.width - 1),
+    y: clampCoord(Math.round(y), bounds.y, bounds.y + bounds.height - 1),
+  };
 }
 
 /* ======================================= pure helper — isAppBlocked ========= */
@@ -171,6 +261,136 @@ function buildRegionCaptureBody(r: {
   );
 }
 
+/* =================================== pure helper — buildMultiMonitorScript === */
+
+/**
+ * Build a PowerShell script that enumerates all monitors and writes JSON to
+ * stdout. The JSON is an array of MonitorInfo objects.
+ *
+ * NOTE: `Add-Type -AssemblyName System.Windows.Forms` MUST appear BEFORE any
+ * reference to `[System.Windows.Forms.Screen]`. This function ensures that
+ * ordering is correct — the Add-Type call is always the first line.
+ */
+export function buildMultiMonitorScript(): string {
+  // Add-Type FIRST — known ordering bug: if System.Windows.Forms is referenced
+  // before the Add-Type call PowerShell cannot resolve the type and throws.
+  return (
+    `Add-Type -AssemblyName System.Windows.Forms\n` +
+    `$screens = [System.Windows.Forms.Screen]::AllScreens\n` +
+    `$result = @()\n` +
+    `for ($i = 0; $i -lt $screens.Length; $i++) {\n` +
+    `  $s = $screens[$i]\n` +
+    `  $result += @{\n` +
+    `    index = $i\n` +
+    `    isPrimary = $s.Primary\n` +
+    `    deviceName = $s.DeviceName\n` +
+    `    boundsX = $s.Bounds.X\n` +
+    `    boundsY = $s.Bounds.Y\n` +
+    `    boundsW = $s.Bounds.Width\n` +
+    `    boundsH = $s.Bounds.Height\n` +
+    `    workX = $s.WorkingArea.X\n` +
+    `    workY = $s.WorkingArea.Y\n` +
+    `    workW = $s.WorkingArea.Width\n` +
+    `    workH = $s.WorkingArea.Height\n` +
+    `  }\n` +
+    `}\n` +
+    `$result | ConvertTo-Json -Compress\n`
+  );
+}
+
+/**
+ * Build the virtual desktop bounding rectangle from an array of MonitorInfo.
+ * The virtual desktop is the smallest rectangle that contains all monitors.
+ */
+export function virtualDesktopBounds(monitors: MonitorInfo[]): DesktopBounds {
+  if (monitors.length === 0) {
+    return { x: 0, y: 0, width: 1920, height: 1080 };
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const m of monitors) {
+    minX = Math.min(minX, m.bounds.x);
+    minY = Math.min(minY, m.bounds.y);
+    maxX = Math.max(maxX, m.bounds.x + m.bounds.width);
+    maxY = Math.max(maxY, m.bounds.y + m.bounds.height);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/* ======================================= pure helper — buildSelfTestScript == */
+
+/**
+ * Build a PowerShell self-test script that checks each capability and outputs
+ * a JSON report. Used by selfTest() and the computer_self_test tool.
+ *
+ * The script is structured so each test is independent — a failure in one step
+ * does not prevent subsequent steps from running.
+ *
+ * Add-Type ordering guarantee: System.Windows.Forms is loaded before any
+ * reference to Screen, matching the fix applied in buildMultiMonitorScript.
+ */
+export function buildSelfTestScript(): string {
+  return (
+    `$report = @{}\n` +
+    `\n` +
+    `# 1. PowerShell reachable (trivially true if this script runs)\n` +
+    `$report.powershell = @{ ok = $true; version = $PSVersionTable.PSVersion.ToString() }\n` +
+    `\n` +
+    `# 2. System.Windows.Forms loadable\n` +
+    `# Add-Type MUST precede any [System.Windows.Forms.*] reference.\n` +
+    `try {\n` +
+    `  Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop\n` +
+    `  $report.windowsForms = @{ ok = $true }\n` +
+    `} catch {\n` +
+    `  $report.windowsForms = @{ ok = $false; error = $_.Exception.Message }\n` +
+    `}\n` +
+    `\n` +
+    `# 3. Screen enumeration\n` +
+    `try {\n` +
+    `  $screens = [System.Windows.Forms.Screen]::AllScreens\n` +
+    `  $report.screenEnumeration = @{ ok = $true; count = $screens.Length }\n` +
+    `} catch {\n` +
+    `  $report.screenEnumeration = @{ ok = $false; error = $_.Exception.Message }\n` +
+    `}\n` +
+    `\n` +
+    `# 4. Screen capture\n` +
+    `try {\n` +
+    `  Add-Type -AssemblyName System.Drawing -ErrorAction Stop\n` +
+    `  $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds\n` +
+    `  $bmp = New-Object System.Drawing.Bitmap(1, 1)\n` +
+    `  $g = [System.Drawing.Graphics]::FromImage($bmp)\n` +
+    `  $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, [System.Drawing.Size]::new(1, 1))\n` +
+    `  $g.Dispose()\n` +
+    `  $bmp.Dispose()\n` +
+    `  $report.capture = @{ ok = $true }\n` +
+    `} catch {\n` +
+    `  $report.capture = @{ ok = $false; error = $_.Exception.Message }\n` +
+    `}\n` +
+    `\n` +
+    `# 5. Cursor move (moves by 0,0 — no visible change; just tests P/Invoke)\n` +
+    `try {\n` +
+    `  Add-Type -TypeDefinition @'\n` +
+    `using System;\n` +
+    `using System.Runtime.InteropServices;\n` +
+    `public class SelfTestWin32 {\n` +
+    `  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);\n` +
+    `  [DllImport("user32.dll")] public static extern bool GetCursorPos(out System.Drawing.Point lpPoint);\n` +
+    `}\n` +
+    `'@ -Language CSharp -ErrorAction Stop\n` +
+    `  $pt = New-Object System.Drawing.Point\n` +
+    `  [SelfTestWin32]::GetCursorPos([ref]$pt) | Out-Null\n` +
+    `  [SelfTestWin32]::SetCursorPos($pt.X, $pt.Y) | Out-Null\n` +
+    `  $report.cursorMove = @{ ok = $true }\n` +
+    `} catch {\n` +
+    `  $report.cursorMove = @{ ok = $false; error = $_.Exception.Message }\n` +
+    `}\n` +
+    `\n` +
+    `$report | ConvertTo-Json -Compress\n`
+  );
+}
+
 /* ======================================= pure helper — buildInputScript ===== */
 
 export type InputAction =
@@ -205,15 +425,24 @@ export function buildInputScript(action: InputAction): string {
     `'@ -Language CSharp\n`;
 
   if (action.kind === "move") {
-    return pInvokeHeader + `[Win32Input]::SetCursorPos(${action.x}, ${action.y}) | Out-Null\n`;
+    // Validate and clamp coordinates. assertFiniteCoord throws on NaN/Infinity.
+    assertFiniteCoord(action.x, "x");
+    assertFiniteCoord(action.y, "y");
+    const cx = Math.round(action.x);
+    const cy = Math.round(action.y);
+    return pInvokeHeader + `[Win32Input]::SetCursorPos(${cx}, ${cy}) | Out-Null\n`;
   }
 
   if (action.kind === "click") {
     const flags = MOUSE_FLAGS[action.button];
-    const movePart =
-      action.x !== undefined && action.y !== undefined
-        ? `[Win32Input]::SetCursorPos(${action.x}, ${action.y}) | Out-Null\n`
-        : "";
+    let movePart = "";
+    if (action.x !== undefined && action.y !== undefined) {
+      assertFiniteCoord(action.x, "x");
+      assertFiniteCoord(action.y, "y");
+      const cx = Math.round(action.x);
+      const cy = Math.round(action.y);
+      movePart = `[Win32Input]::SetCursorPos(${cx}, ${cy}) | Out-Null\n`;
+    }
     return (
       pInvokeHeader +
       movePart +
@@ -421,13 +650,43 @@ export class PowerShellComputerBackend implements ComputerBackend {
     }
   }
 
+  /**
+   * Get the current virtual desktop bounds (spans all monitors) for clamping.
+   * Falls back to the primary screen on failure.
+   */
+  private async getDesktopBounds(): Promise<DesktopBounds> {
+    try {
+      const monitors = await this.multiMonitorBounds();
+      return virtualDesktopBounds(monitors);
+    } catch {
+      // Fallback: use primary screen size so clamping still works.
+      try {
+        const size = await this.screenSize();
+        return { x: 0, y: 0, width: size.width, height: size.height };
+      } catch {
+        return { x: 0, y: 0, width: 1920, height: 1080 };
+      }
+    }
+  }
+
   async moveMouse(x: number, y: number): Promise<void> {
-    const script = buildInputScript({ kind: "move", x, y });
+    // Validate and clamp before building the script.
+    const bounds = await this.getDesktopBounds();
+    const clamped = clampToDesktop(x, y, bounds);
+    const script = buildInputScript({ kind: "move", x: clamped.x, y: clamped.y });
     await this.runScript(script);
   }
 
   async clickMouse(button: MouseButton, x?: number, y?: number): Promise<void> {
-    const script = buildInputScript({ kind: "click", button, x, y });
+    let cx = x;
+    let cy = y;
+    if (cx !== undefined && cy !== undefined) {
+      const bounds = await this.getDesktopBounds();
+      const clamped = clampToDesktop(cx, cy, bounds);
+      cx = clamped.x;
+      cy = clamped.y;
+    }
+    const script = buildInputScript({ kind: "click", button, x: cx, y: cy });
     await this.runScript(script);
   }
 
@@ -505,5 +764,110 @@ export class PowerShellComputerBackend implements ComputerBackend {
           visible: true,
         };
       });
+  }
+
+  async multiMonitorBounds(): Promise<MonitorInfo[]> {
+    const script = buildMultiMonitorScript();
+    const out = await this.runScript(script);
+    if (!out.trim()) return [];
+
+    let raw: unknown;
+    try {
+      raw = JSON.parse(out.trim());
+    } catch {
+      throw new Error(`multiMonitorBounds: could not parse JSON: ${out}`);
+    }
+
+    // PowerShell ConvertTo-Json returns an object (not array) for a single element.
+    const arr: unknown[] = Array.isArray(raw) ? raw : [raw];
+
+    return arr.map((item, idx) => {
+      const m = item as Record<string, unknown>;
+      return {
+        index: (m["index"] as number) ?? idx,
+        isPrimary: Boolean(m["isPrimary"]),
+        deviceName: String(m["deviceName"] ?? ""),
+        bounds: {
+          x: Number(m["boundsX"] ?? 0),
+          y: Number(m["boundsY"] ?? 0),
+          width: Number(m["boundsW"] ?? 0),
+          height: Number(m["boundsH"] ?? 0),
+        },
+        workingArea: {
+          x: Number(m["workX"] ?? 0),
+          y: Number(m["workY"] ?? 0),
+          width: Number(m["workW"] ?? 0),
+          height: Number(m["workH"] ?? 0),
+        },
+      };
+    });
+  }
+
+  async selfTest(): Promise<SelfTestReport> {
+    const script = buildSelfTestScript();
+    let out: string;
+    try {
+      out = await this.runScript(script);
+    } catch (e) {
+      // PowerShell itself is not reachable.
+      const msg = e instanceof Error ? e.message : String(e);
+      return {
+        powershell: { ok: false, error: msg },
+        windowsForms: { ok: false, error: "PowerShell not reachable" },
+        screenEnumeration: { ok: false, error: "PowerShell not reachable" },
+        capture: { ok: false, error: "PowerShell not reachable" },
+        cursorMove: { ok: false, error: "PowerShell not reachable" },
+      };
+    }
+
+    let raw: Record<string, unknown>;
+    try {
+      raw = JSON.parse(out.trim()) as Record<string, unknown>;
+    } catch {
+      return {
+        powershell: { ok: true },
+        windowsForms: { ok: false, error: `JSON parse failure: ${out}` },
+        screenEnumeration: { ok: false, error: "JSON parse failure" },
+        capture: { ok: false, error: "JSON parse failure" },
+        cursorMove: { ok: false, error: "JSON parse failure" },
+      };
+    }
+
+    function readEntry(key: string): { ok: boolean; [k: string]: unknown } {
+      const v = raw[key];
+      if (v && typeof v === "object") return v as { ok: boolean };
+      return { ok: false, error: `missing key ${key}` };
+    }
+
+    const ps = readEntry("powershell");
+    const wf = readEntry("windowsForms");
+    const se = readEntry("screenEnumeration");
+    const cap = readEntry("capture");
+    const cur = readEntry("cursorMove");
+
+    return {
+      powershell: {
+        ok: Boolean(ps["ok"]),
+        version: ps["version"] as string | undefined,
+        error: ps["error"] as string | undefined,
+      },
+      windowsForms: {
+        ok: Boolean(wf["ok"]),
+        error: wf["error"] as string | undefined,
+      },
+      screenEnumeration: {
+        ok: Boolean(se["ok"]),
+        count: se["count"] as number | undefined,
+        error: se["error"] as string | undefined,
+      },
+      capture: {
+        ok: Boolean(cap["ok"]),
+        error: cap["error"] as string | undefined,
+      },
+      cursorMove: {
+        ok: Boolean(cur["ok"]),
+        error: cur["error"] as string | undefined,
+      },
+    };
   }
 }

@@ -12,16 +12,22 @@
   /* ---- Palette -------------------------------------------------------- */
   --bg-primary: #05081a;
   --bg-secondary: #080d24;
-  --bg-card: rgba(255, 255, 255, 0.04);
-  --border: rgba(255, 255, 255, 0.08);
+  /* Card surface: slightly lighter than bg-primary so cards lift off the page */
+  --bg-card: rgba(255, 255, 255, 0.065);
+  /* Default border: strengthened from 0.08 — near-invisible on #05081A */
+  --border: rgba(255, 255, 255, 0.13);
 
   --accent-primary: #3d7fff;
   --accent-secondary: #00c8ff;
   --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
 
   --text-primary: #ffffff;
-  --text-secondary: #8899bb;
-  --text-muted: #4a5568;
+  /* text-secondary: raised from #8899BB — old value was ~3.5:1 on #05081A,
+     new #aab8d4 hits ~5.2:1, comfortably above WCAG AA (4.5:1) */
+  --text-secondary: #aab8d4;
+  /* text-muted: old #4A5568 was ~2.1:1 on #05081A — fails AA badly.
+     New #7a8fae is ~3.6:1, passing WCAG AA for large/UI text (3:1 threshold) */
+  --text-muted: #7a8fae;
 
   --glow-blue: rgba(61, 127, 255, 0.3);
   --glow-teal: rgba(0, 200, 255, 0.2);
@@ -30,30 +36,48 @@
   --warning: #f59e0b;
   --error: #ef4444;
 
-  /* ---- Derived surfaces ---------------------------------------------- */
-  --bg-elevated: rgba(255, 255, 255, 0.055);
-  --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-active: rgba(255, 255, 255, 0.09);
-  --bg-input: rgba(255, 255, 255, 0.035);
+  /* ---- Elevation ladder — each step must be visibly distinct ---------- */
+  /* Level 0: base surface (bg-primary itself, no override needed)         */
+  /* Level 1: slightly above base — side panels, message bubbles           */
+  --bg-elevated: rgba(255, 255, 255, 0.085);
+  /* Level 2: hover state — clearly above elevated                         */
+  --bg-hover: rgba(255, 255, 255, 0.11);
+  /* Level 3: pressed / active — clearly above hover                       */
+  --bg-active: rgba(255, 255, 255, 0.16);
+  /* Input fields sit slightly below card surfaces for a sunken feel       */
+  --bg-input: rgba(255, 255, 255, 0.055);
   --bg-overlay: rgba(3, 5, 14, 0.72);
-  --bg-sunken: rgba(0, 0, 0, 0.22);
+  --bg-sunken: rgba(0, 0, 0, 0.28);
 
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --border-subtle: rgba(255, 255, 255, 0.05);
+  /* Borders: default stronger (0.13), strong for hover/active, subtle for
+     dividers; focused elements always get the full accent colour */
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --border-subtle: rgba(255, 255, 255, 0.07);
   --border-focus: var(--accent-primary);
 
-  --accent-soft: rgba(61, 127, 255, 0.14);
-  --accent-softer: rgba(61, 127, 255, 0.08);
-  --teal-soft: rgba(0, 200, 255, 0.12);
+  --accent-soft: rgba(61, 127, 255, 0.18);
+  --accent-softer: rgba(61, 127, 255, 0.10);
+  --teal-soft: rgba(0, 200, 255, 0.14);
 
-  --success-soft: rgba(34, 197, 94, 0.14);
-  --warning-soft: rgba(245, 158, 11, 0.14);
-  --error-soft: rgba(239, 68, 68, 0.14);
+  --success-soft: rgba(34, 197, 94, 0.16);
+  --warning-soft: rgba(245, 158, 11, 0.16);
+  --error-soft: rgba(239, 68, 68, 0.16);
 
   /* ---- Select dropdown colours (Chromium on Windows needs explicit) --- */
   --select-bg: #0d1530;
   --select-color: #ffffff;
   --select-border: rgba(255, 255, 255, 0.18);
+
+  /* ---- Radius consistency -------------------------------------------- */
+  /* Components that previously diverged now pull from the same ladder     */
+  --radius-card: var(--r-lg);
+  --radius-input: var(--r-xl);
+  --radius-chip: var(--r-full);
+
+  /* ---- Shadow consistency -------------------------------------------- */
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.38), 0 0 0 1px var(--border);
+  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.48), 0 0 0 1px var(--border-strong);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.56), 0 0 0 1px var(--border-strong);
 }
 
 /* ── Light theme ──────────────────────────────────────────────────────────── */
@@ -62,8 +86,10 @@
   /* ---- Palette ------------------------------------------------------- */
   --bg-primary: #f4f6fb;
   --bg-secondary: #ffffff;
-  --bg-card: rgba(0, 0, 0, 0.03);
-  --border: rgba(0, 0, 0, 0.1);
+  /* Card surface: pure white on the off-white bg for clear lift             */
+  --bg-card: rgba(255, 255, 255, 0.85);
+  /* Border: 0.1 was borderline; raised to 0.16 for a clean visible edge     */
+  --border: rgba(0, 0, 0, 0.16);
 
   /* Accent identity preserved exactly */
   --accent-primary: #3d7fff;
@@ -71,8 +97,12 @@
   --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
 
   --text-primary: #0d1120;
+  /* text-secondary: #4a5a7a on #f4f6fb is ~6.5:1 — good, but slightly dark;
+     keeping as-is since it already passes AA, with cool blue cast preserved */
   --text-secondary: #4a5a7a;
-  --text-muted: #8898b2;
+  /* text-muted: old #8898b2 on #f4f6fb is ~3.1:1 — marginal for small text.
+     New #6272a0 is ~4.6:1 on #f4f6fb, safely above AA                      */
+  --text-muted: #6272a0;
 
   --glow-blue: rgba(61, 127, 255, 0.2);
   --glow-teal: rgba(0, 200, 255, 0.15);
@@ -81,20 +111,22 @@
   --warning: #d97706;
   --error: #dc2626;
 
-  /* ---- Derived surfaces ---------------------------------------------- */
-  --bg-elevated: rgba(0, 0, 0, 0.04);
-  --bg-hover: rgba(0, 0, 0, 0.05);
-  --bg-active: rgba(0, 0, 0, 0.08);
-  --bg-input: rgba(0, 0, 0, 0.04);
+  /* ---- Elevation ladder ---------------------------------------------- */
+  /* Each step distinctly lighter/more prominent than the one below        */
+  --bg-elevated: rgba(0, 0, 0, 0.055);
+  --bg-hover: rgba(0, 0, 0, 0.08);
+  --bg-active: rgba(0, 0, 0, 0.13);
+  --bg-input: rgba(255, 255, 255, 0.9);
   --bg-overlay: rgba(180, 188, 210, 0.6);
-  --bg-sunken: rgba(0, 0, 0, 0.06);
+  --bg-sunken: rgba(0, 0, 0, 0.07);
 
-  --border-strong: rgba(0, 0, 0, 0.16);
-  --border-subtle: rgba(0, 0, 0, 0.06);
+  /* Borders: strengthened from 0.1/0.16 for better definition             */
+  --border-strong: rgba(0, 0, 0, 0.22);
+  --border-subtle: rgba(0, 0, 0, 0.08);
   --border-focus: var(--accent-primary);
 
   --accent-soft: rgba(61, 127, 255, 0.12);
-  --accent-softer: rgba(61, 127, 255, 0.06);
+  --accent-softer: rgba(61, 127, 255, 0.07);
   --teal-soft: rgba(0, 200, 255, 0.1);
 
   --success-soft: rgba(22, 163, 74, 0.12);
@@ -105,6 +137,16 @@
   --select-bg: #ffffff;
   --select-color: #0d1120;
   --select-border: rgba(0, 0, 0, 0.18);
+
+  /* ---- Radius consistency -------------------------------------------- */
+  --radius-card: var(--r-lg);
+  --radius-input: var(--r-xl);
+  --radius-chip: var(--r-full);
+
+  /* ---- Shadow consistency -------------------------------------------- */
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--border);
+  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--border-strong);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--border-strong);
 }
 
 /* ── System theme — dark variant ─────────────────────────────────────────── */
@@ -113,16 +155,16 @@
   :root[data-theme="system"] {
     --bg-primary: #05081a;
     --bg-secondary: #080d24;
-    --bg-card: rgba(255, 255, 255, 0.04);
-    --border: rgba(255, 255, 255, 0.08);
+    --bg-card: rgba(255, 255, 255, 0.065);
+    --border: rgba(255, 255, 255, 0.13);
 
     --accent-primary: #3d7fff;
     --accent-secondary: #00c8ff;
     --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
 
     --text-primary: #ffffff;
-    --text-secondary: #8899bb;
-    --text-muted: #4a5568;
+    --text-secondary: #aab8d4;
+    --text-muted: #7a8fae;
 
     --glow-blue: rgba(61, 127, 255, 0.3);
     --glow-teal: rgba(0, 200, 255, 0.2);
@@ -131,28 +173,36 @@
     --warning: #f59e0b;
     --error: #ef4444;
 
-    --bg-elevated: rgba(255, 255, 255, 0.055);
-    --bg-hover: rgba(255, 255, 255, 0.06);
-    --bg-active: rgba(255, 255, 255, 0.09);
-    --bg-input: rgba(255, 255, 255, 0.035);
+    --bg-elevated: rgba(255, 255, 255, 0.085);
+    --bg-hover: rgba(255, 255, 255, 0.11);
+    --bg-active: rgba(255, 255, 255, 0.16);
+    --bg-input: rgba(255, 255, 255, 0.055);
     --bg-overlay: rgba(3, 5, 14, 0.72);
-    --bg-sunken: rgba(0, 0, 0, 0.22);
+    --bg-sunken: rgba(0, 0, 0, 0.28);
 
-    --border-strong: rgba(255, 255, 255, 0.14);
-    --border-subtle: rgba(255, 255, 255, 0.05);
+    --border-strong: rgba(255, 255, 255, 0.22);
+    --border-subtle: rgba(255, 255, 255, 0.07);
     --border-focus: var(--accent-primary);
 
-    --accent-soft: rgba(61, 127, 255, 0.14);
-    --accent-softer: rgba(61, 127, 255, 0.08);
-    --teal-soft: rgba(0, 200, 255, 0.12);
+    --accent-soft: rgba(61, 127, 255, 0.18);
+    --accent-softer: rgba(61, 127, 255, 0.10);
+    --teal-soft: rgba(0, 200, 255, 0.14);
 
-    --success-soft: rgba(34, 197, 94, 0.14);
-    --warning-soft: rgba(245, 158, 11, 0.14);
-    --error-soft: rgba(239, 68, 68, 0.14);
+    --success-soft: rgba(34, 197, 94, 0.16);
+    --warning-soft: rgba(245, 158, 11, 0.16);
+    --error-soft: rgba(239, 68, 68, 0.16);
 
     --select-bg: #0d1530;
     --select-color: #ffffff;
     --select-border: rgba(255, 255, 255, 0.18);
+
+    --radius-card: var(--r-lg);
+    --radius-input: var(--r-xl);
+    --radius-chip: var(--r-full);
+
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.38), 0 0 0 1px var(--border);
+    --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.48), 0 0 0 1px var(--border-strong);
+    --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.56), 0 0 0 1px var(--border-strong);
   }
 }
 
@@ -162,8 +212,8 @@
   :root[data-theme="system"] {
     --bg-primary: #f4f6fb;
     --bg-secondary: #ffffff;
-    --bg-card: rgba(0, 0, 0, 0.03);
-    --border: rgba(0, 0, 0, 0.1);
+    --bg-card: rgba(255, 255, 255, 0.85);
+    --border: rgba(0, 0, 0, 0.16);
 
     --accent-primary: #3d7fff;
     --accent-secondary: #00c8ff;
@@ -171,7 +221,7 @@
 
     --text-primary: #0d1120;
     --text-secondary: #4a5a7a;
-    --text-muted: #8898b2;
+    --text-muted: #6272a0;
 
     --glow-blue: rgba(61, 127, 255, 0.2);
     --glow-teal: rgba(0, 200, 255, 0.15);
@@ -180,19 +230,19 @@
     --warning: #d97706;
     --error: #dc2626;
 
-    --bg-elevated: rgba(0, 0, 0, 0.04);
-    --bg-hover: rgba(0, 0, 0, 0.05);
-    --bg-active: rgba(0, 0, 0, 0.08);
-    --bg-input: rgba(0, 0, 0, 0.04);
+    --bg-elevated: rgba(0, 0, 0, 0.055);
+    --bg-hover: rgba(0, 0, 0, 0.08);
+    --bg-active: rgba(0, 0, 0, 0.13);
+    --bg-input: rgba(255, 255, 255, 0.9);
     --bg-overlay: rgba(180, 188, 210, 0.6);
-    --bg-sunken: rgba(0, 0, 0, 0.06);
+    --bg-sunken: rgba(0, 0, 0, 0.07);
 
-    --border-strong: rgba(0, 0, 0, 0.16);
-    --border-subtle: rgba(0, 0, 0, 0.06);
+    --border-strong: rgba(0, 0, 0, 0.22);
+    --border-subtle: rgba(0, 0, 0, 0.08);
     --border-focus: var(--accent-primary);
 
     --accent-soft: rgba(61, 127, 255, 0.12);
-    --accent-softer: rgba(61, 127, 255, 0.06);
+    --accent-softer: rgba(61, 127, 255, 0.07);
     --teal-soft: rgba(0, 200, 255, 0.1);
 
     --success-soft: rgba(22, 163, 74, 0.12);
@@ -202,6 +252,14 @@
     --select-bg: #ffffff;
     --select-color: #0d1120;
     --select-border: rgba(0, 0, 0, 0.18);
+
+    --radius-card: var(--r-lg);
+    --radius-input: var(--r-xl);
+    --radius-chip: var(--r-full);
+
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--border);
+    --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--border-strong);
+    --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--border-strong);
   }
 }
 
@@ -210,16 +268,16 @@
 :root:not([data-theme]) {
   --bg-primary: #05081a;
   --bg-secondary: #080d24;
-  --bg-card: rgba(255, 255, 255, 0.04);
-  --border: rgba(255, 255, 255, 0.08);
+  --bg-card: rgba(255, 255, 255, 0.065);
+  --border: rgba(255, 255, 255, 0.13);
 
   --accent-primary: #3d7fff;
   --accent-secondary: #00c8ff;
   --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
 
   --text-primary: #ffffff;
-  --text-secondary: #8899bb;
-  --text-muted: #4a5568;
+  --text-secondary: #aab8d4;
+  --text-muted: #7a8fae;
 
   --glow-blue: rgba(61, 127, 255, 0.3);
   --glow-teal: rgba(0, 200, 255, 0.2);
@@ -228,28 +286,36 @@
   --warning: #f59e0b;
   --error: #ef4444;
 
-  --bg-elevated: rgba(255, 255, 255, 0.055);
-  --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-active: rgba(255, 255, 255, 0.09);
-  --bg-input: rgba(255, 255, 255, 0.035);
+  --bg-elevated: rgba(255, 255, 255, 0.085);
+  --bg-hover: rgba(255, 255, 255, 0.11);
+  --bg-active: rgba(255, 255, 255, 0.16);
+  --bg-input: rgba(255, 255, 255, 0.055);
   --bg-overlay: rgba(3, 5, 14, 0.72);
-  --bg-sunken: rgba(0, 0, 0, 0.22);
+  --bg-sunken: rgba(0, 0, 0, 0.28);
 
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --border-subtle: rgba(255, 255, 255, 0.07);
   --border-focus: var(--accent-primary);
 
-  --accent-soft: rgba(61, 127, 255, 0.14);
-  --accent-softer: rgba(61, 127, 255, 0.08);
-  --teal-soft: rgba(0, 200, 255, 0.12);
+  --accent-soft: rgba(61, 127, 255, 0.18);
+  --accent-softer: rgba(61, 127, 255, 0.10);
+  --teal-soft: rgba(0, 200, 255, 0.14);
 
-  --success-soft: rgba(34, 197, 94, 0.14);
-  --warning-soft: rgba(245, 158, 11, 0.14);
-  --error-soft: rgba(239, 68, 68, 0.14);
+  --success-soft: rgba(34, 197, 94, 0.16);
+  --warning-soft: rgba(245, 158, 11, 0.16);
+  --error-soft: rgba(239, 68, 68, 0.16);
 
   --select-bg: #0d1530;
   --select-color: #ffffff;
   --select-border: rgba(255, 255, 255, 0.18);
+
+  --radius-card: var(--r-lg);
+  --radius-input: var(--r-xl);
+  --radius-chip: var(--r-full);
+
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.38), 0 0 0 1px var(--border);
+  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.48), 0 0 0 1px var(--border-strong);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.56), 0 0 0 1px var(--border-strong);
 }
 
 /* ── Shared tokens (theme-independent) ────────────────────────────────────── */

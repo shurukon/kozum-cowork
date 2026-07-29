@@ -39,7 +39,7 @@
   /* kz-caret appended via global.css when streaming */
 }
 
-/* --------------------------------------------------------- thinking --- */
+/* --------------------------------------------------------- thinking: settled --- */
 
 .thinking {
   background: var(--bg-card);
@@ -77,6 +77,61 @@
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 280px;
+  overflow-y: auto;
+}
+
+/* --------------------------------------------------------- thinking: live --- */
+
+/*
+ * While the model is streaming reasoning, we show a breathing accent dot and
+ * the raw text in a dimmed italic — making it clear something is happening.
+ */
+.thinkingLive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-inline-start: 2px solid var(--accent-primary);
+  border-radius: var(--r-md);
+}
+
+.thinkingLiveHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+/* Breathing accent dot — uses kz-breathe from global.css */
+.thinkingDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--accent-primary);
+  flex-shrink: 0;
+  animation: kz-breathe 1.6s ease-in-out infinite;
+}
+
+.thinkingLiveLabel {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+/* Streaming reasoning text: dimmed, italic, monospace */
+.thinkingStream {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-style: italic;
+  line-height: var(--lh-relaxed);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
   overflow-y: auto;
 }
 

@@ -1,0 +1,150 @@
+/*
+ * Toast notification system.
+ *
+ * Bottom-right stack, newest on top, dark translucent surface with a
+ * coloured left accent edge. Enter via kz-rise, exit via a slide-right fade.
+ */
+
+/* ── Portal container ──────────────────────────────────────────────────── */
+
+.region {
+  position: fixed;
+  inset-block-end: var(--sp-8);
+  inset-inline-end: var(--sp-8);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column-reverse; /* newest on top visually */
+  gap: var(--sp-3);
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+/* ── Individual toast ──────────────────────────────────────────────────── */
+
+.toast {
+  pointer-events: all;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  min-width: 280px;
+  max-width: 400px;
+  padding: var(--sp-4) var(--sp-5);
+  /* Dark translucent surface — not a full colour fill */
+  background: rgba(10, 14, 36, 0.92);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  border-inline-start-width: 3px;
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  /* Enter animation */
+  animation: kz-rise var(--dur-normal) var(--ease-out) both;
+}
+
+/* Severity accents — coloured left edge and icon tint only */
+.toastInfo {
+  border-inline-start-color: var(--accent-primary);
+}
+
+.toastSuccess {
+  border-inline-start-color: var(--success);
+}
+
+.toastWarning {
+  border-inline-start-color: var(--warning);
+}
+
+.toastError {
+  border-inline-start-color: var(--error);
+}
+
+/* Exiting toast slides out to the right */
+.toastExiting {
+  animation: toastExit var(--dur-normal) var(--ease-in-out) forwards;
+}
+
+@keyframes toastExit {
+  from {
+    opacity: 1;
+    transform: none;
+    max-height: 120px;
+    margin-bottom: 0;
+  }
+  60% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(24px);
+    max-height: 0;
+    padding-block: 0;
+    margin-bottom: calc(-1 * var(--sp-3));
+  }
+}
+
+/* ── Icon ──────────────────────────────────────────────────────────────── */
+
+.icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+}
+
+.iconInfo {
+  color: var(--accent-primary);
+}
+
+.iconSuccess {
+  color: var(--success);
+}
+
+.iconWarning {
+  color: var(--warning);
+}
+
+.iconError {
+  color: var(--error);
+}
+
+/* ── Content ───────────────────────────────────────────────────────────── */
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+.message {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+/* ── Dismiss button ────────────────────────────────────────────────────── */
+
+.close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-xs);
+  color: var(--text-muted);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+  margin-top: -1px;
+}
+
+.close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Reduced motion: no animation at all ──────────────────────────────── */
+
+[data-motion="reduced"] .toast,
+[data-motion="reduced"] .toastExiting {
+  animation: none;
+}
