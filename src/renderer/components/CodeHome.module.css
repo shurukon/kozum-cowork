@@ -1,8 +1,7 @@
 /*
- * CodeHome — Code-mode home screen.
+ * CodeHome — Code-mode home screen (rework).
  *
- * Stats grid and heat-map removed. Clean greeting + composer.
- * Composer layout mirrors HomeView.
+ * Greeting + folder row + composer slot. No stats grid, no heat-map.
  */
 
 .wrap {
@@ -24,7 +23,7 @@
   animation: kz-rise var(--dur-slow) var(--ease-out) both;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-10);
+  gap: var(--sp-8);
 }
 
 /* ─── Greeting ─────────────────────────────────────────────────────────── */
@@ -47,152 +46,101 @@
   filter: drop-shadow(0 0 10px var(--glow-blue));
 }
 
-/* ─── Composer shell ────────────────────────────────────────────────────── */
+/* ─── Folder row ────────────────────────────────────────────────────────── */
 
-/*
- * Two-layer structure matching HomeView's composerShell: an outer tray and
- * an inner card. The in-flight indicator is appended inside the shell.
- */
-.composerShell {
-  position: relative;
-  background: rgba(255, 255, 255, 0.022);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-2xl);
-  padding: 5px 5px 0;
-  overflow: hidden; /* contain the in-flight indicator */
-}
-
-.composer {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xl);
-  padding: var(--sp-6) var(--sp-6) var(--sp-4);
-  transition: border-color var(--dur-normal) var(--ease-out),
-    box-shadow var(--dur-normal) var(--ease-out);
-}
-
-.composer:focus-within {
-  border-color: rgba(61, 127, 255, 0.45);
-  box-shadow: 0 0 0 1px rgba(61, 127, 255, 0.25), 0 0 28px rgba(61, 127, 255, 0.1);
-}
-
-/* When a turn is running the composer dims slightly */
-.composerRunning {
-  opacity: 0.75;
-}
-
-.input {
-  display: block;
-  width: 100%;
-  min-height: 26px;
-  max-height: 260px;
-  resize: none;
-  font-size: var(--fs-md);
-  line-height: var(--lh-normal);
-  color: var(--text-primary);
-  background: none;
-  overflow-y: auto;
-}
-
-.input::placeholder {
-  color: var(--text-muted);
-}
-
-.row {
+.folderRow {
   display: flex;
   align-items: center;
-  margin-top: var(--sp-4);
-}
-
-.rowRight {
-  display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: var(--sp-3);
-  margin-left: auto;
 }
 
-.attach {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-sm);
-  color: var(--text-secondary);
-  transition: background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
-}
-
-.attach:not(:disabled):hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.attach:disabled {
-  opacity: 0.4;
-}
-
-.model {
-  display: flex;
+/* "Local" static chip */
+.chipLocal {
+  display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  height: 28px;
+  height: 26px;
   padding: 0 var(--sp-4);
-  border-radius: var(--r-sm);
-  font-size: var(--fs-base);
-  color: var(--text-secondary);
-  transition: background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
+  border-radius: var(--r-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--accent-secondary);
+  background: var(--teal-soft);
+  border: 1px solid rgba(0, 200, 255, 0.25);
+  user-select: none;
 }
 
-.model:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.send {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--r-md);
+/* Folder name chips — clickable */
+.chipFolder {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
   color: var(--text-secondary);
   background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transition: background var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-spring);
+    border-color var(--dur-fast) var(--ease-out);
 }
 
-.send:not(:disabled) {
-  background: var(--accent-gradient);
-  color: #fff;
-  box-shadow: 0 0 14px var(--glow-blue);
+.chipFolder:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
 }
 
-.send:not(:disabled):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 20px var(--glow-blue), 0 0 34px var(--glow-teal);
-}
-
-.send:disabled {
-  opacity: 0.55;
-}
-
-/* ─── In-flight indicator ───────────────────────────────────────────────── */
-
-/*
- * A thin sweeping accent line at the composer's bottom edge while a turn
- * runs. Uses kz-sweep defined in global.css; respects reduced-motion via
- * the duration token collapse.
- */
-.inflight {
-  position: absolute;
-  inset-block-end: 0;
-  inset-inline-start: 0;
-  width: 30%;
-  height: 2px;
-  background: var(--accent-gradient);
+/* Add another folder button */
+.chipAdd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 26px;
+  padding: 0 var(--sp-4);
   border-radius: var(--r-full);
-  animation: kz-sweep 1.6s var(--ease-in-out) infinite;
-  opacity: 0.85;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px dashed var(--border);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.chipAdd:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+  border-style: solid;
+}
+
+/* ─── Composer area ─────────────────────────────────────────────────────── */
+
+/* The slot just contains whatever composerSlot the parent passes.
+   We give it full width so ComposerBar can lay itself out normally. */
+.composerArea {
+  width: 100%;
+}
+
+/* ─── Reduced motion ────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .inner {
+    animation: none;
+    transform: none;
+  }
+}
+
+[data-motion="reduced"] .inner {
+  animation: none;
+  transform: none;
 }

@@ -8,11 +8,11 @@
  * This avoids one giant JSON file that grows unbounded.
  */
 
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import type { Session, Message, Mode, ModelSelection, TokenUsage } from "../../shared/types.ts";
+import type { Session, Message, Mode, ModelSelection, PermissionMode, TokenUsage } from "../../shared/types.ts";
 import { readJson, writeJson } from "../store/json.ts";
 
 /* -------------------------------------------------------------- helpers --- */
@@ -107,6 +107,87 @@ export class SessionStore {
     const session = await this.get(sessionId);
     if (!session) return false;
     const updated: Session = { ...session, archived: true, updatedAt: Date.now() };
+    await writeJson(this.sessionFilePath(sessionId), updated);
+    return true;
+  }
+
+  /** Hard-delete a session and all its messages from disk. */
+  async delete(sessionId: string): Promise<boolean> {
+    const session = await this.get(sessionId);
+    if (!session) return false;
+    try {
+      await rm(this.sessionDir(sessionId), { recursive: true, force: true });
+    } catch {
+      // Ignore errors — may already be gone
+    }
+    return true;
+  }
+
+  /**
+   * Branch (fork) a session. Creates a new session copying the source session's
+   * mode, selection, and permissionMode, along with messages up to and
+   * including `uptoMessageId` (or all messages when omitted). Returns the new Session.
+   */
+  async branch(sessionId: string, uptoMessageId?: string): Promise<Session | null> {
+    const source = await this.get(sessionId);
+    if (!source) return null;
+
+    const allMessages = await this.messages(sessionId);
+
+    // Determine which messages to copy
+    let messagesToCopy: Message[];
+    if (uptoMessageId) {
+      const idx = allMessages.findIndex((m) => m.id === uptoMessageId);
+      messagesToCopy = idx === -1 ? allMessages : allMessages.slice(0, idx + 1);
+    } else {
+      messagesToCopy = allMessages;
+    }
+
+    // Compute usage from copied messages
+    let totalUsage = emptyUsage();
+    for (const msg of messagesToCopy) {
+      if (msg.usage) totalUsage = addUsage(totalUsage, msg.usage);
+    }
+
+    const now = Date.now();
+    const newSession: Session = {
+      id: randomUUID(),
+      mode: source.mode,
+      title: source.title !== "New session" ? `${source.title} (branch)` : "New session",
+      createdAt: now,
+      updatedAt: now,
+      status: "idle",
+      workingFolder: source.workingFolder,
+      projectId: source.projectId,
+      selection: { ...source.selection },
+      messageCount: messagesToCopy.length,
+      totalUsage,
+      archived: false,
+      permissionMode: source.permissionMode,
+    };
+
+    await mkdir(this.sessionDir(newSession.id), { recursive: true });
+    await writeJson(this.sessionFilePath(newSession.id), newSession);
+    // Deep-clone messages to ensure edits to the branch never touch the original.
+    await writeJson(this.messagesFilePath(newSession.id), structuredClone(messagesToCopy));
+
+    return newSession;
+  }
+
+  /** Rename a session. */
+  async rename(sessionId: string, title: string): Promise<boolean> {
+    const session = await this.get(sessionId);
+    if (!session) return false;
+    const updated: Session = { ...session, title, updatedAt: Date.now() };
+    await writeJson(this.sessionFilePath(sessionId), updated);
+    return true;
+  }
+
+  /** Update the permissionMode on a session. */
+  async setPermissionMode(sessionId: string, mode: PermissionMode): Promise<boolean> {
+    const session = await this.get(sessionId);
+    if (!session) return false;
+    const updated: Session = { ...session, permissionMode: mode, updatedAt: Date.now() };
     await writeJson(this.sessionFilePath(sessionId), updated);
     return true;
   }

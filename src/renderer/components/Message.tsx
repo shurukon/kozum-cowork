@@ -5,8 +5,12 @@
  * (markdown, tool cards, thinking blocks). Streaming text gets the kz-caret
  * class while in-flight.
  *
- * Thinking block: live indicator while streaming (breathing dot + streaming
- * italic text), collapses to "Thought for Ns" summary when the turn ends.
+ * Changes in this version:
+ * - User bubbles gain `kz-send-ack` on first mount for the "message received"
+ *   light-ring feedback the user was missing.
+ * - Thinking block live state uses `.kz-think-orb` breathing dot from glass.css
+ *   plus a glass-panel treatment around the reasoning text.
+ * - Settled thinking block gains the glass surface class for consistency.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -26,13 +30,11 @@ interface ThinkingBlockProps {
 
 function ThinkingBlock({ text, isStreaming }: ThinkingBlockProps) {
   const [open, setOpen] = useState(false);
-  // Track how long the thinking has been streaming
   const startRef = useRef<number>(Date.now());
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     if (!isStreaming) {
-      // Record total elapsed when streaming ends
       setElapsed(Math.round((Date.now() - startRef.current) / 1000));
       return;
     }
@@ -43,11 +45,16 @@ function ThinkingBlock({ text, isStreaming }: ThinkingBlockProps) {
   }, [isStreaming]);
 
   if (isStreaming) {
-    // Live state: breathing dot + streaming dimmed italic text
+    // Live state: kz-think-orb breathing dot + glass panel + streaming italic text.
     return (
-      <div className={styles.thinkingLive} aria-live="polite" aria-label="Thinking">
+      <div
+        className={`${styles.thinkingLive} kz-glass kz-glass-busy`}
+        aria-live="polite"
+        aria-label="Thinking"
+      >
         <div className={styles.thinkingLiveHeader}>
-          <span className={styles.thinkingDot} aria-hidden={true} />
+          {/* kz-think-orb from glass.css: gradient breathing dot */}
+          <span className="kz-think-orb" aria-hidden={true} />
           <span className={styles.thinkingLiveLabel}>Thinking…</span>
         </div>
         {text.length > 0 && (
@@ -57,10 +64,10 @@ function ThinkingBlock({ text, isStreaming }: ThinkingBlockProps) {
     );
   }
 
-  // Settled state: collapsible summary
+  // Settled state: collapsible summary with glass treatment.
   const summary = elapsed > 0 ? `Thought for ${elapsed}s` : "Thought";
   return (
-    <div className={styles.thinking}>
+    <div className={`${styles.thinking} kz-glass kz-glass-sweep`}>
       <button
         className={styles.thinkingToggle}
         onClick={() => setOpen((v) => !v)}
@@ -82,13 +89,29 @@ interface Props {
   message: MessageType;
   isStreaming: boolean;
   toolCards: Map<string, ToolCardType>;
+  /** Optional: emit when a file chip is clicked in a ToolCard */
+  onOpenFile?: (path: string) => void;
 }
 
-export function Message({ message, isStreaming, toolCards }: Props) {
+export function Message({ message, isStreaming, toolCards, onOpenFile }: Props) {
+  // Track whether this is the very first mount so we can add kz-send-ack once.
+  const isMountedRef = useRef(false);
+  const [sendAck, setSendAck] = useState(false);
+
+  useEffect(() => {
+    if (message.role === "user" && !isMountedRef.current) {
+      isMountedRef.current = true;
+      setSendAck(true);
+      // Remove the class after the animation ends so it doesn't replay.
+      const timer = setTimeout(() => setSendAck(false), 900);
+      return () => clearTimeout(timer);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentionally run once
+
   if (message.role === "user") {
     return (
       <div className={styles.userRow}>
-        <div className={styles.userBubble}>
+        <div className={`${styles.userBubble} ${sendAck ? "kz-send-ack" : ""}`}>
           {message.content.map((block, i) => {
             if (block.type === "text") {
               return <p key={i} className={styles.userText}>{block.text}</p>;
@@ -122,14 +145,14 @@ export function Message({ message, isStreaming, toolCards }: Props) {
         if (b.type !== "tool_use") return null;
         const card = toolCards.get(b.id);
         if (!card) return null;
-        return <ToolCard key={b.id} card={card} />;
+        return <ToolCard key={b.id} card={card} onOpenFile={onOpenFile} />;
       })}
 
       {/* Also render any cards that haven't yet been reflected back as tool_use blocks */}
       {Array.from(toolCards.values())
         .filter((c) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === c.toolUseId))
         .map((c) => (
-          <ToolCard key={c.toolUseId} card={c} />
+          <ToolCard key={c.toolUseId} card={c} onOpenFile={onOpenFile} />
         ))}
 
       {fullText.length > 0 && (

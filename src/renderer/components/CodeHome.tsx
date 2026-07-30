@@ -1,68 +1,55 @@
 /**
- * Kozum Cowork — Code-mode home screen.
+ * Kozum Cowork — Code-mode home screen (rework).
  *
- * Clean greeting + composer. The stats/activity grid has been removed:
- * it only ever showed zeros (the data was never wired) and the user
- * explicitly asked for it to go.
+ * Reference (Claude Code): greeting "What's up next, <name>?" + folder row +
+ * composer at the bottom. No stats grid, no activity heat-map.
  *
- * The composer here mirrors HomeView's: auto-growing textarea, Enter sends,
- * Shift+Enter newline, IME-safe, model label, send button, and a slot for
- * the permission picker.
+ * The composer is passed in as a composerSlot ReactNode so this component
+ * does not depend on ComposerBar's internals.
+ *
+ * Layout (top to bottom):
+ *   1. Greeting heading
+ *   2. Folder row: "Local" chip | folder name chips | "+ Add another folder" button
+ *   3. composerSlot (ComposerBar or any ReactNode)
  */
 
-import { useRef, useState } from "react";
-import { ArrowUp, ChevronDown, Plus } from "lucide-react";
+import type { ReactNode } from "react";
+import { FolderOpen, Plus } from "lucide-react";
 import styles from "./CodeHome.module.css";
 
 // ── Props ─────────────────────────────────────────────────────────────────
 
-interface Props {
+export interface CodeHomeProps {
   userName: string;
-  modelLabel: string;
-  onSubmit: (text: string) => void;
-  onPickModel: () => void;
-  onAttach: () => void;
-  isRunning?: boolean;
+  /** Absolute folder paths currently open. May be empty. */
+  folders: string[];
+  /** Called when the user clicks "+ Add another folder". */
+  onAddFolder: () => void;
+  /** Called when the user clicks an existing folder chip. */
+  onOpenFolder: (path: string) => void;
+  /** The full composer bar — owned by App/ComposerBar, slotted in here. */
+  composerSlot: ReactNode;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+/** Return the last path segment (folder name) from an absolute path. */
+function folderName(path: string): string {
+  return path.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? path;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
 
 export function CodeHome({
   userName,
-  modelLabel,
-  onSubmit,
-  onPickModel,
-  onAttach,
-  isRunning = false,
-}: Props) {
-  const [value, setValue] = useState("");
-  const ta = useRef<HTMLTextAreaElement>(null);
-
+  folders,
+  onAddFolder,
+  onOpenFolder,
+  composerSlot,
+}: CodeHomeProps) {
   const heading = userName
     ? `What's up next, ${userName}?`
     : "What are we building?";
-
-  function submit() {
-    const text = value.trim();
-    if (!text || isRunning) return;
-    onSubmit(text);
-    setValue("");
-    if (ta.current) ta.current.style.height = "auto";
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      submit();
-    }
-  }
-
-  function autoGrow(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setValue(e.target.value);
-    const el = e.target;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
-  }
 
   return (
     <div className={`${styles.wrap} kz-dotfield kz-dotfield-fade`}>
@@ -79,55 +66,42 @@ export function CodeHome({
           <span>{heading}</span>
         </h1>
 
-        {/* Composer */}
-        <div className={styles.composerShell}>
-          <div className={`${styles.composer} ${isRunning ? styles.composerRunning : ""}`}>
-            <textarea
-              ref={ta}
-              className={styles.input}
-              placeholder={isRunning ? "Waiting for agent…" : "Describe what you want to build or fix…"}
-              value={value}
-              onChange={autoGrow}
-              onKeyDown={onKeyDown}
-              rows={1}
-              disabled={isRunning}
-              spellCheck={false}
-              aria-label="Message"
-            />
+        {/* Folder row */}
+        <div className={styles.folderRow} role="list" aria-label="Open folders">
+          {/* "Local" chip — always shown */}
+          <span className={styles.chipLocal} role="listitem" aria-label="Local filesystem">
+            <FolderOpen size={12} aria-hidden />
+            Local
+          </span>
 
-            <div className={styles.row}>
-              <button
-                className={styles.attach}
-                aria-label="Add files"
-                title="Add files"
-                onClick={onAttach}
-                disabled={isRunning}
-              >
-                <Plus size={17} />
-              </button>
+          {/* One chip per open folder */}
+          {folders.map((path) => (
+            <button
+              key={path}
+              className={styles.chipFolder}
+              role="listitem"
+              title={path}
+              onClick={() => onOpenFolder(path)}
+              aria-label={`Open folder ${folderName(path)}`}
+            >
+              {folderName(path)}
+            </button>
+          ))}
 
-              <div className={styles.rowRight}>
-                <button className={styles.model} onClick={onPickModel}>
-                  <span>{modelLabel}</span>
-                  <ChevronDown size={14} />
-                </button>
-                <button
-                  className={styles.send}
-                  onClick={submit}
-                  disabled={!value.trim() || isRunning}
-                  aria-label="Send"
-                >
-                  <ArrowUp size={16} />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* In-flight indicator: thin sweep along the composer's bottom edge */}
-          {isRunning && (
-            <div className={styles.inflight} aria-hidden={true} />
-          )}
+          {/* Add another folder */}
+          <button
+            className={styles.chipAdd}
+            onClick={onAddFolder}
+            aria-label="Add another folder"
+            title="Add another folder"
+          >
+            <Plus size={13} aria-hidden />
+            <span>Add another folder</span>
+          </button>
         </div>
+
+        {/* Composer (slotted) */}
+        <div className={styles.composerArea}>{composerSlot}</div>
       </div>
     </div>
   );

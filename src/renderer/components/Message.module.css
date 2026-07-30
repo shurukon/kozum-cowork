@@ -13,6 +13,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-xl) var(--r-xl) var(--r-xs) var(--r-xl);
   padding: var(--sp-5) var(--sp-6);
+  /* kz-send-ack applied via JS on first mount (from glass.css) */
 }
 
 .userText {
@@ -41,11 +42,14 @@
 
 /* --------------------------------------------------------- thinking: settled --- */
 
+/*
+ * Settled thinking: glass pane (kz-glass + kz-glass-sweep added in JSX).
+ * The kz-glass class handles border, border-radius, backdrop-blur, and the
+ * top-edge highlight from glass.css. We only add the layout here.
+ */
 .thinking {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
   overflow: hidden;
+  /* border-radius is set by kz-glass via --radius-card, which resolves to --r-lg */
 }
 
 .thinkingToggle {
@@ -83,18 +87,16 @@
 /* --------------------------------------------------------- thinking: live --- */
 
 /*
- * While the model is streaming reasoning, we show a breathing accent dot and
- * the raw text in a dimmed italic — making it clear something is happening.
+ * Live thinking: kz-glass + kz-glass-busy applied in JSX for the animated
+ * sweep, plus the left-accent border below. Layout only here.
  */
 .thinkingLive {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
   padding: var(--sp-4) var(--sp-5);
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-inline-start: 2px solid var(--accent-primary);
-  border-radius: var(--r-md);
+  /* A coloured left edge makes it clear this is the live reasoning strip */
+  border-inline-start: 2px solid var(--accent-primary) !important;
 }
 
 .thinkingLiveHeader {
@@ -103,16 +105,14 @@
   gap: var(--sp-3);
 }
 
-/* Breathing accent dot — uses kz-breathe from global.css */
-.thinkingDot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--r-full);
-  background: var(--accent-primary);
-  flex-shrink: 0;
-  animation: kz-breathe 1.6s ease-in-out infinite;
-}
+/*
+ * The .kz-think-orb class from glass.css provides:
+ *   - width/height: 8px, border-radius: full
+ *   - background: var(--accent-gradient)
+ *   - box-shadow: 0 0 10px var(--glow-blue)
+ *   - animation: kz-breathe 1.6s ease-in-out infinite
+ * We add no overrides here.
+ */
 
 .thinkingLiveLabel {
   font-size: var(--fs-xs);

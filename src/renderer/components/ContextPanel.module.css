@@ -1,0 +1,195 @@
+/*
+ * ContextPanel — MCP / tools / plugins / folder / files.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.empty {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: var(--lh-snug);
+}
+
+/* ── Group ─────────────────────────────────────────────────────────────── */
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.subHeading {
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  line-height: var(--lh-tight);
+}
+
+/* ── MCP server list ───────────────────────────────────────────────────── */
+
+.mcpList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.mcpRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+}
+
+.connDot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+}
+
+.connDotOk {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+
+.connDotErr {
+  background: var(--error);
+}
+
+.connDotConnecting {
+  background: var(--warning);
+}
+
+.connDotIdle {
+  background: var(--text-muted);
+  opacity: 0.6;
+}
+
+.mcpName {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolCount {
+  flex: 0 0 auto;
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Tool chips ─────────────────────────────────────────────────────────── */
+
+.chipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  max-width: 120px;
+  overflow: hidden;
+}
+
+.chipIcon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--accent-primary);
+  opacity: 0.8;
+}
+
+.chipLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Plugin list ─────────────────────────────────────────────────────────── */
+
+.pluginList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.pluginRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-1) 0;
+}
+
+.pluginIcon {
+  flex: 0 0 auto;
+  color: var(--accent-secondary);
+}
+
+.pluginName {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Path chips (folder / files) ─────────────────────────────────────────── */
+
+.pathList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.pathChip {
+  display: flex;
+}
+
+.pathChipBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  max-width: 100%;
+  text-align: start;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+  overflow: hidden;
+}
+
+.pathChipBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.pathChipLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}

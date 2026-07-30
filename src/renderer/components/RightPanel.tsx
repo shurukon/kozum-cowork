@@ -1,47 +1,19 @@
 /**
- * Kozum Cowork — right panel.
+ * Kozum Cowork — RightPanel (Cowork mode).
  *
- * Shows Progress (task list), Working folder, and Context (connectors).
- * Each section is independently collapsible.
+ * Three collapsible, glass-trimmed sections:
+ *   1. Progress   — live task list via TaskList
+ *   2. Context    — MCP / tools / plugins / folder / files via ContextPanel
+ *
+ * Sections default open when they have content; the user can collapse them.
  */
 
 import { useState, type ReactNode } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  FolderOpen,
-  Plug,
-  ListTodo,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Loader,
-  MinusCircle,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, ListTodo, Plug } from "lucide-react";
 import type { AgentTask, McpServerConfig } from "@shared/types.ts";
+import { TaskList } from "./TaskList.tsx";
+import { ContextPanel } from "./ContextPanel.tsx";
 import styles from "./RightPanel.module.css";
-
-// ── Task status glyphs ─────────────────────────────────────────────────────
-
-function TaskGlyph({ status }: { status: AgentTask["status"] }) {
-  switch (status) {
-    case "completed":
-      return <CheckCircle2 size={14} className={styles.taskDone} />;
-    case "failed":
-      return <XCircle size={14} className={styles.taskFailed} />;
-    case "in_progress":
-      return (
-        <span
-          className={`${styles.taskSpinner} kz-spin`}
-          aria-label="In progress"
-        />
-      );
-    case "stopped":
-      return <MinusCircle size={14} className={styles.taskStopped} />;
-    default:
-      return <Clock size={14} className={styles.taskPending} />;
-  }
-}
 
 // ── Collapsible section ────────────────────────────────────────────────────
 
@@ -54,16 +26,22 @@ interface SectionProps {
 
 function Section({ title, icon: Icon, defaultOpen = true, children }: SectionProps) {
   const [open, setOpen] = useState(defaultOpen);
+
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} kz-glass`}>
       <button
         className={styles.sectionHeader}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        type="button"
       >
-        <Icon size={13} className={styles.sectionIcon} />
+        <Icon size={12} className={styles.sectionIcon} aria-hidden="true" />
         <span className={styles.sectionTitle}>{title}</span>
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {open ? (
+          <ChevronDown size={12} aria-hidden="true" />
+        ) : (
+          <ChevronRight size={12} aria-hidden="true" />
+        )}
       </button>
       {open && <div className={styles.sectionBody}>{children}</div>}
     </div>
@@ -72,74 +50,59 @@ function Section({ title, icon: Icon, defaultOpen = true, children }: SectionPro
 
 // ── Props ──────────────────────────────────────────────────────────────────
 
-interface Props {
+export interface RightPanelProps {
   tasks: AgentTask[];
+  mcpServers: McpServerConfig[];
+  plugins: { name: string }[];
+  toolsUsed: string[];
   workingFolder: string | null;
-  connectors: McpServerConfig[];
+  sharedFiles: string[];
+  onOpenPath: (path: string) => void;
 }
 
-export function RightPanel({ tasks, workingFolder, connectors }: Props) {
+// ── Component ──────────────────────────────────────────────────────────────
+
+export function RightPanel({
+  tasks,
+  mcpServers,
+  plugins,
+  toolsUsed,
+  workingFolder,
+  sharedFiles,
+  onOpenPath,
+}: RightPanelProps) {
+  const hasContext =
+    mcpServers.length > 0 ||
+    toolsUsed.length > 0 ||
+    plugins.length > 0 ||
+    workingFolder !== null ||
+    sharedFiles.length > 0;
+
   return (
     <aside className={styles.panel} aria-label="Side panel">
-      {/* Progress */}
-      <Section title="Progress" icon={ListTodo}>
-        {tasks.length === 0 ? (
-          <p className={styles.empty}>No tasks yet.</p>
-        ) : (
-          <ul className={styles.taskList}>
-            {tasks.map((t) => (
-              <li key={t.id} className={styles.task}>
-                <TaskGlyph status={t.status} />
-                <div className={styles.taskInfo}>
-                  <span className={styles.taskSubject}>{t.subject}</span>
-                  {t.description && (
-                    <span className={styles.taskDesc}>{t.description}</span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* Progress section */}
+      <Section
+        title="Progress"
+        icon={ListTodo}
+        defaultOpen={tasks.length > 0}
+      >
+        <TaskList tasks={tasks} />
       </Section>
 
-      {/* Working folder */}
-      <Section title="Working folder" icon={FolderOpen} defaultOpen={Boolean(workingFolder)}>
-        {workingFolder ? (
-          <button className={styles.folderPath} title={workingFolder}>
-            <FolderOpen size={13} />
-            <span className="kz-truncate">{workingFolder}</span>
-          </button>
-        ) : (
-          <p className={styles.empty}>No folder selected.</p>
-        )}
-      </Section>
-
-      {/* Context / connectors */}
-      <Section title="Context" icon={Plug} defaultOpen={connectors.length > 0}>
-        {connectors.length === 0 ? (
-          <p className={styles.empty}>No connectors active.</p>
-        ) : (
-          <ul className={styles.connectorList}>
-            {connectors.map((c) => (
-              <li key={c.id} className={styles.connector}>
-                <span
-                  className={`${styles.connStatus} ${
-                    c.status === "connected"
-                      ? styles.connOk
-                      : c.status === "error"
-                        ? styles.connErr
-                        : styles.connIdle
-                  }`}
-                />
-                <span className={styles.connName}>{c.name}</span>
-                {c.status === "connecting" && (
-                  <Loader size={11} className={`${styles.connLoader} kz-spin`} />
-                )}
-                <span className={styles.connTools}>{c.toolCount} tools</span>
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* Context section */}
+      <Section
+        title="Context"
+        icon={Plug}
+        defaultOpen={hasContext}
+      >
+        <ContextPanel
+          mcpServers={mcpServers}
+          plugins={plugins}
+          toolsUsed={toolsUsed}
+          workingFolder={workingFolder}
+          sharedFiles={sharedFiles}
+          onOpenPath={onOpenPath}
+        />
       </Section>
     </aside>
   );

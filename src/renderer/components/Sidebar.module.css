@@ -1,3 +1,5 @@
+/* Sidebar — left navigation (rework: real filter, ⋯ menus, no dead button) */
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -41,11 +43,6 @@
   color: var(--text-primary);
 }
 
-/*
- * The active mode is marked with the accent gradient at low opacity plus a hair
- * of glow, rather than a flat fill. On a near-black canvas a flat fill reads as
- * a hole; the glow reads as illumination.
- */
 .modeOn {
   color: var(--text-primary);
   background: linear-gradient(
@@ -102,10 +99,44 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-6);
+  gap: var(--sp-4);
   margin: 0 calc(var(--sp-4) * -1);
   padding: 0 var(--sp-4);
 }
+
+/* ------------------------------------------------------ filter row --- */
+
+.filterRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-2);
+  height: 26px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+}
+
+.filterIcon {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.filterInput {
+  flex: 1;
+  font-size: var(--fs-xs);
+  color: var(--text-primary);
+  background: none;
+  /* Reset search input browser styling */
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.filterInput::placeholder {
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------- groups --- */
 
 .group > ul {
   display: flex;
@@ -123,28 +154,24 @@
   font-weight: var(--fw-medium);
   color: var(--text-muted);
   letter-spacing: var(--tracking-wide);
-  text-transform: none;
 }
 
-.groupAction {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--r-xs);
-  color: var(--text-muted);
-}
+/* --------------------------------------------------------- recent row --- */
 
-.groupAction:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
+/* Each row is position:relative so the ⋯ menu and ConversationMenu popover
+   can be positioned relative to it. */
+.recentRow {
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .recent {
   display: flex;
   align-items: center;
   gap: var(--sp-5);
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   height: 27px;
   padding: 0 var(--sp-4);
   border-radius: var(--r-sm);
@@ -155,7 +182,8 @@
     color var(--dur-fast) var(--ease-out);
 }
 
-.recent:hover {
+.recent:hover,
+.recentRow:hover .recent {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -170,13 +198,45 @@
   height: 5px;
   border-radius: var(--r-full);
   border: 1px solid var(--text-muted);
+  transition: border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
 }
 
-.recent:hover .dot {
+.recentRow:hover .dot {
   border-color: var(--accent-secondary);
   background: var(--accent-secondary);
   box-shadow: 0 0 6px var(--glow-teal);
 }
+
+/* ⋯ menu trigger — hidden until row hover */
+.menuTrigger {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-xs);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+  margin-inline-end: var(--sp-2);
+}
+
+.recentRow:hover .menuTrigger,
+.menuTriggerActive {
+  opacity: 1;
+}
+
+.menuTrigger:hover,
+.menuTriggerActive {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ----------------------------------------------------------- empty --- */
 
 .empty {
   padding: var(--sp-6) var(--sp-4);
@@ -185,7 +245,7 @@
   line-height: var(--lh-snug);
 }
 
-/* ------------------------------------------------------------ account --- */
+/* ---------------------------------------------------------- account --- */
 
 .account {
   display: flex;

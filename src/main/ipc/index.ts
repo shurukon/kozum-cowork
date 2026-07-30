@@ -7,10 +7,14 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { readFile, stat as fsStat } from "node:fs/promises";
+import { extname } from "node:path";
 import type { IpcMain, BrowserWindow, App } from "electron";
-import type { AgentEvent, McpServerConfig, Mode, ModelSelection, ScheduledTask } from "../../shared/types.ts";
+import type { AgentEvent, McpServerConfig, Mode, ModelSelection, PermissionMode, ProviderPreset, ScheduledTask } from "../../shared/types.ts";
 import { ok, err } from "../../shared/types.ts";
+import { resolvePath, PathError } from "../tools/paths.ts";
 import { PROVIDER_PRESETS } from "../providers/presets.ts";
+import type { MemoryVault } from "../memory/vault.ts";
 import type { SettingsStore } from "../store/settings.ts";
 import type { SecretStore } from "../store/secrets.ts";
 import type { ProviderRegistry } from "../providers/registry.ts";
@@ -54,6 +58,7 @@ export interface IpcDeps {
   skills: SkillStore;
   tasks: TaskStore;
   projects: ProjectStore;
+  memory: MemoryVault;
   dialog: DialogFacade;
 }
 
@@ -119,16 +124,71 @@ export function registerIpc(deps: IpcDeps): void {
 
   /* --------------------------------------------------------- providers --- */
 
-  ipcMain.handle("providers:presets", () => PROVIDER_PRESETS);
+  handle(ipcMain, "providers:presets", async () => {
+    const settings = await deps.settings.get();
+    const custom = Array.isArray(settings.customProviders) ? settings.customProviders : [];
+    return [...PROVIDER_PRESETS, ...custom];
+  });
 
   handle(ipcMain, "providers:addKey", async (_e, providerId, label, rawKey, meta) => {
+    // Label is optional: default to "Key N" based on how many keys the provider has.
+    const existing = await deps.secrets.list(String(providerId));
+    const resolvedLabel =
+      label !== undefined && label !== null && String(label).trim()
+        ? String(label)
+        : `Key ${existing.length + 1}`;
     const entry = await deps.secrets.add(
       String(providerId),
-      String(label),
+      resolvedLabel,
       String(rawKey),
       meta as Record<string, string> | undefined,
     );
     return ok(entry);
+  });
+
+  handle(ipcMain, "providers:addCustom", async (_e, input) => {
+    const payload = input as { name?: unknown; baseUrl?: unknown };
+    const name = String(payload.name ?? "").trim();
+    const baseUrl = String(payload.baseUrl ?? "").trim();
+    if (!name) return err("name is required");
+    if (!baseUrl) return err("baseUrl is required");
+
+    const id = `custom_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    const preset: ProviderPreset = {
+      id,
+      name,
+      protocol: "openai-chat",
+      baseUrl,
+      authScheme: "bearer",
+      modelsPath: "/models",
+      builtIn: false,
+    };
+
+    const settings = await deps.settings.get();
+    const existing = Array.isArray(settings.customProviders) ? settings.customProviders : [];
+    await deps.settings.patch({ customProviders: [...existing, preset] });
+    return ok(preset);
+  });
+
+  handle(ipcMain, "providers:removeCustom", async (_e, id) => {
+    const settings = await deps.settings.get();
+    const existing = Array.isArray(settings.customProviders) ? settings.customProviders : [];
+    const next = existing.filter((p) => p.id !== String(id));
+    if (next.length === existing.length) return err(`Custom provider "${String(id)}" not found`);
+    await deps.settings.patch({ customProviders: next });
+    return ok(undefined);
+  });
+
+  handle(ipcMain, "providers:updateCustom", async (_e, id, patch) => {
+    const settings = await deps.settings.get();
+    const existing = Array.isArray(settings.customProviders) ? settings.customProviders : [];
+    const idx = existing.findIndex((p) => p.id === String(id));
+    if (idx === -1) return err(`Custom provider "${String(id)}" not found`);
+    const updated = { ...existing[idx]!, ...(patch as Partial<ProviderPreset>) };
+    const next = [...existing];
+    next[idx] = updated;
+    await deps.settings.patch({ customProviders: next });
+    return ok(updated);
   });
 
   handle(ipcMain, "providers:removeKey", async (_e, keyId) => {
@@ -176,6 +236,36 @@ export function registerIpc(deps: IpcDeps): void {
 
   handle(ipcMain, "sessions:archive", async (_e, sessionId) => {
     const done = await deps.sessions.archive(String(sessionId));
+    if (!done) return err(`Session "${String(sessionId)}" not found`);
+    return ok(undefined);
+  });
+
+  handle(ipcMain, "sessions:delete", async (_e, sessionId) => {
+    const done = await deps.sessions.delete(String(sessionId));
+    if (!done) return err(`Session "${String(sessionId)}" not found`);
+    return ok(undefined);
+  });
+
+  handle(ipcMain, "sessions:branch", async (_e, sessionId, uptoMessageId) => {
+    const newSession = await deps.sessions.branch(
+      String(sessionId),
+      uptoMessageId !== undefined && uptoMessageId !== null ? String(uptoMessageId) : undefined,
+    );
+    if (!newSession) return err(`Session "${String(sessionId)}" not found`);
+    return ok(newSession);
+  });
+
+  handle(ipcMain, "sessions:rename", async (_e, sessionId, title) => {
+    const done = await deps.sessions.rename(String(sessionId), String(title));
+    if (!done) return err(`Session "${String(sessionId)}" not found`);
+    return ok(undefined);
+  });
+
+  handle(ipcMain, "sessions:setPermissionMode", async (_e, sessionId, mode) => {
+    const done = await deps.sessions.setPermissionMode(
+      String(sessionId),
+      String(mode) as PermissionMode,
+    );
     if (!done) return err(`Session "${String(sessionId)}" not found`);
     return ok(undefined);
   });
@@ -375,6 +465,95 @@ export function registerIpc(deps: IpcDeps): void {
   handle(ipcMain, "skills:setEnabled", async (_e, _id, _enabled) => {
     // SkillStore doesn't persist enabled state via a toggle; accept the call.
     return ok(undefined);
+  });
+
+  /* ----------------------------------------------------------- memory --- */
+
+  handle(ipcMain, "memory:getRules", async () => {
+    const rules = await deps.memory.getRules();
+    return ok(rules);
+  });
+
+  handle(ipcMain, "memory:setRules", async (_e, text) => {
+    await deps.memory.setRules(String(text ?? ""));
+    return ok(undefined);
+  });
+
+  /* ---------------------------------------------------------- preview (read-only) --- */
+
+  /** Maximum bytes of text we return for a preview. */
+  const PREVIEW_TEXT_CAP = 512 * 1024; // 512 KB
+
+  /** MIME type map by extension — mirrors the fs.ts image map. */
+  const MIME_MAP: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    bmp: "image/bmp",
+    svg: "image/svg+xml",
+    ico: "image/x-icon",
+    tiff: "image/tiff",
+    tif: "image/tiff",
+    avif: "image/avif",
+    pdf: "application/pdf",
+  };
+
+  const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tiff", "tif", "avif"]);
+
+  handle(ipcMain, "preview:readFile", async (_e, rawPath) => {
+    const path = String(rawPath ?? "");
+    if (!path) return err("path is required");
+
+    const resolved = await resolvePath(path, { workingFolder: null }).catch((e: unknown) => {
+      if (e instanceof PathError) return e;
+      throw e;
+    });
+    if (resolved instanceof PathError) return err(resolved.message);
+
+    const ext = extname(resolved).toLowerCase().slice(1);
+    const mime = MIME_MAP[ext] ?? "text/plain";
+
+    try {
+      const buf = await readFile(resolved);
+
+      if (IMAGE_EXTS.has(ext)) {
+        return ok({
+          content: "",
+          base64: buf.toString("base64"),
+          mime,
+          truncated: false,
+        });
+      }
+
+      const truncated = buf.length > PREVIEW_TEXT_CAP;
+      const slice = truncated ? buf.slice(0, PREVIEW_TEXT_CAP) : buf;
+      const content = slice.toString("utf-8");
+      return ok({ content, mime, truncated });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return err(msg);
+    }
+  });
+
+  handle(ipcMain, "preview:stat", async (_e, rawPath) => {
+    const path = String(rawPath ?? "");
+    if (!path) return err("path is required");
+
+    const resolved = await resolvePath(path, { workingFolder: null }).catch((e: unknown) => {
+      if (e instanceof PathError) return e;
+      throw e;
+    });
+    if (resolved instanceof PathError) return err(resolved.message);
+
+    try {
+      const s = await fsStat(resolved);
+      return ok({ size: s.size, isDir: s.isDirectory() });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return err(msg);
+    }
   });
 
   /* Window commands are fire-and-forget (ipcMain.on), handled in main index. */

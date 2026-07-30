@@ -1,0 +1,392 @@
+/*
+ * Kozum Cowork — PreviewPanel.
+ *
+ * The shared built-in preview. Sits alongside the chat (not replacing it).
+ * Uses glass treatment via .kz-glass from glass.css.
+ */
+
+/* ── Panel shell ────────────────────────────────────────────────────────── */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: var(--rightpanel-w);
+  flex: 0 0 var(--rightpanel-w);
+  height: 100%;
+  overflow: hidden;
+  /* Glass styles come from .kz-glass on the element */
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: 36px;
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  flex: 0 0 auto;
+}
+
+.headerIcon {
+  flex: 0 0 auto;
+  color: var(--accent-primary);
+}
+
+.headerTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 0 auto;
+}
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  background: transparent;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.iconBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.iconBtn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -1px;
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--sp-4);
+  scrollbar-width: thin;
+}
+
+/* ── Loading shimmer ─────────────────────────────────────────────────────── */
+
+.shimmerWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4) 0;
+}
+
+@keyframes shimmer-slide {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+.shimmerLine {
+  height: 12px;
+  border-radius: var(--r-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 0%,
+    var(--bg-hover) 50%,
+    var(--bg-elevated) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-slide 1.6s linear infinite;
+}
+
+.shimmerLong { width: 90%; }
+.shimmerMed { width: 70%; }
+.shimmerShort { width: 50%; }
+
+[data-motion="reduced"] .shimmerLine {
+  animation: none;
+}
+
+/* ── Error ───────────────────────────────────────────────────────────────── */
+
+.errorWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-8);
+  text-align: center;
+}
+
+.errorIcon {
+  color: var(--error);
+  flex: 0 0 auto;
+}
+
+.errorMsg {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: var(--lh-snug);
+  max-width: 260px;
+}
+
+/* ── Text (code) preview ─────────────────────────────────────────────────── */
+
+.textWrap {
+  overflow: hidden;
+}
+
+.truncNote {
+  font-size: var(--fs-xs);
+  color: var(--warning);
+  margin-bottom: var(--sp-4);
+  background: var(--warning-soft);
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-sm);
+}
+
+.textPre {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-relaxed);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.lineTable {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 100%;
+}
+
+.lineRow {
+  vertical-align: top;
+}
+
+.lineRow:hover .lineContent {
+  background: var(--bg-hover);
+}
+
+.lineNum {
+  text-align: right;
+  padding: 0 var(--sp-4) 0 0;
+  min-width: 36px;
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.lineContent {
+  padding: 0 var(--sp-2);
+  color: var(--text-primary);
+  white-space: pre;
+}
+
+/* ── Markdown preview ─────────────────────────────────────────────────────── */
+
+.markdownWrap {
+  overflow-x: hidden;
+}
+
+.markdownBody {
+  font-size: var(--fs-sm);
+}
+
+/* ── Image preview ───────────────────────────────────────────────────────── */
+
+.imageWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+}
+
+.previewImage {
+  max-width: 100%;
+  max-height: calc(100vh - 160px);
+  border-radius: var(--r-md);
+  object-fit: contain;
+}
+
+/* ── PDF / Binary placeholders ───────────────────────────────────────────── */
+
+.pdfWrap,
+.binaryWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-8) var(--sp-4);
+  text-align: center;
+}
+
+.pdfIcon,
+.binaryIcon {
+  color: var(--accent-primary);
+  opacity: 0.7;
+}
+
+.pdfName,
+.binaryType {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.pdfHint,
+.binaryHint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: var(--lh-snug);
+}
+
+.openExternalBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.openExternalBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── URL / iframe ────────────────────────────────────────────────────────── */
+
+.iframeWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  height: 100%;
+}
+
+.iframeNote {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-4);
+}
+
+.iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 400px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-secondary);
+}
+
+.urlFallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-8) var(--sp-4);
+  text-align: center;
+}
+
+.urlIcon {
+  color: var(--accent-secondary);
+  opacity: 0.7;
+}
+
+.urlText {
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.urlNote {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: var(--lh-snug);
+}
+
+/* ── Project placeholder ─────────────────────────────────────────────────── */
+
+.projectWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-8) var(--sp-4);
+  text-align: center;
+}
+
+.projectIcon {
+  color: var(--accent-primary);
+  opacity: 0.7;
+}
+
+.projectPath {
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.projectHint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: var(--lh-snug);
+}
+
+/* ── MCP result ───────────────────────────────────────────────────────────── */
+
+.mcpWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.mcpServer {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.mcpPre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-relaxed);
+  color: var(--text-primary);
+  background: var(--bg-sunken);
+  border-radius: var(--r-md);
+  padding: var(--sp-5);
+  overflow-x: auto;
+  white-space: pre;
+}

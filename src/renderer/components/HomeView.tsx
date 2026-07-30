@@ -1,71 +1,31 @@
 /**
- * Cowork / Code home screen.
+ * Cowork home screen.
  *
- * Deliberately sparse: a greeting, one input, and the model selector. The
- * reference app earns its calm by resisting the urge to put anything else on
- * this screen, and the dot field does the visual work that chrome would
- * otherwise have to.
+ * Deliberately sparse: a greeting, the composer, and a folder affordance. The
+ * composer itself is the shared ComposerBar (passed in as `composerSlot`) so the
+ * three-selector provider/key/model switching lives here exactly as it does in
+ * Code mode — the model control no longer opens Settings.
  */
 
-import { useRef, useState } from "react";
-import { ArrowUp, ChevronDown, FolderOpen, Plus } from "lucide-react";
+import type { ReactNode } from "react";
+import { ChevronDown, FolderOpen } from "lucide-react";
 
-import type { Mode } from "@shared/types.ts";
 import styles from "./HomeView.module.css";
 
 interface Props {
-  mode: Mode;
   userName: string;
-  modelLabel: string;
-  onSubmit: (text: string) => void;
-  onPickModel: () => void;
+  /** The shared ComposerBar, wired by App. */
+  composerSlot: ReactNode;
+  /** Opens the folder picker for an ad-hoc working folder. */
   onPickFolder: () => void;
-  onAttach: () => void;
+  /** Current working-folder label, or null when none is set. */
+  folderLabel: string | null;
 }
 
-export function HomeView({
-  mode,
-  userName,
-  modelLabel,
-  onSubmit,
-  onPickModel,
-  onPickFolder,
-  onAttach,
-}: Props) {
-  const [value, setValue] = useState("");
-  const ta = useRef<HTMLTextAreaElement>(null);
-
-  const heading =
-    mode === "cowork"
-      ? "What can I take off your plate?"
-      : userName
-        ? `What's up next, ${userName}?`
-        : "What are we building?";
-
-  function submit() {
-    const text = value.trim();
-    if (!text) return;
-    onSubmit(text);
-    setValue("");
-    // Collapse the grown textarea back to one row after sending.
-    if (ta.current) ta.current.style.height = "auto";
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Enter sends; Shift+Enter inserts a newline. IME composition must never be
-    // interrupted, or Arabic/CJK input gets sent mid-word.
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      submit();
-    }
-  }
-
-  function autoGrow(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setValue(e.target.value);
-    const el = e.target;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
-  }
+export function HomeView({ userName, composerSlot, onPickFolder, folderLabel }: Props) {
+  const heading = userName
+    ? `What can I take off your plate, ${userName}?`
+    : "What can I take off your plate?";
 
   return (
     <div className={`${styles.wrap} kz-dotfield kz-dotfield-fade`}>
@@ -88,44 +48,11 @@ export function HomeView({
         </p>
 
         <div className={styles.composerShell}>
-          <div className={styles.composer}>
-            <textarea
-              ref={ta}
-              className={styles.input}
-              placeholder="How can I help you today?"
-              value={value}
-              onChange={autoGrow}
-              onKeyDown={onKeyDown}
-              rows={1}
-              spellCheck={false}
-              aria-label="Message"
-            />
-
-            <div className={styles.row}>
-              <button className={styles.attach} aria-label="Add files" title="Add files" onClick={onAttach}>
-                <Plus size={17} />
-              </button>
-
-              <div className={styles.rowRight}>
-                <button className={styles.model} onClick={onPickModel}>
-                  <span>{modelLabel}</span>
-                  <ChevronDown size={14} />
-                </button>
-                <button
-                  className={styles.send}
-                  onClick={submit}
-                  disabled={!value.trim()}
-                  aria-label="Send"
-                >
-                  <ArrowUp size={16} />
-                </button>
-              </div>
-            </div>
-          </div>
+          {composerSlot}
 
           <button className={styles.folder} onClick={onPickFolder}>
             <FolderOpen size={14} />
-            <span>Work in a project or folder</span>
+            <span>{folderLabel ?? "Work in a project or folder"}</span>
             <ChevronDown size={14} />
           </button>
         </div>

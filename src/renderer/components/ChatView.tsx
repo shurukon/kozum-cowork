@@ -1,47 +1,97 @@
 /**
  * Kozum Cowork — chat transcript + composer.
  *
- * Manages auto-scroll: follows the latest message but stops if the user
- * scrolls up. A "Jump to latest" pill appears when not at the bottom.
+ * Composes: Message list (with kz-send-ack and thinking animation) + ComposerBar
+ * (with AddMenu and SelectorBar). Manages auto-scroll and the jump-to-latest pill.
+ *
+ * Props are a superset of the old interface to remain wirable by App.tsx:
+ * - The old onAttach: () => void is replaced by onAttach: (kind) => void
+ *   so the parent decides what each AddMenu item does.
+ * - onPickModel is removed — model selection is now inline in SelectorBar.
+ * - selection, presets, keysByProvider, modelsByProvider, onSelectionChange,
+ *   onRefreshModels are new (passed through to ComposerBar → SelectorBar).
+ * - permissionSlot is new (Code mode injects <PermissionPicker />).
+ * - onOpenFile is new (forwarded to ToolCard file chips).
  */
 
-import { useEffect, useRef, useState, useCallback, type KeyboardEvent, type ChangeEvent } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, Plus, Square } from "lucide-react";
-import type { Mode } from "@shared/types.ts";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
+import { ArrowDown } from "lucide-react";
+import type {
+  Mode,
+  ModelSelection,
+  ProviderPreset,
+  ApiKeyEntry,
+  ModelInfo,
+} from "@shared/types.ts";
 import { useSessionStore } from "../store/session.ts";
 import { Message } from "./Message.tsx";
+import { ComposerBar } from "./ComposerBar.tsx";
+import type { AddMenuKind } from "./AddMenu.tsx";
 import styles from "./ChatView.module.css";
 
-interface Props {
+// ── Props ──────────────────────────────────────────────────────────────────
+
+export interface ChatViewProps {
   mode: Mode;
   sessionId: string;
+
+  // Messaging
   onSend: (text: string) => void;
   onCancel: () => void;
-  onPickModel: () => void;
-  modelLabel: string;
-  onAttach: () => void;
+
+  // Add menu (parent decides what each kind does)
+  onAttach: (kind: AddMenuKind) => void;
+
+  // Selection / model
+  selection: ModelSelection;
+  presets: ProviderPreset[];
+  keysByProvider: Record<string, ApiKeyEntry[]>;
+  modelsByProvider: Record<string, ModelInfo[]>;
+  onSelectionChange: (next: ModelSelection) => void;
+  onRefreshModels: (providerId: string) => Promise<void>;
+
+  /** Code mode passes a <PermissionPicker />; Cowork omits. */
+  permissionSlot?: ReactNode;
+
+  /** Called when the user clicks a file chip inside a tool card. */
+  onOpenFile?: (path: string) => void;
 }
 
-const SCROLL_THRESHOLD = 80; // px from bottom before we consider "scrolled up"
+// ── Constants ──────────────────────────────────────────────────────────────
+
+const SCROLL_THRESHOLD = 80; // px from bottom before "scrolled up"
+
+// ── ChatView ───────────────────────────────────────────────────────────────
 
 export function ChatView({
   mode,
   sessionId,
   onSend,
   onCancel,
-  onPickModel,
-  modelLabel,
   onAttach,
-}: Props) {
+  selection,
+  presets,
+  keysByProvider,
+  modelsByProvider,
+  onSelectionChange,
+  onRefreshModels,
+  permissionSlot,
+  onOpenFile,
+}: ChatViewProps) {
   const modeState = useSessionStore((s) => s[mode]);
   const { messages, streamingMessageId, toolCards } = modeState;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
-  const [value, setValue] = useState("");
-  const taRef = useRef<HTMLTextAreaElement>(null);
 
-  // Track whether the user has scrolled up.
+  // ── Scroll tracking ──────────────────────────────────────────────────────
+
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -66,32 +116,11 @@ export function ChatView({
 
   const isRunning = streamingMessageId !== null;
 
-  function submit() {
-    const text = value.trim();
-    if (!text || isRunning) return;
-    onSend(text);
-    setValue("");
-    if (taRef.current) taRef.current.style.height = "auto";
-  }
-
-  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      submit();
-    }
-  }
-
-  function autoGrow(e: ChangeEvent<HTMLTextAreaElement>) {
-    setValue(e.target.value);
-    const el = e.target;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
-  }
-
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className={styles.wrap}>
-      {/* Transcript — class "chatTranscript" is targeted by [data-font] in global.css */}
+      {/* Transcript */}
       <div
         className={`${styles.transcript} chatTranscript`}
         ref={scrollRef}
@@ -112,6 +141,7 @@ export function ChatView({
               message={msg}
               isStreaming={streamingMessageId === msg.id}
               toolCards={streamingMessageId === msg.id ? toolCards : new Map()}
+              onOpenFile={onOpenFile}
             />
           ))}
         </div>
@@ -130,66 +160,19 @@ export function ChatView({
       )}
 
       {/* Composer */}
-      <div className={styles.composerWrap} style={{ position: "relative" }}>
-        {/* In-flight indicator: thin sweep at the bottom edge while running */}
-        {isRunning && (
-          <div className={styles.composerInflight} aria-hidden={true}>
-            <div className={styles.composerInflightBar} />
-          </div>
-        )}
-        <div className={styles.composer}>
-          <textarea
-            ref={taRef}
-            className={styles.input}
-            placeholder={isRunning ? "Waiting for agent…" : "Message…"}
-            value={value}
-            onChange={autoGrow}
-            onKeyDown={onKeyDown}
-            rows={1}
-            disabled={isRunning}
-            spellCheck={false}
-            aria-label="Message"
-          />
-
-          <div className={styles.row}>
-            <button
-              className={styles.attach}
-              aria-label="Add files"
-              title="Add files"
-              onClick={onAttach}
-              disabled={isRunning}
-            >
-              <Plus size={16} />
-            </button>
-
-            <div className={styles.rowRight}>
-              <button className={styles.model} onClick={onPickModel}>
-                <span>{modelLabel}</span>
-                <ChevronDown size={13} />
-              </button>
-
-              {isRunning ? (
-                <button
-                  className={styles.stop}
-                  onClick={onCancel}
-                  aria-label="Stop"
-                >
-                  <Square size={12} />
-                </button>
-              ) : (
-                <button
-                  className={styles.send}
-                  onClick={submit}
-                  disabled={!value.trim()}
-                  aria-label="Send"
-                >
-                  <ArrowUp size={15} />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <ComposerBar
+        busy={isRunning}
+        onSend={onSend}
+        onCancel={onCancel}
+        onAttach={onAttach}
+        selection={selection}
+        presets={presets}
+        keysByProvider={keysByProvider}
+        modelsByProvider={modelsByProvider}
+        onSelectionChange={onSelectionChange}
+        onRefreshModels={onRefreshModels}
+        permissionSlot={permissionSlot}
+      />
     </div>
   );
 }

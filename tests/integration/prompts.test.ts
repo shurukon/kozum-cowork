@@ -22,6 +22,7 @@ function ctx(over: Partial<PromptContext> = {}): PromptContext {
     userName: "Sam",
     workDescription: "product design",
     customInstructions: "",
+    rules: "",
     workingFolder: "/home/sam/project",
     outputsDir: "/tmp/kozum/out",
     memoryContext: "",
@@ -212,6 +213,40 @@ describe("language", () => {
     const p = buildCoworkPrompt(ctx({ language: "en" }));
     assert.match(p, /If they write in Arabic, reply in Arabic/);
     assert.match(p, /independent of the application's interface language/i);
+  });
+});
+
+describe("rules injection", () => {
+  it("includes rules section in cowork prompt when rules are set", () => {
+    const p = buildCoworkPrompt(ctx({ rules: "Always cite sources." }));
+    assert.match(p, /<rules>/);
+    assert.match(p, /Always cite sources\./);
+    assert.match(p, /<\/rules>/);
+  });
+
+  it("includes rules section in code prompt when rules are set", () => {
+    const p = buildCodePrompt(ctx({ rules: "Never use var." }));
+    assert.match(p, /<rules>/);
+    assert.match(p, /Never use var\./);
+    assert.match(p, /<\/rules>/);
+  });
+
+  it("omits rules section when rules are empty", () => {
+    const p = buildCoworkPrompt(ctx({ rules: "" }));
+    assert.doesNotMatch(p, /<rules>/);
+  });
+
+  it("omits rules section when rules is only whitespace", () => {
+    const p = buildCodePrompt(ctx({ rules: "   \n  " }));
+    assert.doesNotMatch(p, /<rules>/);
+  });
+
+  it("rules appear before the conduct section (near top of prompt)", () => {
+    const p = buildCoworkPrompt(ctx({ rules: "Be concise." }));
+    const rulesIdx = p.indexOf("<rules>");
+    const conductIdx = p.indexOf("<conduct>");
+    assert.ok(rulesIdx >= 0, "rules section should be present");
+    assert.ok(rulesIdx < conductIdx, "rules should appear before conduct");
   });
 });
 

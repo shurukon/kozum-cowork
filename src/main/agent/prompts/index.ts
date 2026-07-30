@@ -17,6 +17,7 @@ import {
   extensionsSection,
   identitySection,
   memorySection,
+  rulesSection,
   subagentsSection,
   toolsSection,
   type PromptContext,
@@ -51,6 +52,7 @@ The internal browser is a real Chromium view you drive: navigate, click, type, s
 export function buildCoworkPrompt(ctx: PromptContext): string {
   return [
     identitySection("cowork"),
+    rulesSection(ctx),
     CONDUCT_SECTION,
     CLARIFY_SECTION,
     TASKS_SECTION,
@@ -106,6 +108,7 @@ export function buildCodePrompt(ctx: PromptContext): string {
 
   return [
     identitySection("code"),
+    rulesSection(ctx),
     CONDUCT_SECTION,
     CLARIFY_SECTION,
     TASKS_SECTION,

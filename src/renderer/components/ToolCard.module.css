@@ -1,28 +1,28 @@
 /* ── Card ─────────────────────────────────────────────────────────────── */
 
 /*
- * Staged reveal: kz-rise on mount.
- * Running state: shimmer bar along the top edge.
- * Completed: settle to a slightly lighter border.
- * Error: flash once then hold a muted error accent — not a permanent glare.
+ * The card's glass visual (kz-glass / kz-glass-sweep / kz-glass-busy) comes
+ * from glass.css applied in JSX. Here we only manage:
+ *   - Animation on mount (kz-rise).
+ *   - Status-specific border colours (layered on top of glass-border).
+ *   - Settle and error-flash keyframes.
  */
 .card {
   position: relative;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  background: var(--bg-card);
   overflow: hidden;
   /* Staged reveal — each card rises up from slightly below */
   animation: kz-rise var(--dur-normal) var(--ease-out) both;
+  /* kz-glass sets border-radius to --radius-card (= --r-lg) */
 }
 
+/* Running: accent-tinted border over the glass border */
 .cardRunning {
-  border-color: rgba(61, 127, 255, 0.28);
+  border-color: rgba(61, 127, 255, 0.32) !important;
 }
 
 /* Settle animation when the tool completes: brief border brightening */
 .cardOk {
-  border-color: var(--border-strong);
+  border-color: var(--border-strong) !important;
   animation: kz-rise var(--dur-normal) var(--ease-out) both,
     cardSettle var(--dur-slow) var(--ease-out) both;
 }
@@ -38,9 +38,9 @@
   }
 }
 
-/* Error: flash once, then settle to a muted accent — not a permanent glare */
+/* Error: flash once then settle to muted accent */
 .cardError {
-  border-color: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.22) !important;
   animation: kz-rise var(--dur-normal) var(--ease-out) both,
     cardErrorFlash var(--dur-slow) var(--ease-out) both;
 }
@@ -56,23 +56,6 @@
   }
 }
 
-/* ── Running shimmer bar ──────────────────────────────────────────────── */
-
-/*
- * A thin gradient line that sweeps across the top edge of the card while the
- * tool is in flight. Uses kz-sweep from global.css.
- */
-.shimmerBar {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-start: 0;
-  width: 40%;
-  height: 2px;
-  background: var(--accent-gradient);
-  border-radius: 0 var(--r-full) var(--r-full) 0;
-  animation: kz-sweep 1.4s var(--ease-in-out) infinite;
-}
-
 /* ── Header ───────────────────────────────────────────────────────────── */
 
 .header {
@@ -85,6 +68,9 @@
   color: var(--text-secondary);
   transition: background var(--dur-fast) var(--ease-out);
   min-height: 0;
+  /* Must be above ::before/::after pseudo from kz-glass */
+  position: relative;
+  z-index: 1;
 }
 
 .header:not(:disabled):hover {
@@ -96,13 +82,17 @@
   cursor: default;
 }
 
+/* ── Icon ─────────────────────────────────────────────────────────────── */
+
 .iconWrap {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
   color: var(--accent-secondary);
-  opacity: 0.8;
+  opacity: 0.85;
 }
+
+/* ── Summary / notes ──────────────────────────────────────────────────── */
 
 .summary {
   flex: 1;
@@ -123,6 +113,8 @@
   text-overflow: ellipsis;
   max-width: 30ch;
 }
+
+/* ── Status indicator ─────────────────────────────────────────────────── */
 
 .status {
   flex: 0 0 auto;
@@ -152,7 +144,7 @@
   color: var(--text-muted);
 }
 
-/* ------------------------------------------------------------ detail --- */
+/* ── Detail panel ─────────────────────────────────────────────────────── */
 
 .detail {
   border-top: 1px solid var(--border-subtle);
@@ -160,9 +152,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
+  position: relative;
+  z-index: 1;
 }
 
-/* ----------------------------------------------------------- terminal --- */
+/* ── Terminal ─────────────────────────────────────────────────────────── */
 
 .terminal {
   background: var(--bg-sunken);
@@ -170,21 +164,54 @@
   overflow: hidden;
 }
 
-.terminalCommand {
+.terminalHeader {
   display: flex;
   align-items: center;
   gap: var(--sp-4);
   padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.terminalCommand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
   color: var(--text-primary);
-  border-bottom: 1px solid var(--border-subtle);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .terminalPrompt {
   color: var(--accent-secondary);
   user-select: none;
+  flex-shrink: 0;
 }
+
+/* ── Copy button ──────────────────────────────────────────────────────── */
+
+.copyBtn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.copyBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Terminal output ──────────────────────────────────────────────────── */
 
 .terminalOutput {
   padding: var(--sp-4) var(--sp-5);
@@ -210,7 +237,7 @@
   border-top: 1px solid var(--border-subtle);
 }
 
-/* -------------------------------------------------------------- diff --- */
+/* ── Diff ─────────────────────────────────────────────────────────────── */
 
 .diff {
   background: var(--bg-sunken);
@@ -262,7 +289,7 @@
   min-width: 12px;
 }
 
-/* ------------------------------------------------------------ chips --- */
+/* ── File chips ───────────────────────────────────────────────────────── */
 
 .chips {
   display: flex;
@@ -284,6 +311,7 @@
   max-width: 200px;
   transition: background var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out);
+  cursor: pointer;
 }
 
 .chip:hover {
@@ -291,7 +319,7 @@
   color: var(--text-primary);
 }
 
-/* ---------------------------------------------------------- raw detail --- */
+/* ── Raw detail ───────────────────────────────────────────────────────── */
 
 .rawDetail {
   font-family: var(--font-mono);
@@ -310,4 +338,10 @@
   font-size: var(--fs-sm);
   color: var(--error);
   line-height: var(--lh-snug);
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+
+[data-motion="reduced"] .card {
+  animation: none;
 }

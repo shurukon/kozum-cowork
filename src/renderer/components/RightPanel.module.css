@@ -1,42 +1,68 @@
+/*
+ * Kozum Cowork — RightPanel.
+ *
+ * Panel chrome and collapsible section headers. Content styling lives in
+ * TaskList.module.css and ContextPanel.module.css.
+ */
+
+/* ── Panel shell ──────────────────────────────────────────────────────── */
+
 .panel {
   width: var(--rightpanel-w);
   flex: 0 0 var(--rightpanel-w);
   height: 100%;
   overflow-y: auto;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xl);
   display: flex;
   flex-direction: column;
-  padding: var(--sp-4) 0;
-  gap: var(--sp-2);
+  padding: var(--sp-4);
+  gap: var(--sp-3);
+  scrollbar-width: thin;
 }
 
-/* ---------------------------------------------------------- section --- */
+/* ── Collapsible section (glass-trimmed) ─────────────────────────────── */
 
+/*
+ * Each section is a glass card. The `.kz-glass` class from glass.css provides
+ * the translucent surface + hairline highlight. We add radius and overflow here
+ * rather than in kz-glass itself since not all glass uses the same radius.
+ */
 .section {
   display: flex;
   flex-direction: column;
+  border-radius: var(--radius-card);
+  overflow: hidden;
 }
+
+/* ── Section header (toggle button) ───────────────────────────────────── */
 
 .sectionHeader {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
   width: 100%;
-  height: 32px;
-  padding: 0 var(--sp-6);
+  min-height: 34px;
+  padding: 0 var(--sp-5);
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
   color: var(--text-muted);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   text-align: start;
-  transition: color var(--dur-fast) var(--ease-out);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
 }
 
 .sectionHeader:hover {
   color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.sectionHeader:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
 }
 
 .sectionIcon {
@@ -48,171 +74,9 @@
   flex: 1;
 }
 
+/* ── Section body ─────────────────────────────────────────────────────── */
+
 .sectionBody {
-  padding: var(--sp-2) var(--sp-4) var(--sp-6);
-}
-
-/* ------------------------------------------------------------ empty --- */
-
-.empty {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  padding: var(--sp-2) var(--sp-2);
-  line-height: var(--lh-snug);
-}
-
-/* ------------------------------------------------------------- tasks --- */
-
-.taskList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-
-.task {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-4);
-  padding: var(--sp-3) var(--sp-2);
-  border-radius: var(--r-sm);
-}
-
-.taskInfo {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  min-width: 0;
-  flex: 1;
-}
-
-.taskSubject {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--text-primary);
-  line-height: var(--lh-snug);
-}
-
-.taskDesc {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  line-height: var(--lh-snug);
-}
-
-.taskDone {
-  color: var(--success);
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-
-.taskFailed {
-  color: var(--error);
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-
-.taskStopped {
-  color: var(--text-muted);
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-
-.taskPending {
-  color: var(--text-muted);
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-
-.taskSpinner {
-  flex: 0 0 auto;
-  display: block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--border-strong);
-  border-top-color: var(--accent-primary);
-  border-radius: var(--r-full);
-  margin-top: 1px;
-}
-
-/* ---------------------------------------------------------- folder --- */
-
-.folderPath {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-  width: 100%;
-  padding: var(--sp-3) var(--sp-4);
-  border-radius: var(--r-sm);
-  font-size: var(--fs-xs);
-  color: var(--text-secondary);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  text-align: start;
-  transition: background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
-}
-
-.folderPath:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.folderPath > span {
-  min-width: 0;
-}
-
-/* ------------------------------------------------------- connectors --- */
-
-.connectorList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-
-.connector {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-2);
-  border-radius: var(--r-sm);
-}
-
-.connStatus {
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--r-full);
-}
-
-.connOk {
-  background: var(--success);
-  box-shadow: 0 0 6px var(--success);
-}
-
-.connErr {
-  background: var(--error);
-}
-
-.connIdle {
-  background: var(--text-muted);
-}
-
-.connName {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.connLoader {
-  flex: 0 0 auto;
-  color: var(--accent-secondary);
-}
-
-.connTools {
-  flex: 0 0 auto;
-  font-size: var(--fs-2xs);
-  color: var(--text-muted);
+  padding: var(--sp-3) var(--sp-5) var(--sp-5);
+  border-top: 1px solid var(--border-subtle);
 }

@@ -288,6 +288,7 @@ if (!app.requestSingleInstanceLock()) {
       skills,
       tasks,
       projects,
+      memory,
       // Electron types `properties` as a literal union rather than string[],
       // so the Dialog object is not structurally assignable to DialogFacade.
       // Adapt it here instead of loosening the facade.

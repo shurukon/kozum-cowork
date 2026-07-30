@@ -1,14 +1,22 @@
 /**
- * Kozum Cowork — settings modal.
+ * Kozum Cowork — Settings modal (major rework).
  *
- * Left nav with searchable sections; scrolling right pane. Panes:
- * General, Providers, Cowork, Code, Skills, Connectors, Plugins.
+ * Left nav with searchable panes. Panes:
+ *   General, Providers, Cowork, Code, Skills, Connectors, Plugins.
+ * (Privacy/Usage stay removed.)
  *
- * Theme / motion / chat-font are applied to the document via useTheme so
- * every change is immediately visible without a save round-trip.
+ * Key changes vs. old version:
+ * - initialPane prop: "Customize" opens directly on Skills.
+ * - Providers pane: NO label field; Cloudflare gets Account ID field;
+ *   multiple keys per provider; custom providers with addCustom/removeCustom;
+ *   coloured dot + text status (accessibility).
+ * - Cowork + Code panes: model summary, max tokens, temperature, max iterations,
+ *   default working folder (onPickFolder), toggles per-mode.
+ * - General pane: Rules textarea (memory.getRules / setRules, debounced on blur).
+ * - onPickFolder(mode) callback for native folder picker.
  */
 
-import { useState, useMemo, type ReactNode } from "react";
+import { useState, useMemo, useCallback, type ReactNode } from "react";
 import {
   X,
   Search,
@@ -25,6 +33,11 @@ import {
   EyeOff,
   ToggleLeft,
   ToggleRight,
+  FolderOpen,
+  Circle,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
 } from "lucide-react";
 import type {
   AppSettings,
@@ -33,8 +46,10 @@ import type {
   Skill,
   McpServerConfig,
   Plugin,
+  Mode,
 } from "@shared/types.ts";
 import { useTheme } from "../hooks/useTheme.ts";
+import { CustomProviderDialog } from "./CustomProviderDialog.tsx";
 import styles from "./Settings.module.css";
 
 // ── Nav items ──────────────────────────────────────────────────────────────
@@ -86,16 +101,19 @@ function Select({
   value,
   onChange,
   options,
+  id,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: Array<{ value: string; label: string }>;
+  id?: string;
 }) {
   return (
     <select
       className={styles.select}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      id={id}
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>
@@ -110,10 +128,12 @@ function TextInput({
   value,
   onChange,
   placeholder,
+  id,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  id?: string;
 }) {
   return (
     <input
@@ -122,6 +142,7 @@ function TextInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
+      id={id}
     />
   );
 }
@@ -129,21 +150,27 @@ function TextInput({
 function Textarea({
   value,
   onChange,
+  onBlur,
   placeholder,
   rows,
+  id,
 }: {
   value: string;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   placeholder?: string;
   rows?: number;
+  id?: string;
 }) {
   return (
     <textarea
       className={styles.textarea}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
       placeholder={placeholder}
       rows={rows ?? 4}
+      id={id}
     />
   );
 }
@@ -173,13 +200,47 @@ function Toggle({
   );
 }
 
-// ── Panes ──────────────────────────────────────────────────────────────────
+// Key status: coloured dot + text label for accessibility.
+function KeyStatusBadge({ status }: { status: ApiKeyEntry["status"] }) {
+  let cls = styles.keyStatusUnknown;
+  let Icon = Circle;
+  let label = "Untested";
+
+  if (status === "valid") {
+    cls = styles.keyStatusOk;
+    Icon = CheckCircle2;
+    label = "Valid";
+  } else if (status === "invalid") {
+    cls = styles.keyStatusErr;
+    Icon = XCircle;
+    label = "Invalid";
+  } else if (status === "error") {
+    cls = styles.keyStatusWarn;
+    Icon = AlertCircle;
+    label = "Error";
+  }
+
+  return (
+    <span className={`${styles.keyStatusBadge} ${cls}`} aria-label={`Key status: ${label}`}>
+      <Icon size={11} aria-hidden />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+// ── PaneGeneral ────────────────────────────────────────────────────────────
 
 function PaneGeneral({
   settings,
+  rules,
+  onRulesChange,
+  onRulesBlur,
   onChange,
 }: {
   settings: AppSettings;
+  rules: string;
+  onRulesChange: (v: string) => void;
+  onRulesBlur: () => void;
   onChange: (patch: Partial<AppSettings>) => void;
 }) {
   const g = settings.general;
@@ -200,10 +261,7 @@ function PaneGeneral({
         />
       </Field>
 
-      <Field
-        label="What you do"
-        hint="Kozum tailors its behaviour to your role and context."
-      >
+      <Field label="What you do" hint="Kozum tailors its behaviour to your role and context.">
         <TextInput
           value={g.workDescription}
           onChange={(v) => patch("workDescription", v)}
@@ -211,15 +269,12 @@ function PaneGeneral({
         />
       </Field>
 
-      <Field
-        label="Custom instructions"
-        hint="Always prepended to every task prompt."
-      >
+      <Field label="Custom instructions" hint="Always prepended to every task prompt.">
         <Textarea
           value={g.customInstructions}
           onChange={(v) => patch("customInstructions", v)}
           placeholder="Always reply in English…"
-          rows={5}
+          rows={4}
         />
       </Field>
 
@@ -257,8 +312,46 @@ function PaneGeneral({
           ]}
         />
       </Field>
+
+      <div className={styles.divider} />
+
+      <h3 className={styles.sectionTitle}>Rules</h3>
+      <Field
+        label="Standing rules"
+        hint="Short strict instructions Kozum follows automatically every session. Saved on blur."
+      >
+        <Textarea
+          value={rules}
+          onChange={onRulesChange}
+          onBlur={onRulesBlur}
+          placeholder="e.g. Never truncate code. Always add type annotations."
+          rows={5}
+        />
+      </Field>
     </div>
   );
+}
+
+// ── PaneProviders ──────────────────────────────────────────────────────────
+
+interface PaneProvidersProps {
+  presets: ProviderPreset[];
+  keys: Record<string, ApiKeyEntry[]>;
+  onAddKey: (
+    providerId: string,
+    rawKey: string,
+    meta?: Record<string, string>,
+  ) => void;
+  onRemoveKey: (keyId: string) => void;
+  onAddCustomProvider: (name: string, baseUrl: string) => Promise<void>;
+  onRemoveCustomProvider: (id: string) => void;
+}
+
+interface AddKeyFormState {
+  providerId: string;
+  rawKey: string;
+  accountId: string;
+  showKey: boolean;
 }
 
 function PaneProviders({
@@ -266,129 +359,224 @@ function PaneProviders({
   keys,
   onAddKey,
   onRemoveKey,
-}: {
-  presets: ProviderPreset[];
-  keys: Record<string, ApiKeyEntry[]>;
-  onAddKey: (providerId: string, label: string, raw: string) => void;
-  onRemoveKey: (keyId: string) => void;
-}) {
-  const [addingFor, setAddingFor] = useState<string | null>(null);
-  const [newLabel, setNewLabel] = useState("");
-  const [newKey, setNewKey] = useState("");
-  const [showKey, setShowKey] = useState(false);
+  onAddCustomProvider,
+  onRemoveCustomProvider,
+}: PaneProvidersProps) {
+  const [addingFor, setAddingFor] = useState<AddKeyFormState | null>(null);
+  const [showCustomDialog, setShowCustomDialog] = useState(false);
+
+  function openAddKey(preset: ProviderPreset) {
+    setAddingFor({
+      providerId: preset.id,
+      rawKey: "",
+      accountId: "",
+      showKey: false,
+    });
+  }
+
+  function cancelAdd() {
+    setAddingFor(null);
+  }
 
   function submitAdd() {
-    if (!addingFor || !newLabel || !newKey) return;
-    onAddKey(addingFor, newLabel, newKey);
+    if (!addingFor) return;
+    const raw = addingFor.rawKey.trim();
+    if (!raw) return;
+    const preset = presets.find((p) => p.id === addingFor.providerId);
+    const meta: Record<string, string> = {};
+    if (preset?.requiresAccountId) {
+      const acct = addingFor.accountId.trim();
+      if (!acct) return;
+      meta["accountId"] = acct;
+    }
+    onAddKey(addingFor.providerId, raw, Object.keys(meta).length ? meta : undefined);
     setAddingFor(null);
-    setNewLabel("");
-    setNewKey("");
-    setShowKey(false);
   }
 
   return (
     <div className={styles.pane}>
-      <h2 className={styles.paneTitle}>Providers</h2>
-      {presets.map((p) => (
-        <div key={p.id} className={styles.providerSection}>
-          <div className={styles.providerHeader}>
-            <span className={styles.providerName}>{p.name}</span>
-            {p.docsUrl && (
-              <a
-                href={p.docsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.docsLink}
-              >
-                Docs
-              </a>
-            )}
-            <button
-              className={styles.addKeyBtn}
-              onClick={() => {
-                setAddingFor(p.id);
-                setNewLabel("");
-                setNewKey("");
-              }}
-            >
-              <Plus size={13} />
-              <span>Add key</span>
-            </button>
-          </div>
+      <div className={styles.paneHeaderRow}>
+        <h2 className={styles.paneTitle}>Providers</h2>
+        <button
+          className={styles.addBtn}
+          onClick={() => setShowCustomDialog(true)}
+        >
+          <Plus size={13} />
+          <span>Add custom</span>
+        </button>
+      </div>
 
-          {p.notes && (
-            <p className={styles.providerNotes}>{p.notes}</p>
-          )}
+      {presets.map((p) => {
+        const isAdding = addingFor?.providerId === p.id;
+        const preset = p;
+        const needsAccountId = preset.requiresAccountId === true;
 
-          {addingFor === p.id && (
-            <div className={styles.addKeyForm}>
-              <TextInput
-                value={newLabel}
-                onChange={setNewLabel}
-                placeholder="Label (e.g. Personal)"
-              />
-              <div className={styles.keyFieldRow}>
-                <input
-                  className={styles.textInput}
-                  type={showKey ? "text" : "password"}
-                  value={newKey}
-                  onChange={(e) => setNewKey(e.target.value)}
-                  placeholder="sk-..."
-                  autoComplete="off"
-                />
+        return (
+          <div key={p.id} className={styles.providerSection}>
+            <div className={styles.providerHeader}>
+              <span className={styles.providerName}>{p.name}</span>
+              {!p.builtIn && (
                 <button
-                  className={styles.showToggle}
-                  onClick={() => setShowKey((v) => !v)}
-                  aria-label={showKey ? "Hide key" : "Show key"}
-                >
-                  {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-              <div className={styles.addKeyActions}>
-                <button className={styles.cancelBtn} onClick={() => setAddingFor(null)}>
-                  Cancel
-                </button>
-                <button
-                  className={styles.saveBtn}
-                  onClick={submitAdd}
-                  disabled={!newLabel || !newKey}
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          )}
-
-          <ul className={styles.keyList}>
-            {(keys[p.id] ?? []).map((k) => (
-              <li key={k.id} className={styles.keyItem}>
-                <div className={styles.keyDetails}>
-                  <span className={styles.keyLabel}>{k.label}</span>
-                  <span className={styles.keyMasked}>{k.maskedKey}</span>
-                </div>
-                <span
-                  className={`${styles.keyStatus} ${
-                    k.status === "valid"
-                      ? styles.keyStatusOk
-                      : k.status === "invalid" || k.status === "error"
-                        ? styles.keyStatusErr
-                        : styles.keyStatusUnknown
-                  }`}
-                >
-                  {k.status}
-                </span>
-                <button
-                  className={styles.removeBtn}
-                  onClick={() => onRemoveKey(k.id)}
-                  aria-label="Remove key"
+                  className={styles.removeProviderBtn}
+                  onClick={() => onRemoveCustomProvider(p.id)}
+                  aria-label={`Remove ${p.name}`}
+                  title={`Remove ${p.name}`}
                 >
                   <Trash2 size={13} />
                 </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+              )}
+              {p.docsUrl && (
+                <a
+                  href={p.docsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.docsLink}
+                >
+                  Docs
+                </a>
+              )}
+              <button
+                className={styles.addKeyBtn}
+                onClick={() => (isAdding ? cancelAdd() : openAddKey(p))}
+              >
+                <Plus size={13} />
+                <span>Add key</span>
+              </button>
+            </div>
+
+            {p.notes && <p className={styles.providerNotes}>{p.notes}</p>}
+
+            {isAdding && addingFor && (
+              <div className={styles.addKeyForm}>
+                {needsAccountId && (
+                  <div className={styles.addKeyFormField}>
+                    <label className={styles.addKeyLabel} htmlFor={`acct-${p.id}`}>
+                      Account ID <span className={styles.required}>*</span>
+                    </label>
+                    <input
+                      id={`acct-${p.id}`}
+                      className={styles.textInput}
+                      type="text"
+                      value={addingFor.accountId}
+                      onChange={(e) =>
+                        setAddingFor({ ...addingFor, accountId: e.target.value })
+                      }
+                      placeholder="e.g. a1b2c3d4e5f6..."
+                      autoComplete="off"
+                    />
+                  </div>
+                )}
+
+                <div className={styles.addKeyFormField}>
+                  <label className={styles.addKeyLabel} htmlFor={`key-${p.id}`}>
+                    API key <span className={styles.required}>*</span>
+                  </label>
+                  <div className={styles.keyFieldRow}>
+                    <input
+                      id={`key-${p.id}`}
+                      className={styles.textInput}
+                      type={addingFor.showKey ? "text" : "password"}
+                      value={addingFor.rawKey}
+                      onChange={(e) =>
+                        setAddingFor({ ...addingFor, rawKey: e.target.value })
+                      }
+                      placeholder="sk-…"
+                      autoComplete="off"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") submitAdd();
+                      }}
+                    />
+                    <button
+                      className={styles.showToggle}
+                      onClick={() =>
+                        setAddingFor({ ...addingFor, showKey: !addingFor.showKey })
+                      }
+                      aria-label={addingFor.showKey ? "Hide key" : "Show key"}
+                      type="button"
+                    >
+                      {addingFor.showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className={styles.addKeyActions}>
+                  <button className={styles.cancelBtn} onClick={cancelAdd}>
+                    Cancel
+                  </button>
+                  <button
+                    className={styles.saveBtn}
+                    onClick={submitAdd}
+                    disabled={
+                      !addingFor.rawKey.trim() ||
+                      (needsAccountId && !addingFor.accountId.trim())
+                    }
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <ul className={styles.keyList}>
+              {(keys[p.id] ?? []).map((k) => (
+                <li key={k.id} className={styles.keyItem}>
+                  <div className={styles.keyDetails}>
+                    <span className={styles.keyMasked}>{k.maskedKey}</span>
+                    {k.meta?.accountId && (
+                      <span className={styles.keyMeta}>Account: {k.meta.accountId}</span>
+                    )}
+                  </div>
+                  <KeyStatusBadge status={k.status} />
+                  <button
+                    className={styles.removeBtn}
+                    onClick={() => onRemoveKey(k.id)}
+                    aria-label="Remove key"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+
+      {showCustomDialog && (
+        <CustomProviderDialog
+          onSave={onAddCustomProvider}
+          onClose={() => setShowCustomDialog(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── PaneModeSettings (shared between Cowork + Code) ────────────────────────
+
+function FolderRow({
+  mode,
+  currentPath,
+  onPickFolder,
+}: {
+  mode: Mode;
+  currentPath: string | null;
+  onPickFolder: (mode: Mode) => void;
+}) {
+  return (
+    <div className={styles.folderRow}>
+      <span className={styles.folderPath}>
+        {currentPath ?? (
+          <span className={styles.folderNone}>Not set — uses process directory</span>
+        )}
+      </span>
+      <button
+        className={styles.folderPickBtn}
+        onClick={() => onPickFolder(mode)}
+        aria-label="Pick default folder"
+      >
+        <FolderOpen size={13} />
+        <span>Browse</span>
+      </button>
     </div>
   );
 }
@@ -396,9 +584,11 @@ function PaneProviders({
 function PaneCowork({
   settings,
   onSave,
+  onPickFolder,
 }: {
   settings: AppSettings;
   onSave: (patch: Partial<AppSettings>) => void;
+  onPickFolder: (mode: Mode) => void;
 }) {
   const c = settings.cowork;
   const cu = settings.computerUse;
@@ -408,16 +598,17 @@ function PaneCowork({
     onSave({ cowork: { ...c, [k]: v } });
   }
 
+  const modelSummary =
+    c.selection.modelId
+      ? c.selection.modelId
+      : "No model selected (inherits from composer)";
+
   return (
     <div className={styles.pane}>
       <h2 className={styles.paneTitle}>Cowork</h2>
 
-      <Field label="Model" hint="Override the globally-selected model for Cowork tasks.">
-        <TextInput
-          value={c.selection.modelId}
-          onChange={(v) => patch("selection", { ...c.selection, modelId: v })}
-          placeholder="e.g. claude-opus-4-5"
-        />
+      <Field label="Model (read-only)" hint="Change via the composer model selector.">
+        <div className={styles.modelReadonly}>{modelSummary}</div>
       </Field>
 
       <Field label="Max output tokens">
@@ -456,6 +647,17 @@ function PaneCowork({
         />
       </Field>
 
+      <Field
+        label="Default working folder"
+        hint="Folder used when no project or session folder is active."
+      >
+        <FolderRow
+          mode="cowork"
+          currentPath={settings.general.defaultFolders.cowork}
+          onPickFolder={onPickFolder}
+        />
+      </Field>
+
       <div className={styles.divider} />
 
       <Field
@@ -468,9 +670,7 @@ function PaneCowork({
           </span>
           <Toggle
             checked={cu.enabled}
-            onChange={(v) =>
-              onSave({ computerUse: { ...cu, enabled: v } })
-            }
+            onChange={(v) => onSave({ computerUse: { ...cu, enabled: v } })}
             label="Toggle computer use"
           />
         </div>
@@ -486,23 +686,10 @@ function PaneCowork({
           </span>
           <Toggle
             checked={br.enabled}
-            onChange={(v) =>
-              onSave({ browser: { ...br, enabled: v } })
-            }
+            onChange={(v) => onSave({ browser: { ...br, enabled: v } })}
             label="Toggle browser access"
           />
         </div>
-      </Field>
-
-      <Field
-        label="Default artifact output folder"
-        hint="Files and documents created by the agent are saved here. Leave blank to use your home directory."
-      >
-        <TextInput
-          value={c.systemPromptOverride ?? ""}
-          onChange={(v) => patch("systemPromptOverride", v || null)}
-          placeholder="e.g. /Users/alex/kozum-output"
-        />
       </Field>
     </div>
   );
@@ -511,9 +698,11 @@ function PaneCowork({
 function PaneCode({
   settings,
   onSave,
+  onPickFolder,
 }: {
   settings: AppSettings;
   onSave: (patch: Partial<AppSettings>) => void;
+  onPickFolder: (mode: Mode) => void;
 }) {
   const cd = settings.code;
 
@@ -521,7 +710,6 @@ function PaneCode({
     onSave({ code: { ...cd, [k]: v } });
   }
 
-  // Subagent list is stored in enabledToolNames; null means all enabled.
   const subagentOptions = [
     { value: "researcher", label: "Researcher" },
     { value: "tester", label: "Tester" },
@@ -538,16 +726,17 @@ function PaneCode({
     patch("enabledToolNames", next);
   }
 
+  const modelSummary =
+    cd.selection.modelId
+      ? cd.selection.modelId
+      : "No model selected (inherits from composer)";
+
   return (
     <div className={styles.pane}>
       <h2 className={styles.paneTitle}>Code</h2>
 
-      <Field label="Model" hint="Override the globally-selected model for Code sessions.">
-        <TextInput
-          value={cd.selection.modelId}
-          onChange={(v) => patch("selection", { ...cd.selection, modelId: v })}
-          placeholder="e.g. claude-sonnet-4-5"
-        />
+      <Field label="Model (read-only)" hint="Change via the composer model selector.">
+        <div className={styles.modelReadonly}>{modelSummary}</div>
       </Field>
 
       <Field label="Max output tokens">
@@ -586,16 +775,32 @@ function PaneCode({
         />
       </Field>
 
+      <Field
+        label="Default working folder"
+        hint="Folder Kozum opens by default when you start a new Code session."
+      >
+        <FolderRow
+          mode="code"
+          currentPath={settings.general.defaultFolders.code}
+          onPickFolder={onPickFolder}
+        />
+      </Field>
+
       <div className={styles.divider} />
 
       <Field
-        label="Default working folder"
-        hint="The folder Kozum opens by default when you start a new Code session."
+        label="Default permission mode"
+        hint="Sets the starting posture for new Code sessions."
       >
-        <TextInput
-          value={cd.systemPromptOverride ?? ""}
-          onChange={(v) => patch("systemPromptOverride", v || null)}
-          placeholder="e.g. /Users/alex/dev"
+        <Select
+          value={cd.permissionMode}
+          onChange={(v) => patch("permissionMode", v)}
+          options={[
+            { value: "manual", label: "Manual — confirm every action" },
+            { value: "accept_edits", label: "Accept edits — shell still asks" },
+            { value: "plan", label: "Plan — read-only, no writes" },
+            { value: "bypass_permissions", label: "Bypass — no confirmations" },
+          ]}
         />
       </Field>
 
@@ -605,13 +810,11 @@ function PaneCode({
       >
         <div className={styles.toggleRow}>
           <span className={styles.toggleRowLabel}>
-            {cd.permissionMode !== "manual" ? "Enabled" : "Disabled"}
+            {cd.enabledToolNames !== null ? "Custom" : "Enabled (default)"}
           </span>
           <Toggle
-            checked={cd.permissionMode !== "manual"}
-            onChange={(v) =>
-              patch("permissionMode", v ? "accept_edits" : "manual")
-            }
+            checked={cd.enabledToolNames === null}
+            onChange={(v) => patch("enabledToolNames", v ? null : enabledSubagents)}
             label="Toggle auto-build knowledge base"
           />
         </div>
@@ -637,6 +840,8 @@ function PaneCode({
     </div>
   );
 }
+
+// ── PaneToggleList (Skills / Connectors / Plugins) ─────────────────────────
 
 function PaneToggleList({
   title,
@@ -672,7 +877,7 @@ function PaneToggleList({
               <button
                 className={styles.toggleBtn}
                 onClick={() => onToggle(item.id, !item.enabled)}
-                aria-label={item.enabled ? "Disable" : "Enable"}
+                aria-label={item.enabled ? `Disable ${item.name}` : `Enable ${item.name}`}
                 aria-pressed={item.enabled}
               >
                 {item.enabled ? (
@@ -691,23 +896,45 @@ function PaneToggleList({
 
 // ── Main modal ─────────────────────────────────────────────────────────────
 
-interface Props {
+export interface SettingsProps {
   settings: AppSettings;
   presets: ProviderPreset[];
   keys: Record<string, ApiKeyEntry[]>;
   skills: Skill[];
   connectors: McpServerConfig[];
   plugins: Plugin[];
+  /** Current value of the rules textarea (load from memory.getRules). */
+  rules: string;
+  onRulesChange: (v: string) => void;
+  /** Called on blur — caller should call memory.setRules(). */
+  onRulesBlur: () => void;
   onSave: (patch: Partial<AppSettings>) => void;
-  onAddKey: (providerId: string, label: string, raw: string) => void;
+  /**
+   * Called when the user clicks "Add key". Label is always ""; pass rawKey and
+   * optional meta. Caller calls bridge().providers.addKey(providerId, "", rawKey, meta).
+   */
+  onAddKey: (
+    providerId: string,
+    rawKey: string,
+    meta?: Record<string, string>,
+  ) => void;
   onRemoveKey: (keyId: string) => void;
+  onAddCustomProvider: (name: string, baseUrl: string) => Promise<void>;
+  onRemoveCustomProvider: (id: string) => void;
   onToggleSkill: (id: string, enabled: boolean) => void;
   onToggleConnector: (id: string, enabled: boolean) => void;
   onTogglePlugin: (id: string, enabled: boolean) => void;
   onAddSkill: () => void;
   onAddConnector: () => void;
   onAddPlugin: () => void;
+  /**
+   * Called when the user clicks "Browse" for a default folder.
+   * Caller should: dialog.selectFolder() → save to settings.general.defaultFolders[mode].
+   */
+  onPickFolder: (mode: Mode) => void;
   onClose: () => void;
+  /** Optional: which pane to open on mount. Defaults to "general". */
+  initialPane?: NavId;
 }
 
 export function Settings({
@@ -717,29 +944,40 @@ export function Settings({
   skills,
   connectors,
   plugins,
+  rules,
+  onRulesChange,
+  onRulesBlur,
   onSave,
   onAddKey,
   onRemoveKey,
+  onAddCustomProvider,
+  onRemoveCustomProvider,
   onToggleSkill,
   onToggleConnector,
   onTogglePlugin,
   onAddSkill,
   onAddConnector,
   onAddPlugin,
+  onPickFolder,
   onClose,
-}: Props) {
-  const [activeNav, setActiveNav] = useState<NavId>("general");
+  initialPane = "general",
+}: SettingsProps) {
+  const [activeNav, setActiveNav] = useState<NavId>(initialPane);
   const [navSearch, setNavSearch] = useState("");
 
   // Apply theme/motion/font to the document whenever settings change.
   useTheme(settings);
 
   const filteredNav = useMemo(
-    () =>
-      NAV.filter((n) =>
-        n.label.toLowerCase().includes(navSearch.toLowerCase()),
-      ),
+    () => NAV.filter((n) => n.label.toLowerCase().includes(navSearch.toLowerCase())),
     [navSearch],
+  );
+
+  const handleAddCustomProvider = useCallback(
+    async (name: string, baseUrl: string) => {
+      await onAddCustomProvider(name, baseUrl);
+    },
+    [onAddCustomProvider],
   );
 
   return (
@@ -777,7 +1015,13 @@ export function Settings({
         <div className={styles.content}>
           <div className={styles.contentScroll}>
             {activeNav === "general" && (
-              <PaneGeneral settings={settings} onChange={onSave} />
+              <PaneGeneral
+                settings={settings}
+                rules={rules}
+                onRulesChange={onRulesChange}
+                onRulesBlur={onRulesBlur}
+                onChange={onSave}
+              />
             )}
             {activeNav === "providers" && (
               <PaneProviders
@@ -785,13 +1029,15 @@ export function Settings({
                 keys={keys}
                 onAddKey={onAddKey}
                 onRemoveKey={onRemoveKey}
+                onAddCustomProvider={handleAddCustomProvider}
+                onRemoveCustomProvider={onRemoveCustomProvider}
               />
             )}
             {activeNav === "cowork" && (
-              <PaneCowork settings={settings} onSave={onSave} />
+              <PaneCowork settings={settings} onSave={onSave} onPickFolder={onPickFolder} />
             )}
             {activeNav === "code" && (
-              <PaneCode settings={settings} onSave={onSave} />
+              <PaneCode settings={settings} onSave={onSave} onPickFolder={onPickFolder} />
             )}
             {activeNav === "skills" && (
               <PaneToggleList

@@ -1,81 +1,53 @@
 /**
- * Kozum Cowork — tool invocation card.
+ * Kozum Cowork — tool invocation card (redesigned).
  *
- * Collapsible card for a single tool call. Shows icon, summary line, and
- * status indicator (spinner / check / error). Expandable detail renders
- * terminal output, diffs, file chips, or raw JSON depending on the tool's
- * display payload.
+ * Collapsible glass card for a single tool call. Every card:
+ * - Is wrapped in .kz-glass for the translucent pane look.
+ * - Gains .kz-glass-sweep on mount (entrance sheen).
+ * - Gains .kz-glass-busy while the tool is running (repeating sweep).
+ * - Drops .kz-glass-busy on completion/error.
  *
- * Animations:
- * - Staged reveal on mount (kz-rise).
- * - Running shimmer along the card's top edge while in flight (kz-sweep).
- * - Settle animation on completion.
- * - Error state flashes once, then holds a muted accent — not a permanent glare.
+ * Header: tool icon from toolIcons.ts + human label + status indicator.
+ * Collapsed: shows display.summary. Click to expand.
+ * Expanded: terminal block (with copy button), diff view, file chips, detail.
+ *
+ * Error state: CSS flash animation once, then a muted accent border.
+ * onOpenFile: called when the user clicks a file chip.
  */
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   ChevronDown,
   ChevronRight,
   CheckCircle,
   XCircle,
-  Terminal,
+  Copy,
+  Check,
   FileText,
-  Globe,
-  Cpu,
-  Code2,
-  FolderOpen,
-  Search,
-  MousePointer2,
-  Camera,
-  Zap,
-  ListTodo,
-  Puzzle,
-  Database,
-  Wrench,
-  Layers,
 } from "lucide-react";
+import * as LucideIcons from "lucide-react";
 import type { ToolDisplay } from "@shared/types.ts";
 import type { ToolCard as ToolCardType } from "../store/session.ts";
+import { toolIcon } from "../lib/toolIcons.ts";
 import styles from "./ToolCard.module.css";
 
-// ── Icon map ────────────────────────────────────────────────────────────────
+// ── Dynamic icon lookup ─────────────────────────────────────────────────────
 
-const ICON_MAP: Record<string, typeof Terminal> = {
-  terminal: Terminal,
-  shell: Terminal,
-  bash: Terminal,
-  file: FileText,
-  read_file: FileText,
-  write_file: FileText,
-  glob: Search,
-  grep: Search,
-  search: Search,
-  web: Globe,
-  fetch: Globe,
-  browse: Globe,
-  browser: Globe,
-  computer: Cpu,
-  screenshot: Camera,
-  mouse: MousePointer2,
-  code: Code2,
-  folder: FolderOpen,
-  dir: FolderOpen,
-  task: ListTodo,
-  jobs: ListTodo,
-  mcp: Puzzle,
-  plugin: Puzzle,
-  memory: Database,
-  system: Layers,
-  ask: Zap,
-};
+type LucideComponent = React.ComponentType<{ size?: number; className?: string }>;
 
-function getIcon(toolName: string): typeof Terminal {
-  const lower = toolName.toLowerCase();
-  for (const [key, Icon] of Object.entries(ICON_MAP)) {
-    if (lower.includes(key)) return Icon;
-  }
-  return Wrench;
+/**
+ * Map a kebab-case lucide icon name (e.g. "file-plus") to the React component.
+ * Lucide exports PascalCase names, e.g. FilePlus.
+ */
+function getLucideIcon(name: string): LucideComponent {
+  // "file-plus" → "FilePlus"
+  const pascal = name
+    .split("-")
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join("");
+
+  const icons = LucideIcons as unknown as Record<string, LucideComponent | undefined>;
+  return icons[pascal] ?? LucideIcons.Wrench;
 }
 
 // ── Diff renderer ──────────────────────────────────────────────────────────
@@ -84,8 +56,6 @@ function DiffView({ diff }: { diff: NonNullable<ToolDisplay["diff"]> }) {
   const beforeLines = diff.before.split("\n");
   const afterLines = diff.after.split("\n");
 
-  // Simple line-based diff: removed (red) = lines only in before, added (green)
-  // = lines only in after. For display purposes we align them.
   const maxLen = Math.max(beforeLines.length, afterLines.length);
   const rows: Array<{ kind: "context" | "removed" | "added"; text: string }> = [];
 
@@ -126,15 +96,37 @@ function DiffView({ diff }: { diff: NonNullable<ToolDisplay["diff"]> }) {
   );
 }
 
-// ── Terminal renderer ──────────────────────────────────────────────────────
+// ── Terminal renderer (with copy button) ────────────────────────────────────
 
 function TerminalView({ terminal }: { terminal: NonNullable<ToolDisplay["terminal"]> }) {
+  const [copied, setCopied] = useState(false);
+
+  const fullOutput = [terminal.stdout, terminal.stderr].filter(Boolean).join("\n");
+
+  const copy = useCallback(async () => {
+    await navigator.clipboard.writeText(fullOutput).catch(() => undefined);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [fullOutput]);
+
   const hasOutput = terminal.stdout.length > 0 || terminal.stderr.length > 0;
   return (
     <div className={styles.terminal}>
-      <div className={styles.terminalCommand}>
-        <span className={styles.terminalPrompt}>$</span>
-        {terminal.command}
+      <div className={styles.terminalHeader}>
+        <div className={styles.terminalCommand}>
+          <span className={styles.terminalPrompt}>$</span>
+          {terminal.command}
+        </div>
+        {hasOutput && (
+          <button
+            className={styles.copyBtn}
+            onClick={copy}
+            aria-label="Copy terminal output"
+            title="Copy output"
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+          </button>
+        )}
       </div>
       {hasOutput && (
         <pre className={styles.terminalOutput}>
@@ -153,11 +145,21 @@ function TerminalView({ terminal }: { terminal: NonNullable<ToolDisplay["termina
 
 // ── File chips ─────────────────────────────────────────────────────────────
 
-function FileChips({ files }: { files: string[] }) {
+interface FileChipsProps {
+  files: string[];
+  onOpenFile?: (path: string) => void;
+}
+
+function FileChips({ files, onOpenFile }: FileChipsProps) {
   return (
     <div className={styles.chips}>
       {files.map((f) => (
-        <button key={f} className={styles.chip} title={f}>
+        <button
+          key={f}
+          className={styles.chip}
+          title={f}
+          onClick={() => onOpenFile?.(f)}
+        >
           <FileText size={12} />
           <span className="kz-truncate">{f.split("/").pop() ?? f}</span>
         </button>
@@ -168,13 +170,29 @@ function FileChips({ files }: { files: string[] }) {
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-interface Props {
+export interface ToolCardProps {
   card: ToolCardType;
+  /** Called when the user clicks a file chip in the expanded detail. */
+  onOpenFile?: (path: string) => void;
 }
 
-export function ToolCard({ card }: Props) {
+export function ToolCard({ card, onOpenFile }: ToolCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const Icon = getIcon(card.name);
+  // Sweep fires once on mount; swept tracks whether we've applied it.
+  const [swept, setSwept] = useState(false);
+  const sweepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Apply kz-glass-sweep on mount, remove after animation completes.
+  useEffect(() => {
+    setSwept(true);
+    sweepTimerRef.current = setTimeout(() => setSwept(false), 1200);
+    return () => {
+      if (sweepTimerRef.current) clearTimeout(sweepTimerRef.current);
+    };
+  }, []);
+
+  const { icon: iconName, label: humanLabel } = toolIcon(card.name);
+  const Icon = getLucideIcon(iconName);
   const display = card.result?.display;
 
   const hasDetail = Boolean(
@@ -185,20 +203,23 @@ export function ToolCard({ card }: Props) {
       card.result?.error,
   );
 
-  const statusClass =
-    card.status === "error"
-      ? styles.cardError
-      : card.status === "ok"
-        ? styles.cardOk
-        : styles.cardRunning;
+  // Build the className set for the card.
+  const isRunning = card.status === "running";
+  const isError = card.status === "error";
+  const isOk = card.status === "ok";
+
+  const cardClass = [
+    styles.card,
+    "kz-glass",
+    swept ? "kz-glass-sweep" : "",
+    isRunning ? "kz-glass-busy" : "",
+    isError ? styles.cardError : isOk ? styles.cardOk : styles.cardRunning,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <div className={`${styles.card} ${statusClass}`}>
-      {/* Running shimmer bar along the top edge */}
-      {card.status === "running" && (
-        <div className={styles.shimmerBar} aria-hidden={true} />
-      )}
-
+    <div className={cardClass}>
       <button
         className={styles.header}
         onClick={() => hasDetail && setExpanded((v) => !v)}
@@ -210,7 +231,7 @@ export function ToolCard({ card }: Props) {
         </span>
 
         <span className={styles.summary}>
-          {display?.summary ?? card.name}
+          {display?.summary ?? humanLabel}
         </span>
 
         {card.notes.length > 0 && (
@@ -218,16 +239,16 @@ export function ToolCard({ card }: Props) {
         )}
 
         <span className={styles.status}>
-          {card.status === "running" && (
+          {isRunning && (
             <span
               className={`${styles.spinner} kz-spin`}
               aria-label="Running"
             />
           )}
-          {card.status === "ok" && (
+          {isOk && (
             <CheckCircle size={14} className={styles.ok} aria-label="Done" />
           )}
-          {card.status === "error" && (
+          {isError && (
             <XCircle size={14} className={styles.error} aria-label="Error" />
           )}
         </span>
@@ -244,7 +265,7 @@ export function ToolCard({ card }: Props) {
           {display?.terminal && <TerminalView terminal={display.terminal} />}
           {display?.diff && <DiffView diff={display.diff} />}
           {display?.files && display.files.length > 0 && (
-            <FileChips files={display.files} />
+            <FileChips files={display.files} onOpenFile={onOpenFile} />
           )}
           {display?.detail && !display.terminal && !display.diff && (
             <pre className={styles.rawDetail}>{display.detail}</pre>

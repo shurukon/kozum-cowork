@@ -1,0 +1,141 @@
+/*
+ * Kozum Cowork — glass interaction layer.
+ *
+ * The visual language the user asked for: translucent panes with a light that
+ * appears to travel across the surface. Used for tool-call cards, the thinking
+ * indicator, the message-sent acknowledgement, and the preview shell.
+ *
+ * Everything here degrades to a plain opaque surface under reduced motion, and
+ * the backdrop-filter is feature-queried so a machine without it still gets a
+ * legible (just less shiny) card.
+ */
+
+/* ---------------------------------------------------------------- surface -- */
+
+.kz-glass {
+  position: relative;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .kz-glass {
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+    background: var(--glass-bg);
+  }
+}
+
+/* Hairline highlight along the top edge — light catching the lip of the pane. */
+.kz-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--glass-highlight) 20%,
+    var(--glass-highlight) 80%,
+    transparent
+  );
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------- light sweep -- */
+
+/*
+ * A diagonal band of light that travels across the pane once when it appears,
+ * and again — slower, looping — while a tool is still running. This is the
+ * "glass with light passing through it" the user described.
+ */
+@keyframes kz-sheen {
+  0% {
+    transform: translateX(-120%) rotate(8deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  60%,
+  100% {
+    transform: translateX(220%) rotate(8deg);
+    opacity: 0;
+  }
+}
+
+.kz-glass-sweep::after {
+  content: "";
+  position: absolute;
+  top: -40%;
+  bottom: -40%;
+  width: 40%;
+  left: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--glass-sheen),
+    transparent
+  );
+  filter: blur(6px);
+  transform: translateX(-120%) rotate(8deg);
+  animation: kz-sheen 1.15s var(--ease-out) 1;
+}
+
+/* While busy, the sweep repeats on a calm cadence so the surface reads "alive". */
+.kz-glass-busy::after {
+  animation: kz-sheen 2.4s var(--ease-in-out) infinite;
+}
+
+/* ------------------------------------------------------------- send pulse -- */
+
+/*
+ * The immediate acknowledgement when a message is sent: the user's bubble
+ * arrives with a brief ring of light so it never feels like "nothing happened".
+ */
+@keyframes kz-send-ack {
+  from {
+    box-shadow: 0 0 0 0 var(--accent-soft), 0 0 0 1px var(--accent-primary);
+  }
+  to {
+    box-shadow: 0 0 0 14px transparent, 0 0 0 1px transparent;
+  }
+}
+
+.kz-send-ack {
+  animation: kz-send-ack 0.85s var(--ease-out) 1;
+}
+
+/* --------------------------------------------------------- thinking dot --- */
+
+/*
+ * A soft breathing orb that precedes streamed reasoning, so "thinking" is
+ * visible as motion, not just text.
+ */
+.kz-think-orb {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--accent-gradient);
+  box-shadow: 0 0 10px var(--glow-blue);
+  animation: kz-breathe 1.6s var(--ease-in-out) infinite;
+}
+
+/* ------------------------------------------------------------- reduced --- */
+
+[data-motion="reduced"] .kz-glass-sweep::after,
+[data-motion="reduced"] .kz-glass-busy::after,
+[data-motion="reduced"] .kz-send-ack,
+[data-motion="reduced"] .kz-think-orb {
+  animation: none;
+}
+
+[data-motion="reduced"] .kz-glass-sweep::after,
+[data-motion="reduced"] .kz-glass-busy::after {
+  display: none;
+}

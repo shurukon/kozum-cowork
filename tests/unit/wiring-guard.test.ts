@@ -141,6 +141,36 @@ describe("App.tsx actually calls the backend", () => {
       "ScheduleDialog.tsx never calls bridge().dialog.selectFolder",
     );
   });
+
+  // Major new controls added in the integration pass — these must not ship inert.
+
+  it("calls bridge().sessions.branch", () => {
+    assert.ok(
+      APP.includes("bridge().sessions.branch"),
+      "App.tsx never calls bridge().sessions.branch",
+    );
+  });
+
+  it("calls bridge().sessions.delete", () => {
+    assert.ok(
+      APP.includes("bridge().sessions.delete"),
+      "App.tsx never calls bridge().sessions.delete",
+    );
+  });
+
+  it("calls bridge().providers.addCustom", () => {
+    assert.ok(
+      APP.includes("bridge().providers.addCustom"),
+      "App.tsx never calls bridge().providers.addCustom",
+    );
+  });
+
+  it("calls bridge().memory.setRules", () => {
+    assert.ok(
+      APP.includes("bridge().memory.setRules"),
+      "App.tsx never calls bridge().memory.setRules",
+    );
+  });
 });
 
 describe("navigation and settings reachability", () => {

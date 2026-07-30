@@ -13,6 +13,7 @@
 
 import type {
   AppSettings,
+  PermissionMode,
   ProviderPreset,
   ApiKeyEntry,
   ModelInfo,
@@ -63,7 +64,7 @@ export interface KozumBridge {
 
   providers: {
     presets: () => Promise<ProviderPreset[]>;
-    /** Add a new API key. Returns the created entry (key stored encrypted). */
+    /** Add a new API key. Label is optional; defaults to "Key N". */
     addKey: (
       providerId: string,
       label: string,
@@ -78,6 +79,12 @@ export interface KozumBridge {
     refreshModels: (providerId: string) => Promise<Result<ModelInfo[]>>;
     /** All cached ModelInfo records for a provider. */
     listModels: (providerId: string) => Promise<ModelInfo[]>;
+    /** Register a new custom OpenAI-compatible provider. */
+    addCustom: (input: { name: string; baseUrl: string }) => Promise<Result<ProviderPreset>>;
+    /** Remove a previously registered custom provider. */
+    removeCustom: (id: string) => Promise<Result<void>>;
+    /** Patch fields on a custom provider. */
+    updateCustom: (id: string, patch: Partial<ProviderPreset>) => Promise<Result<ProviderPreset>>;
   };
 
   sessions: {
@@ -86,6 +93,17 @@ export interface KozumBridge {
     get: (sessionId: string) => Promise<Session | null>;
     create: (mode: Mode, selection: ModelSelection) => Promise<Result<Session>>;
     archive: (sessionId: string) => Promise<Result<void>>;
+    /** Hard-delete a session and all its messages from disk. */
+    delete: (sessionId: string) => Promise<Result<void>>;
+    /**
+     * Fork a session. Creates a new session copying mode, selection, permissionMode,
+     * and messages up to (and including) uptoMessageId, or all messages when omitted.
+     */
+    branch: (sessionId: string, uptoMessageId?: string) => Promise<Result<Session>>;
+    /** Rename a session. */
+    rename: (sessionId: string, title: string) => Promise<Result<void>>;
+    /** Change the permission posture for a session. */
+    setPermissionMode: (sessionId: string, mode: PermissionMode) => Promise<Result<void>>;
     /** Load the full message history for a session. */
     messages: (sessionId: string) => Promise<Message[]>;
     /** Send a user message and start the agent loop. */
@@ -161,6 +179,29 @@ export interface KozumBridge {
     ) => Promise<Result<Project>>;
     archive: (id: string) => Promise<Result<Project>>;
     remove: (id: string) => Promise<Result<void>>;
+  };
+
+  memory: {
+    /** Get user-authored standing rules injected into every session prompt. */
+    getRules: () => Promise<Result<string>>;
+    /** Set user-authored standing rules. Pass empty string to clear. */
+    setRules: (text: string) => Promise<Result<void>>;
+  };
+
+  preview: {
+    /**
+     * Read a file for inline preview. Text is capped at ~512 KB; images are
+     * returned as base64. Returns {ok:false} when the path is denied or the
+     * file cannot be read.
+     */
+    readFile: (path: string) => Promise<Result<{
+      content: string;
+      base64?: string;
+      mime: string;
+      truncated: boolean;
+    }>>;
+    /** Stat a file: size in bytes and isDir flag. */
+    stat: (path: string) => Promise<Result<{ size: number; isDir: boolean }>>;
   };
 
   window: {

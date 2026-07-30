@@ -56,6 +56,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     // flips the shell to RTL; the agent always replies in whatever language the
     // user writes in, independently of this setting.
     language: "en",
+    defaultFolders: {
+      cowork: null,
+      code: null,
+    },
+    rules: "",
   },
 
   cowork: COWORK_DEFAULTS,
@@ -108,6 +113,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   privacy: {
     telemetry: false,
   },
+
+  customProviders: [],
 };
 
 /** Deep-clone so callers cannot mutate the frozen factory state. */

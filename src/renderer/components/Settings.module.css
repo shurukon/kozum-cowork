@@ -1,3 +1,5 @@
+/* Settings modal — major rework */
+
 .overlay {
   position: fixed;
   inset: 0;
@@ -12,7 +14,7 @@
   position: relative;
   display: flex;
   width: min(860px, 94vw);
-  height: min(620px, 90vh);
+  height: min(640px, 90vh);
   background: var(--bg-secondary);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-2xl);
@@ -159,6 +161,13 @@
   justify-content: space-between;
 }
 
+.sectionTitle {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  letter-spacing: var(--tracking-tight);
+}
+
 /* --------------------------------------------------------------- fields --- */
 
 .field {
@@ -185,21 +194,36 @@
   flex-direction: column;
 }
 
+/* Fix arrow visibility in dark mode: use currentColor so it adapts. */
 .select {
   height: 36px;
-  padding: 0 var(--sp-4);
+  padding: 0 var(--sp-8) 0 var(--sp-4);
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   font-size: var(--fs-base);
   color: var(--text-primary);
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--sp-4) center;
+  background-size: 12px;
   transition: border-color var(--dur-fast) var(--ease-out);
 }
 
 .select:focus-visible {
   border-color: var(--accent-primary);
   box-shadow: var(--glow-focus);
+}
+
+/* Override the data-URI arrow with an SVG that uses currentColor in browsers
+   that support it. The inline SVG encodes the stroke as a CSS variable via
+   the filter trick — instead, we just rely on the color attribute at 80% opacity. */
+.select option {
+  background: var(--select-bg, #0d1530);
+  color: var(--select-color, #ffffff);
 }
 
 .textInput {
@@ -211,6 +235,10 @@
   font-size: var(--fs-base);
   color: var(--text-primary);
   transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.textInput::placeholder {
+  color: var(--text-muted);
 }
 
 .textInput:focus-visible {
@@ -231,47 +259,13 @@
   transition: border-color var(--dur-fast) var(--ease-out);
 }
 
+.textarea::placeholder {
+  color: var(--text-muted);
+}
+
 .textarea:focus-visible {
   border-color: var(--accent-primary);
   box-shadow: var(--glow-focus);
-}
-
-/* ----------------------------------------------------------- cards --- */
-
-.card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-}
-
-.cardRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--sp-5) var(--sp-6);
-}
-
-.cardLabel {
-  font-size: var(--fs-base);
-  font-weight: var(--fw-medium);
-  color: var(--text-primary);
-}
-
-.cardDesc {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  margin-top: var(--sp-1);
-}
-
-.badge {
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  padding: var(--sp-1) var(--sp-4);
-  border-radius: var(--r-full);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
 }
 
 /* --------------------------------------------------------- providers --- */
@@ -326,10 +320,29 @@
   color: var(--text-primary);
 }
 
+.removeProviderBtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.removeProviderBtn:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
 .providerNotes {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   line-height: var(--lh-snug);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-elevated);
+  border-radius: var(--r-sm);
 }
 
 .addKeyForm {
@@ -340,6 +353,22 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
+}
+
+.addKeyFormField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.addKeyLabel {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+.required {
+  color: var(--error);
 }
 
 .keyFieldRow {
@@ -404,6 +433,8 @@
   opacity: 0.5;
 }
 
+/* ---------------------------------------------------------- key list --- */
+
 .keyList {
   display: flex;
   flex-direction: column;
@@ -425,26 +456,31 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-}
-
-.keyLabel {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--text-primary);
+  gap: 2px;
 }
 
 .keyMasked {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.keyMeta {
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
 }
 
-.keyStatus {
+/* Key status badge: coloured dot + text for accessibility */
+
+.keyStatusBadge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--fs-2xs);
   font-weight: var(--fw-medium);
   padding: 2px var(--sp-3);
   border-radius: var(--r-full);
+  white-space: nowrap;
 }
 
 .keyStatusOk {
@@ -455,6 +491,11 @@
 .keyStatusErr {
   background: var(--error-soft);
   color: var(--error);
+}
+
+.keyStatusWarn {
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .keyStatusUnknown {
@@ -476,6 +517,68 @@
 .removeBtn:hover {
   background: var(--error-soft);
   color: var(--error);
+}
+
+/* -------------------------------------------------- folder picker --- */
+
+.folderRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.folderPath {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folderNone {
+  font-family: var(--font-sans);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.folderPickBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 26px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.folderPickBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* -------------------------------------------------- model readonly --- */
+
+.modelReadonly {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
 }
 
 /* ------------------------------------------------------ toggle list --- */

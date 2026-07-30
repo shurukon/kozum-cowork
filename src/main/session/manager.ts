@@ -12,6 +12,7 @@ import type {
   AgentEvent,
   Message,
   Mode,
+  PermissionMode,
   Session,
 } from "../../shared/types.ts";
 import { ok, err } from "../../shared/types.ts";
@@ -33,6 +34,7 @@ import { looksVisionCapable } from "../providers/capabilities.ts";
 import { getPreset } from "../providers/presets.ts";
 import type { ToolContext } from "../tools/registry.ts";
 import { resolveCapabilities } from "../providers/capabilities.ts";
+import { checkPermission, blockedResult } from "../tools/permissions.ts";
 
 /* --------------------------------------------------------- per session --- */
 
@@ -177,6 +179,7 @@ export class SessionManager {
 
       // Build system prompt context
       const memoryContext = await this.memory.loadStartupContext().catch(() => "");
+      const rulesText = await this.memory.getRules().catch(() => "");
       const allSkills = this.skills.list();
 
       // Build mcp servers summary
@@ -187,12 +190,17 @@ export class SessionManager {
 
       const visionCapable = looksVisionCapable(modelId, providerId);
 
+      // Resolve working folder: session's own folder, then mode default, then cwd.
+      const modeDefaultFolder = appSettings.general.defaultFolders[session.mode] ?? null;
+      const resolvedWorkingFolder = session.workingFolder ?? modeDefaultFolder;
+
       const promptCtx: PromptContext = {
         userName: appSettings.general.userName,
         workDescription: appSettings.general.workDescription,
         customInstructions: appSettings.general.customInstructions,
-        workingFolder: session.workingFolder,
-        outputsDir: session.workingFolder ?? process.cwd(),
+        rules: rulesText,
+        workingFolder: resolvedWorkingFolder,
+        outputsDir: resolvedWorkingFolder ?? process.cwd(),
         memoryContext,
         projectKbSummary: "",
         modelId,
@@ -219,20 +227,85 @@ export class SessionManager {
       // Build capabilities for tool context
       const { capabilities } = resolveCapabilities(modelId, providerId);
 
-      // Build executor
-      const executor = makeExecutor(
+      // Build executor — use the resolved working folder
+      const baseExecutor = makeExecutor(
         this.toolRegistry,
         (sid: string): Omit<ToolContext, "signal" | "onProgress"> => ({
           sessionId: sid,
           mode: session.mode,
-          workingFolder: session.workingFolder,
-          outputsDir: session.workingFolder ?? process.cwd(),
+          workingFolder: resolvedWorkingFolder,
+          outputsDir: resolvedWorkingFolder ?? process.cwd(),
           capabilities,
           modelId,
           providerId,
         }),
         (mode: Mode) => appSettings[mode],
       );
+
+      // Wrap with permission gate.
+      const permissionMode: PermissionMode = session.permissionMode;
+      const askBroker = this.ask;
+      const emitForPermission = this.emitEvent.bind(this);
+      const executor = {
+        list: baseExecutor.list.bind(baseExecutor),
+        async execute(
+          name: string,
+          input: unknown,
+          opts: { sessionId: string; signal: AbortSignal; onProgress: (n: string) => void },
+        ) {
+          // Look up the tool's group from the registry for permission classification.
+          const toolDef = baseExecutor.list(session.mode).find((d) => d.name === name);
+          const group = toolDef?.group ?? "system";
+
+          const decision = await checkPermission({
+            toolName: name,
+            toolGroup: group,
+            permissionMode,
+            sessionId: opts.sessionId,
+            requestPermission: async (requestId: string, reason: string) => {
+              emitForPermission(opts.sessionId, {
+                type: "permission_request",
+                sessionId: opts.sessionId,
+                requestId,
+                toolName: name,
+                input,
+                reason,
+              });
+              // Wait for the user to reply via AskBroker
+              return new Promise<string[]>((resolve, reject) => {
+                // Poll the ask broker — the user's reply goes via sessions.reply
+                // which calls AskBroker.resolve(requestId, [answer]).
+                const { promise } = askBroker.ask(opts.sessionId, {
+                  question: reason,
+                  options: [
+                    { label: "Allow", value: "yes" },
+                    { label: "Deny", value: "no" },
+                  ],
+                  multiSelect: false,
+                });
+                // Override: use requestId directly so sessions.reply resolves it.
+                // Since ask() generates a new id, we need to intercept it.
+                // Instead, call the broker's internal promise by registering the
+                // pre-allocated requestId.
+                void promise.then(resolve).catch(reject);
+
+                // Abort support
+                if (opts.signal.aborted) {
+                  reject(new Error("Cancelled"));
+                  return;
+                }
+                opts.signal.addEventListener("abort", () => reject(new Error("Cancelled")), { once: true });
+              });
+            },
+          });
+
+          if (!decision.allowed) {
+            return blockedResult(decision.blockedMessage!);
+          }
+
+          return baseExecutor.execute(name, input, opts);
+        },
+      };
 
       // Run the agent loop
       const result = await runAgentLoop({

@@ -69,7 +69,7 @@ describe("bundled/skills — parseSkillFile", () => {
 
   it("each SKILL.md parses with the real parseSkillFile — non-empty name and description", async () => {
     const dirs = await listDirectories(bundledSkillsDir);
-    assert.ok(dirs.length >= 4, "Expected at least 4 standalone skills");
+    assert.ok(dirs.length >= 2, "Expected at least 2 standalone skills");
 
     for (const dir of dirs) {
       const skillPath = join(bundledSkillsDir, dir, "SKILL.md");
@@ -280,6 +280,94 @@ describe("bundled/plugins/kozum-engineering/skills — expected named skills pre
         dirs.includes(name),
         `Expected skills/${name}/ to exist in the kozum-engineering plugin. Found: ${dirs.join(", ")}`,
       );
+    }
+  });
+});
+
+/* ================================================================ open-design plugin */
+
+describe("bundled/plugins/open-design — discoverContributions", () => {
+  it("finds 2 skills (open-design and ui-ux-pro-max) and 0 agents", async () => {
+    const pluginDir = join(bundledPluginsDir, "open-design");
+    const result = await discoverContributions(pluginDir);
+
+    assert.equal(
+      result.skills.length,
+      2,
+      `Expected 2 skills, got ${result.skills.length}. Warnings: ${JSON.stringify(result.warnings)}`,
+    );
+    assert.equal(
+      result.agents.length,
+      0,
+      `Expected 0 agents, got ${result.agents.length}`,
+    );
+    assert.equal(
+      result.warnings.length,
+      0,
+      `Expected no warnings, got: ${JSON.stringify(result.warnings)}`,
+    );
+  });
+
+  it("skill names are non-empty", async () => {
+    const pluginDir = join(bundledPluginsDir, "open-design");
+    const result = await discoverContributions(pluginDir);
+    for (const skill of result.skills) {
+      assert.ok(skill.name.length > 0, "Skill name must be non-empty");
+      assert.ok(skill.description.length > 0, `Skill "${skill.name}" must have a non-empty description`);
+    }
+  });
+});
+
+describe("bundled/plugins/open-design/skills — expected skills present", () => {
+  it("contains open-design and ui-ux-pro-max", async () => {
+    const skillsDir = join(bundledPluginsDir, "open-design", "skills");
+    const dirs = await listDirectories(skillsDir);
+    const expected = ["open-design", "ui-ux-pro-max"];
+    for (const name of expected) {
+      assert.ok(dirs.includes(name), `Expected ${name} skill in open-design plugin. Found: ${dirs.join(", ")}`);
+    }
+  });
+});
+
+/* ================================================================ ECC plugin */
+
+describe("bundled/plugins/ecc — discoverContributions", () => {
+  it("finds 6 skills and 0 agents", async () => {
+    const pluginDir = join(bundledPluginsDir, "ecc");
+    const result = await discoverContributions(pluginDir);
+
+    assert.equal(
+      result.skills.length,
+      6,
+      `Expected 6 skills, got ${result.skills.length}. Warnings: ${JSON.stringify(result.warnings)}`,
+    );
+    assert.equal(
+      result.agents.length,
+      0,
+      `Expected 0 agents, got ${result.agents.length}`,
+    );
+    assert.equal(
+      result.warnings.length,
+      0,
+      `Expected no warnings, got: ${JSON.stringify(result.warnings)}`,
+    );
+  });
+
+  it("skill names are non-empty and descriptions are non-empty", async () => {
+    const pluginDir = join(bundledPluginsDir, "ecc");
+    const result = await discoverContributions(pluginDir);
+    for (const skill of result.skills) {
+      assert.ok(skill.name.length > 0, "Skill name must be non-empty");
+      assert.ok(skill.description.length > 0, `Skill "${skill.name}" must have a non-empty description`);
+    }
+  });
+
+  it("contains code-review, debugging, refactoring, test, ship, review-pr", async () => {
+    const skillsDir = join(bundledPluginsDir, "ecc", "skills");
+    const dirs = await listDirectories(skillsDir);
+    const expected = ["code-review", "debugging", "refactoring", "test", "ship", "review-pr"];
+    for (const name of expected) {
+      assert.ok(dirs.includes(name), `Expected skill ${name} in ECC plugin. Found: ${dirs.join(", ")}`);
     }
   });
 });

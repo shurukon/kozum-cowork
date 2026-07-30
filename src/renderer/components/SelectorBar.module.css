@@ -1,0 +1,283 @@
+/*
+ * SelectorBar — provider / key / model inline switchers.
+ * Three inline pill-shaped dropdown triggers, each opening a glass popover.
+ */
+
+/* ── Bar layout ─────────────────────────────────────────────────────────── */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+/* ── Each selector ─────────────────────────────────────────────────────── */
+
+.selectorWrap {
+  position: relative;
+}
+
+.selectorBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 26px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+  max-width: 180px;
+}
+
+.selectorBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.selectorBtn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.selectorLabel {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.chevron {
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+
+/* ── Glass popover ─────────────────────────────────────────────────────── */
+
+.popover {
+  position: absolute;
+  bottom: calc(100% + var(--sp-3));
+  left: 0;
+  z-index: var(--z-dropdown);
+  min-width: 220px;
+
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-elevated);
+  overflow: hidden;
+
+  animation: selectorIn var(--dur-fast) var(--ease-out) both;
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .popover {
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+  }
+}
+
+.popover::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--glass-highlight) 20%,
+    var(--glass-highlight) 80%,
+    transparent
+  );
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+@keyframes selectorIn {
+  from {
+    opacity: 0;
+    transform: translateY(var(--sp-2)) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ── Popover inner structure ───────────────────────────────────────────── */
+
+.popoverInner {
+  padding: var(--sp-3) 0 var(--sp-3);
+}
+
+.popoverTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-5) var(--sp-2);
+}
+
+.popoverHeading {
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.refreshBtn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-normal) linear;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.refreshing svg {
+  animation: spin var(--dur-slower) linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Filter input ──────────────────────────────────────────────────────── */
+
+.filterWrap {
+  padding: 0 var(--sp-5) var(--sp-3);
+}
+
+.filterInput {
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--text-primary);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.filterInput::placeholder {
+  color: var(--text-muted);
+}
+
+.filterInput:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+/* ── Model list (scrollable for long lists) ──────────────────────────── */
+
+.modelList {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* ── Option rows ───────────────────────────────────────────────────────── */
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-5);
+  text-align: start;
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.option:hover,
+.option:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.optionActive {
+  color: var(--text-primary);
+  background: var(--accent-softer);
+}
+
+.optionLabel {
+  flex: 1;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.optionMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.optionCheck {
+  flex: 0 0 auto;
+  color: var(--accent-primary);
+}
+
+.masked {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Badges ─────────────────────────────────────────────────────────────── */
+
+.badge {
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-full);
+  background: var(--teal-soft);
+  color: var(--accent-secondary);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.visionBadge {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-full);
+  background: var(--teal-soft);
+  color: var(--accent-secondary);
+}
+
+.emptyMsg {
+  padding: var(--sp-4) var(--sp-5);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+
+[data-motion="reduced"] .popover {
+  animation: none;
+}
+
+[data-motion="reduced"] .refreshing svg {
+  animation: none;
+}

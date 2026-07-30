@@ -14,6 +14,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AppSettings,
+  PermissionMode,
   ProviderPreset,
   ApiKeyEntry,
   ModelInfo,
@@ -79,6 +80,15 @@ const api = {
       ipcRenderer.invoke("providers:refreshModels", providerId),
     listModels: (providerId: string): Promise<ModelInfo[]> =>
       ipcRenderer.invoke("providers:listModels", providerId),
+    addCustom: (input: {
+      name: string;
+      baseUrl: string;
+    }): Promise<Result<ProviderPreset>> =>
+      ipcRenderer.invoke("providers:addCustom", input),
+    removeCustom: (id: string): Promise<Result<void>> =>
+      ipcRenderer.invoke("providers:removeCustom", id),
+    updateCustom: (id: string, patch: Partial<ProviderPreset>): Promise<Result<ProviderPreset>> =>
+      ipcRenderer.invoke("providers:updateCustom", id, patch),
   },
 
   sessions: {
@@ -89,6 +99,14 @@ const api = {
       ipcRenderer.invoke("sessions:create", mode, selection),
     archive: (sessionId: string): Promise<Result<void>> =>
       ipcRenderer.invoke("sessions:archive", sessionId),
+    delete: (sessionId: string): Promise<Result<void>> =>
+      ipcRenderer.invoke("sessions:delete", sessionId),
+    branch: (sessionId: string, uptoMessageId?: string): Promise<Result<Session>> =>
+      ipcRenderer.invoke("sessions:branch", sessionId, uptoMessageId),
+    rename: (sessionId: string, title: string): Promise<Result<void>> =>
+      ipcRenderer.invoke("sessions:rename", sessionId, title),
+    setPermissionMode: (sessionId: string, mode: PermissionMode): Promise<Result<void>> =>
+      ipcRenderer.invoke("sessions:setPermissionMode", sessionId, mode),
     messages: (sessionId: string): Promise<Message[]> =>
       ipcRenderer.invoke("sessions:messages", sessionId),
     send: (sessionId: string, text: string, attachments?: string[]): Promise<Result<void>> =>
@@ -175,6 +193,28 @@ const api = {
       ipcRenderer.invoke("projects:archive", id),
     remove: (id: string): Promise<Result<void>> =>
       ipcRenderer.invoke("projects:remove", id),
+  },
+
+  memory: {
+    getRules: (): Promise<Result<string>> => ipcRenderer.invoke("memory:getRules"),
+    setRules: (text: string): Promise<Result<void>> => ipcRenderer.invoke("memory:setRules", text),
+  },
+
+  preview: {
+    /**
+     * Read a file for inline preview. Returns text content or base64 for images.
+     * Text is capped at ~512 KB (truncated=true when the file was larger).
+     */
+    readFile: (path: string): Promise<Result<{
+      content: string;
+      base64?: string;
+      mime: string;
+      truncated: boolean;
+    }>> => ipcRenderer.invoke("preview:readFile", path),
+
+    /** Stat a file — size in bytes, isDir flag. */
+    stat: (path: string): Promise<Result<{ size: number; isDir: boolean }>> =>
+      ipcRenderer.invoke("preview:stat", path),
   },
 
   window: {

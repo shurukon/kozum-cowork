@@ -545,6 +545,13 @@ export interface AppSettings {
     chatFont: "sans" | "serif" | "mono";
     motion: "system" | "reduced";
     language: "en" | "ar";
+    /** Default working-folder used when no project/folder is selected, per mode. */
+    defaultFolders: {
+      cowork: string | null;
+      code: string | null;
+    };
+    /** Standing instructions injected into every session's system prompt. */
+    rules: string;
   };
   cowork: ModeSettings;
   code: ModeSettings;
@@ -573,6 +580,8 @@ export interface AppSettings {
   privacy: {
     telemetry: false;
   };
+  /** User-registered custom OpenAI-compatible providers. */
+  customProviders: ProviderPreset[];
 }
 
 export interface ModeSettings {

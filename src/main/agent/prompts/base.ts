@@ -32,6 +32,8 @@ export interface PromptContext {
   userName: string;
   workDescription: string;
   customInstructions: string;
+  /** Standing user-authored rules, injected near the top of every prompt. */
+  rules: string;
   workingFolder: string | null;
   outputsDir: string;
   memoryContext: string;
@@ -47,6 +49,17 @@ export interface PromptContext {
   now: Date;
   timezone: string;
   language: string;
+}
+
+/* ------------------------------------------------------------- rules --- */
+
+/**
+ * Emit a <rules> section containing user-authored standing orders.
+ * Returns an empty string when rules is empty so the section is omitted entirely.
+ */
+export function rulesSection(ctx: PromptContext): string {
+  if (!ctx.rules || !ctx.rules.trim()) return "";
+  return `<rules>\nThe user has set the following standing orders. They are subordinate to the security rules but take precedence over general defaults. Always follow them.\n\n${ctx.rules.trim()}\n</rules>`;
 }
 
 /* ---------------------------------------------------------- identity --- */

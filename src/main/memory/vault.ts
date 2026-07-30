@@ -419,6 +419,29 @@ export class MemoryVault {
     return `${indexContent}\n\n---\n\n${hotCacheContent}`;
   }
 
+  /* ----------------------------------------------------------------- rules -- */
+
+  /** Path of the standing-rules file within the vault. */
+  get rulesPath(): string {
+    return join(this.root, "RULES.md");
+  }
+
+  /** Read user-authored standing rules. Returns empty string when absent. */
+  async getRules(): Promise<string> {
+    try {
+      const content = await readFile(this.rulesPath, "utf8");
+      return content;
+    } catch {
+      return "";
+    }
+  }
+
+  /** Write user-authored standing rules. */
+  async setRules(text: string): Promise<void> {
+    await mkdir(this.root, { recursive: true });
+    await writeFile(this.rulesPath, text, "utf8");
+  }
+
   /* ----------------------------------------------------------------- lint --- */
 
   async lint(): Promise<LintReport> {
