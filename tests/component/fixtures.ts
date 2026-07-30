@@ -5,7 +5,7 @@
  * NO mocking library is used — this is a plain-object fake.
  */
 
-import type { KozumBridge } from "@/bridge.ts";
+import type { KozumBridge } from "../../src/renderer/bridge.ts";
 import type {
   AppSettings,
   ProviderPreset,

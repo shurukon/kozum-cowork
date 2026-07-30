@@ -26,5 +26,9 @@
     "electron.vite.config.ts",
     "src/renderer/**/*.ts",
     "src/renderer/**/*.tsx"
+  ],
+  "exclude": [
+    "tests/component/**",
+    "tests/e2e/**"
   ]
 }
