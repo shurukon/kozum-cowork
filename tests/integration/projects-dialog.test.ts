@@ -160,6 +160,10 @@ async function makeDeps(
     } as unknown as IpcDeps["tasks"],
     projects: projectStore,
     dialog: dialogFake,
+    memory: {
+      getRules: async () => "",
+      setRules: async () => { /* noop */ },
+    } as unknown as IpcDeps["memory"],
   } satisfies IpcDeps;
 
   registerIpc(deps);

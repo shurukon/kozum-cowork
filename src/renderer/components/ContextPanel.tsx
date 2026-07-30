@@ -9,7 +9,7 @@
  *   • Shared files (chips, clickable → onOpenPath)
  */
 
-import { FolderOpen, Plug, Package, Wrench } from "lucide-react";
+import { FolderOpen, Package, Wrench } from "lucide-react";
 import type { McpServerConfig } from "@shared/types.ts";
 import { toolIcon } from "../lib/toolIcons.ts";
 import styles from "./ContextPanel.module.css";

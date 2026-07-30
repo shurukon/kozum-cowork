@@ -16,7 +16,7 @@ import type {
   Plugin,
   Skill,
   AgentEvent,
-} from "../../src/shared/types.ts";
+} from "@shared/types.ts";
 
 // ── Default AppSettings ───────────────────────────────────────────────────
 
@@ -36,6 +36,8 @@ export function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings 
       userName: "Test User",
       workDescription: "Tester",
       customInstructions: "",
+      rules: "",
+      defaultFolders: { cowork: null, code: null },
       appearance: "system",
       chatFont: "sans",
       motion: "system",
@@ -245,6 +247,8 @@ export function makeFakeBridge(
     skills: Partial<KozumBridge["skills"]>;
     dialog: Partial<KozumBridge["dialog"]>;
     projects: Partial<KozumBridge["projects"]>;
+    memory: Partial<KozumBridge["memory"]>;
+    preview: Partial<KozumBridge["preview"]>;
     window: Partial<KozumBridge["window"]>;
     app: Partial<KozumBridge["app"]>;
   }> = {},
@@ -263,6 +267,9 @@ export function makeFakeBridge(
     testKey: async (_id) => ({ ok: true, value: undefined }),
     refreshModels: async (_pid) => ({ ok: true, value: [] }),
     listModels: async (_pid) => [],
+    addCustom: async (input) => ({ ok: true, value: { id: "custom-1", name: input.name, protocol: "openai-chat", baseUrl: input.baseUrl, authScheme: "bearer", modelsPath: "/models", builtIn: false } }),
+    removeCustom: async (_id) => ({ ok: true, value: undefined }),
+    updateCustom: async (_id, _patch) => ({ ok: true, value: { id: "custom-1", name: "c", protocol: "openai-chat", baseUrl: "https://x", authScheme: "bearer", modelsPath: "/models", builtIn: false } }),
     ...overrides.providers,
   };
 
@@ -387,7 +394,19 @@ export function makeFakeBridge(
     ...overrides.app,
   };
 
-  return { settings, providers, sessions, schedule, mcp, plugins, skills, dialog, projects, window: window_, app };
+  const memory: KozumBridge["memory"] = {
+    getRules: async () => ({ ok: true, value: "" }),
+    setRules: async (_t) => ({ ok: true, value: undefined }),
+    ...overrides.memory,
+  };
+
+  const preview: KozumBridge["preview"] = {
+    readFile: async (_p) => ({ ok: true, value: { content: "", mime: "text/plain", truncated: false } }),
+    stat: async (_p) => ({ ok: true, value: { size: 0, isDir: false } }),
+    ...overrides.preview,
+  };
+
+  return { settings, providers, sessions, schedule, mcp, plugins, skills, dialog, projects, memory, preview, window: window_, app };
 }
 
 /**

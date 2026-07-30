@@ -47,7 +47,7 @@ function getLucideIcon(name: string): LucideComponent {
     .join("");
 
   const icons = LucideIcons as unknown as Record<string, LucideComponent | undefined>;
-  return icons[pascal] ?? LucideIcons.Wrench;
+  return icons[pascal] ?? (LucideIcons.Wrench as LucideComponent);
 }
 
 // ── Diff renderer ──────────────────────────────────────────────────────────
