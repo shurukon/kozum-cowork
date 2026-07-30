@@ -58,7 +58,7 @@ describe("Settings — Providers pane lists presets (the inert-UI bug)", () => {
     fireEvent.click(providersNav);
 
     // Should render the pane heading at minimum.
-    expect(screen.getByText("Providers")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /providers/i })).toBeInTheDocument();
   });
 });
 

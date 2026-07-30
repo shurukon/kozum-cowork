@@ -138,7 +138,7 @@ describe("ConnectorDialog — URL validation", () => {
     const urlInput = screen.getByPlaceholderText(/https:\/\/example\.com\/mcp/i);
     fireEvent.change(urlInput, { target: { value: "not-a-valid-url" } });
 
-    const saveBtn = screen.getByRole("button", { name: /connect/i });
+    const saveBtn = screen.getByRole("button", { name: "Connect", exact: true });
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
@@ -155,7 +155,7 @@ describe("ConnectorDialog — URL validation", () => {
     const urlInput = screen.getByPlaceholderText(/https:\/\/example\.com\/mcp/i);
     fireEvent.change(urlInput, { target: { value: "ftp://example.com/mcp" } });
 
-    const saveBtn = screen.getByRole("button", { name: /connect/i });
+    const saveBtn = screen.getByRole("button", { name: "Connect", exact: true });
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
@@ -171,7 +171,7 @@ describe("ConnectorDialog — URL validation", () => {
     const urlInput = screen.getByPlaceholderText(/https:\/\/example\.com\/mcp/i);
     fireEvent.change(urlInput, { target: { value: "https://my-server.example.com/mcp" } });
 
-    const saveBtn = screen.getByRole("button", { name: /connect/i });
+    const saveBtn = screen.getByRole("button", { name: "Connect", exact: true });
     fireEvent.click(saveBtn);
 
     await waitFor(() => {

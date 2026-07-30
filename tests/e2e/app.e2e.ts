@@ -63,8 +63,10 @@ test("app launches, window appears, title bar renders", async () => {
     await expect(page.locator("body")).not.toBeEmpty();
 
     // The TitleBar is always rendered; it contains the sidebar toggle button.
-    // Wait for it to appear.
-    await page.waitForSelector("[class*='titleBar'], [class*='TitleBar'], [role='banner']", {
+    // Wait for it to appear. CSS modules hash class names so we cannot use a
+    // class-based selector — use the stable aria-label on the sidebar toggle
+    // button instead.
+    await page.waitForSelector("[aria-label='Toggle sidebar']", {
       timeout: 10_000,
     });
   } finally {
@@ -112,7 +114,8 @@ test("settings opens from the account row in the sidebar", async () => {
 
   try {
     // Wait for the sidebar to render (the account row is at its bottom).
-    await page.waitForSelector("[class*='sidebar'], [class*='Sidebar'], nav", {
+    // CSS modules hash class names — use the stable aria-label on the nav instead.
+    await page.waitForSelector("[aria-label='Main navigation']", {
       timeout: 10_000,
     });
 
@@ -123,8 +126,7 @@ test("settings opens from the account row in the sidebar", async () => {
     // Try several candidate selectors (the exact class name is hashed by Vite):
     const accountRowCandidates = [
       page.getByRole("button", { name: /you|account|profile/i }),
-      page.locator("[class*='account']").first(),
-      page.locator("[class*='Account']").first(),
+      page.getByTitle("Settings"),
     ];
 
     let clicked = false;
@@ -157,7 +159,8 @@ test("settings opens from the Customize nav item", async () => {
   const { app, page } = await launchApp();
 
   try {
-    await page.waitForSelector("[class*='sidebar'], nav", { timeout: 10_000 });
+    // CSS modules hash class names — use the stable aria-label on the nav instead.
+    await page.waitForSelector("[aria-label='Main navigation']", { timeout: 10_000 });
 
     // Skip through FirstRun if visible.
     const skipBtn = page.getByRole("button", { name: /skip for now/i });
@@ -243,7 +246,11 @@ test("scheduled-tasks page opens and 'New task' opens a dialog", async () => {
       await scheduledBtn.click();
 
       // The Scheduled page should render; look for "New task" button.
-      const newTaskBtn = page.getByRole("button", { name: /new task/i });
+      // Both the sidebar nav item and the page header have this label, so we
+      // scope to the page's main content region. The Scheduled page renders its
+      // "New task" button inside the page header (after the sidebar), so it is
+      // the last match — the sidebar nav item is always rendered first.
+      const newTaskBtn = page.getByRole("button", { name: /new task/i }).last();
       await expect(newTaskBtn).toBeVisible({ timeout: 5_000 });
 
       await newTaskBtn.click();
