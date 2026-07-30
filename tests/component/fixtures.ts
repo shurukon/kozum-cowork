@@ -15,7 +15,6 @@ import type {
   McpServerConfig,
   Plugin,
   Skill,
-  Project,
   AgentEvent,
 } from "../../src/shared/types.ts";
 
@@ -270,7 +269,7 @@ export function makeFakeBridge(
   const sessions: KozumBridge["sessions"] = {
     list: async (_mode) => [],
     get: async (_id) => null,
-    create: async (mode, selection) => ({
+    create: async (_mode, _selection) => ({
       ok: true,
       value: makeSession(),
     }),

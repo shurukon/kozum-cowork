@@ -248,6 +248,12 @@ describe("H8 — blocklist fails CLOSED when active window is unknown", () => {
     listWindows(): ReturnType<ComputerBackend["listWindows"]> {
       return Promise.reject(new Error("unavailable"));
     }
+    multiMonitorBounds(): ReturnType<ComputerBackend["multiMonitorBounds"]> {
+      return Promise.resolve([]);
+    }
+    selfTest(): ReturnType<ComputerBackend["selfTest"]> {
+      return Promise.reject(new Error("self-test unavailable"));
+    }
   }
 
   /**
@@ -277,6 +283,12 @@ describe("H8 — blocklist fails CLOSED when active window is unknown", () => {
     }
     listWindows(): ReturnType<ComputerBackend["listWindows"]> {
       return Promise.reject(new BackendUnavailableError("Computer use"));
+    }
+    multiMonitorBounds(): ReturnType<ComputerBackend["multiMonitorBounds"]> {
+      return Promise.resolve([]);
+    }
+    selfTest(): ReturnType<ComputerBackend["selfTest"]> {
+      return Promise.reject(new Error("self-test unavailable"));
     }
   }
 

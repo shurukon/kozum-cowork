@@ -30,7 +30,6 @@ let apiChunks: (string | Buffer)[] = [];
 let apiStatus = 200;
 let lastApiUrl = "";
 let lastApiHeaders: Record<string, string | string[] | undefined> = {};
-let lastApiBody: any = null;
 
 let tokenStatus = 200;
 let lastTokenBody = "";
@@ -41,7 +40,7 @@ let apiBase = "";
 let tokenBase = "";
 
 // Ephemeral RSA keypair for tests — never commit a real key.
-const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
 const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }) as string;
 
 before(async () => {
@@ -54,12 +53,6 @@ before(async () => {
     let raw = "";
     req.on("data", (d) => (raw += d));
     req.on("end", () => {
-      try {
-        lastApiBody = raw ? JSON.parse(raw) : null;
-      } catch {
-        lastApiBody = raw;
-      }
-
       if (apiStatus !== 200) {
         res.writeHead(apiStatus, { "Content-Type": "application/json" });
         res.end(apiChunks.join(""));

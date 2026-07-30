@@ -10,11 +10,9 @@
  */
 
 import { defineConfig } from "@playwright/test";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const MAIN_BUNDLE = join(ROOT, "out", "main", "index.js");
 
 export default defineConfig({
   testDir: join(ROOT, "tests", "e2e"),

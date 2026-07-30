@@ -215,7 +215,7 @@ export class VertexGeminiAdapter implements ProviderAdapter {
       });
     }
 
-    yield* parseGeminiStream(res.body, req.signal, ctx.providerId, this._callCounter);
+    yield* parseGeminiStream(res.body, req.signal, this._callCounter);
   }
 
   async listModels(_ctx: ProviderContext): Promise<ModelInfo[] | null> {

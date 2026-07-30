@@ -148,7 +148,6 @@ export function toGeminiTools(tools: ToolDefinition[]) {
 export async function* parseGeminiStream(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal,
-  providerId: string,
   toolCallCounter: { n: number },
 ): AsyncGenerator<StreamDelta> {
   // Map from synthetic tool id → name so we can emit tool_end.
@@ -261,7 +260,7 @@ export class GeminiAdapter implements ProviderAdapter {
       });
     }
 
-    yield* parseGeminiStream(res.body, req.signal, ctx.providerId, this._callCounter);
+    yield* parseGeminiStream(res.body, req.signal, this._callCounter);
   }
 
   async listModels(ctx: ProviderContext): Promise<ModelInfo[] | null> {
