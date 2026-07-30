@@ -1,136 +1,88 @@
 /**
  * interaction.test.tsx
  *
- * The most important tests in this project: verify that the composer actually
- * calls the backend when the user types and presses Enter.
- *
- * Tests:
- *   - Typing and pressing Enter calls sessions.send with that text.
- *   - Pressing Shift+Enter does NOT call sessions.send (inserts newline).
- *
- * We test via the HomeView composer (the canonical entry-point before a
- * session exists). These tests use a real fake bridge and no mocking library.
+ * The most important tests in this project: the composer actually calls the
+ * backend when the user types and presses Enter. These target ComposerBar
+ * directly — the shared composer both homes now embed (HomeView delegates to it
+ * via `composerSlot`), so this covers the canonical send path for both modes.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { HomeView } from "../../src/renderer/components/HomeView.tsx";
+import { ComposerBar } from "../../src/renderer/components/ComposerBar.tsx";
+import type { ModelSelection } from "../../src/shared/types.ts";
 
-// ── Direct composer tests via HomeView ────────────────────────────────────
-// HomeView is self-contained and takes callbacks as props. We can test the
-// Enter / Shift+Enter distinction without mounting the full App.
+const SELECTION: ModelSelection = {
+  providerId: "anthropic",
+  keyId: "key-1",
+  modelId: "claude-opus-4-5",
+};
 
-describe("HomeView composer — Enter sends, Shift+Enter does not", () => {
-  it("calls onSubmit with the typed text when Enter is pressed", () => {
-    const onSubmit = vi.fn();
-    render(
-      <HomeView
-        mode="cowork"
-        userName="Test"
-        modelLabel="claude-opus-4-5"
-        onSubmit={onSubmit}
-        onPickModel={vi.fn()}
-        onPickFolder={vi.fn()}
-        onAttach={vi.fn()}
-      />,
-    );
+function renderComposer(onSend = vi.fn()) {
+  render(
+    <ComposerBar
+      busy={false}
+      onSend={onSend}
+      onCancel={vi.fn()}
+      onAttach={vi.fn()}
+      selection={SELECTION}
+      presets={[]}
+      keysByProvider={{}}
+      modelsByProvider={{}}
+      onSelectionChange={vi.fn()}
+      onRefreshModels={async () => {}}
+    />,
+  );
+  return onSend;
+}
 
-    const textarea = screen.getByRole("textbox", { name: /message/i });
-
-    // Type text into the composer.
+describe("ComposerBar — Enter sends, Shift+Enter does not", () => {
+  it("calls onSend with the typed text when Enter is pressed", () => {
+    const onSend = renderComposer();
+    const textarea = screen.getByRole("textbox");
     fireEvent.change(textarea, { target: { value: "Hello, agent!" } });
-
-    // Press Enter (no Shift).
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
-
-    expect(onSubmit).toHaveBeenCalledOnce();
-    expect(onSubmit).toHaveBeenCalledWith("Hello, agent!");
+    expect(onSend).toHaveBeenCalledOnce();
+    expect(onSend).toHaveBeenCalledWith("Hello, agent!");
   });
 
-  it("does NOT call onSubmit when Shift+Enter is pressed", () => {
-    const onSubmit = vi.fn();
-    render(
-      <HomeView
-        mode="cowork"
-        userName="Test"
-        modelLabel="claude-opus-4-5"
-        onSubmit={onSubmit}
-        onPickModel={vi.fn()}
-        onPickFolder={vi.fn()}
-        onAttach={vi.fn()}
-      />,
-    );
-
-    const textarea = screen.getByRole("textbox", { name: /message/i });
+  it("does NOT call onSend when Shift+Enter is pressed", () => {
+    const onSend = renderComposer();
+    const textarea = screen.getByRole("textbox");
     fireEvent.change(textarea, { target: { value: "Line one" } });
-
-    // Press Shift+Enter — should insert a newline, not send.
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
-
-    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("does NOT call onSubmit when the input is empty and Enter is pressed", () => {
-    const onSubmit = vi.fn();
-    render(
-      <HomeView
-        mode="cowork"
-        userName="Test"
-        modelLabel="claude-opus-4-5"
-        onSubmit={onSubmit}
-        onPickModel={vi.fn()}
-        onPickFolder={vi.fn()}
-        onAttach={vi.fn()}
-      />,
-    );
-
-    const textarea = screen.getByRole("textbox", { name: /message/i });
-    // Leave value empty and press Enter.
-    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
-
-    expect(onSubmit).not.toHaveBeenCalled();
+  it("does NOT call onSend when the input is empty and Enter is pressed", () => {
+    const onSend = renderComposer();
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", shiftKey: false });
+    expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("does NOT call onSubmit when the input is only whitespace", () => {
-    const onSubmit = vi.fn();
-    render(
-      <HomeView
-        mode="cowork"
-        userName="Test"
-        modelLabel="claude-opus-4-5"
-        onSubmit={onSubmit}
-        onPickModel={vi.fn()}
-        onPickFolder={vi.fn()}
-        onAttach={vi.fn()}
-      />,
-    );
-
-    const textarea = screen.getByRole("textbox", { name: /message/i });
+  it("does NOT call onSend when the input is only whitespace", () => {
+    const onSend = renderComposer();
+    const textarea = screen.getByRole("textbox");
     fireEvent.change(textarea, { target: { value: "   " } });
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
-
-    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
   });
 
   it("clears the textarea after sending", () => {
-    render(
-      <HomeView
-        mode="cowork"
-        userName="Test"
-        modelLabel="claude-opus-4-5"
-        onSubmit={vi.fn()}
-        onPickModel={vi.fn()}
-        onPickFolder={vi.fn()}
-        onAttach={vi.fn()}
-      />,
-    );
-
-    const textarea = screen.getByRole("textbox", { name: /message/i }) as HTMLTextAreaElement;
+    renderComposer();
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "Send this" } });
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
-
     expect(textarea.value).toBe("");
+  });
+
+  it("does not send while composing an IME sequence", () => {
+    const onSend = renderComposer();
+    const textarea = screen.getByRole("textbox");
+    fireEvent.change(textarea, { target: { value: "こんにちは" } });
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false, isComposing: true });
+    expect(onSend).not.toHaveBeenCalled();
   });
 });
 
