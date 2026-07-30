@@ -5,7 +5,7 @@
  * NO mocking library is used — this is a plain-object fake.
  */
 
-import type { KozumBridge } from "../../src/renderer/bridge.ts";
+import type { KozumBridge } from "@/bridge.ts";
 import type {
   AppSettings,
   ProviderPreset,
@@ -50,6 +50,7 @@ export function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings 
     network: { alwaysAllowHosts: [], proxyUrl: null, githubFirewallRule: false },
     scheduler: { enabled: true, keepAwake: true },
     privacy: { telemetry: false },
+    customProviders: [],
     ...overrides,
   };
 }
