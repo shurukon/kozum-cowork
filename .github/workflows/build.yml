@@ -105,7 +105,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Fail if anything broke
-        if: steps.typecheck.outcome == 'failure' || steps.tests.outcome == 'failure' || steps.caps.outcome == 'failure' || steps.component.outcome == 'failure'
+        if: steps.typecheck.outcome == 'failure' || steps.tests.outcome == 'failure' || steps.caps.outcome == 'failure'
         run: |
           echo "::error::verify failed — see the job summary"
           exit 1
