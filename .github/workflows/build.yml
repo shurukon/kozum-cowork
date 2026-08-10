@@ -1,0 +1,285 @@
+name: verify-and-build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Two jobs on purpose. `verify` is cheap and runs on Linux, so a type error or a
+# failing test costs ~1 minute instead of waiting on a full Windows Electron
+# build. `build-windows` only starts once verify is green.
+jobs:
+  verify:
+    name: typecheck + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Typecheck
+        id: typecheck
+        shell: bash
+        run: |
+          set -o pipefail
+          # Run both projects unconditionally. Chaining them with && hides every
+          # renderer error behind the first main-process error, which costs a
+          # whole CI round per layer.
+          rc=0
+          npm run typecheck:node 2>&1 | tee /tmp/typecheck.log || rc=1
+          npm run typecheck:web 2>&1 | tee -a /tmp/typecheck.log || rc=1
+          exit $rc
+        continue-on-error: true
+
+      - name: Unit + integration tests
+        id: tests
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types --test tests/integration/*.test.ts tests/unit/*.test.ts 2>&1 | tee /tmp/tests.log
+        continue-on-error: true
+
+      - name: Capability gate validation
+        id: caps
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types scripts/validate-capabilities.ts 2>&1 | tee /tmp/caps.log
+        continue-on-error: true
+
+      - name: Component tests (vitest + jsdom)
+        id: component
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:component 2>&1 | tee /tmp/component.log
+        continue-on-error: true
+
+      - name: Report
+        run: |
+          {
+            echo "## Verify results"
+            echo ""
+            echo "| step | outcome |"
+            echo "|---|---|"
+            echo "| typecheck | ${{ steps.typecheck.outcome }} |"
+            echo "| tests | ${{ steps.tests.outcome }} |"
+            echo "| capability gate | ${{ steps.caps.outcome }} |"
+            echo "| component tests | ${{ steps.component.outcome }} |"
+            echo ""
+            echo "<details><summary>typecheck log</summary>"
+            echo ""; echo '```'; tail -80 /tmp/typecheck.log 2>/dev/null || echo "(none)"; echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details><summary>test log</summary>"
+            echo ""; echo '```'; tail -120 /tmp/tests.log 2>/dev/null || echo "(none)"; echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details><summary>capability log</summary>"
+            echo ""; echo '```'; tail -60 /tmp/caps.log 2>/dev/null || echo "(none)"; echo '```'
+            echo "</details>"
+            echo ""
+            echo "<details><summary>component test log</summary>"
+            echo ""; echo '```'; tail -120 /tmp/component.log 2>/dev/null || echo "(none)"; echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-logs
+          path: /tmp/*.log
+          if-no-files-found: warn
+
+      - name: Upload resolved lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: package-lock.json
+          if-no-files-found: warn
+
+      - name: Fail if anything broke
+        if: steps.typecheck.outcome == 'failure' || steps.tests.outcome == 'failure' || steps.caps.outcome == 'failure' || steps.component.outcome == 'failure'
+        run: |
+          echo "::error::verify failed — see the job summary"
+          exit 1
+
+  e2e:
+    name: end-to-end (Playwright + Electron)
+    needs: verify
+    runs-on: ubuntu-latest
+    # New and unverified — do not block the installer on E2E failures yet.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build app
+        run: npm run build
+
+      - name: Run E2E tests (xvfb)
+        shell: bash
+        run: |
+          set -o pipefail
+          xvfb-run -a npm run test:e2e 2>&1 | tee /tmp/e2e.log
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: warn
+
+      - name: Upload E2E log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: /tmp/e2e.log
+          if-no-files-found: warn
+
+  build-windows:
+    name: windows installer
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Icon pipeline
+        run: |
+          python -m pip install --quiet pillow numpy
+          python scripts/make_icons.py assets/logo-source.png build resources/icons
+
+      - name: Install
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Build renderer + main
+        run: npm run build
+
+      - name: Package NSIS installer
+        run: npx electron-builder --win --publish never
+
+      - name: Prove backend is bundled
+        shell: bash
+        continue-on-error: true
+        run: |
+          {
+            echo "## Bundle contents"
+            echo ""
+            echo "### out/ tree"
+            echo '```'
+            ls -R out/ 2>/dev/null || echo "(no out dir)"
+            echo '```'
+            echo ""
+            echo "### out/main/index.js size"
+            echo '```'
+            wc -c out/main/index.js 2>/dev/null || echo "(file missing)"
+            echo '```'
+            echo ""
+            echo "### Key symbol counts inside out/main/index.js"
+            echo '```'
+            for sym in buildToolRegistry shell_exec mcp_install runAgentLoop; do
+              count=$(grep -c "$sym" out/main/index.js 2>/dev/null || echo 0)
+              echo "$sym: $count"
+            done
+            echo '```'
+            echo ""
+            echo "### release/win-unpacked/resources/ listing"
+            echo '```'
+            ls -lh release/win-unpacked/resources/ 2>/dev/null || echo "(dir missing)"
+            echo '```'
+            echo ""
+            echo "### app.asar size"
+            echo '```'
+            wc -c release/win-unpacked/resources/app.asar 2>/dev/null || echo "(asar missing)"
+            echo '```'
+            echo ""
+            echo "### First 50 entries inside app.asar"
+            echo '```'
+            npx asar list release/win-unpacked/resources/app.asar 2>/dev/null | head -50 || echo "(asar tool unavailable)"
+            echo '```'
+            echo ""
+            echo "### out/main/index.js byte count extracted from asar"
+            echo '```'
+            npx asar extract-file release/win-unpacked/resources/app.asar out/main/index.js /tmp/main-from-asar.js 2>/dev/null \
+              && wc -c /tmp/main-from-asar.js \
+              || echo "(extract failed)"
+            echo '```'
+            echo ""
+            echo "### Bundled skills present in app.asar"
+            echo '```'
+            for skill in open-design ui-ux-pro-max app-testing document-craft; do
+              path="bundled/skills/${skill}/SKILL.md"
+              if npx asar list release/win-unpacked/resources/app.asar 2>/dev/null | grep -q "$path"; then
+                echo "PRESENT: $path"
+              else
+                echo "MISSING: $path"
+              fi
+            done
+            echo '```'
+            echo ""
+            echo "### Bundled plugins present in app.asar"
+            echo '```'
+            manifest_path="bundled/plugins/kozum-engineering/.claude-plugin/plugin.json"
+            if npx asar list release/win-unpacked/resources/app.asar 2>/dev/null | grep -q "$manifest_path"; then
+              echo "PRESENT: $manifest_path"
+            else
+              echo "MISSING: $manifest_path"
+            fi
+            for agent in security backend frontend database testing; do
+              agent_path="bundled/plugins/kozum-engineering/agents/${agent}.md"
+              if npx asar list release/win-unpacked/resources/app.asar 2>/dev/null | grep -q "$agent_path"; then
+                echo "PRESENT: $agent_path"
+              else
+                echo "MISSING: $agent_path"
+              fi
+            done
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Inventory
+        shell: bash
+        run: |
+          {
+            echo "## Windows build"
+            echo ""
+            echo '```'
+            ls -la release/ 2>/dev/null || echo "(no release dir)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kozum-Cowork-Setup
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+          if-no-files-found: error

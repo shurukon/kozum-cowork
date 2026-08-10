@@ -1,0 +1,6 @@
+{
+  "name": "ecc",
+  "description": "Everything Claude Code (ECC) — a curated superset of engineering skills for code review, debugging, refactoring, and common shipping workflows (test, ship, review-pr).",
+  "version": "1.0.0",
+  "author": "Kozum"
+}

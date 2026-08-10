@@ -1,0 +1,258 @@
+.root {
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  line-height: var(--lh-relaxed);
+}
+
+.root > * + * {
+  margin-top: var(--sp-6);
+}
+
+.h1 {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+  margin-block-end: var(--sp-6);
+}
+
+.h2 {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+  margin-block-end: var(--sp-4);
+}
+
+.h3 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  color: var(--text-primary);
+  margin-block-end: var(--sp-3);
+}
+
+.h4 {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.h5 {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+
+.h6 {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+}
+
+.p {
+  color: var(--text-primary);
+  margin-block: var(--sp-2);
+}
+
+.inlineCode {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  padding: 1px var(--sp-2);
+  color: var(--accent-secondary);
+}
+
+.pre {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-6) var(--sp-8);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--text-primary);
+}
+
+.codeWithLang {
+  display: block;
+}
+
+.blockquote {
+  border-inline-start: 3px solid var(--accent-primary);
+  padding-inline-start: var(--sp-8);
+  color: var(--text-secondary);
+  margin-block: var(--sp-4);
+}
+
+.ul,
+.ol {
+  padding-inline-start: var(--sp-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.ul {
+  list-style: disc;
+}
+
+.ol {
+  list-style: decimal;
+}
+
+.li {
+  padding-inline-start: var(--sp-2);
+  list-style: inherit;
+  display: list-item;
+}
+
+.li > * + * {
+  margin-top: var(--sp-2);
+}
+
+.hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin-block: var(--sp-8);
+}
+
+.link {
+  color: var(--accent-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  color: var(--accent-primary);
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────────── */
+
+.tableWrap {
+  overflow-x: auto;
+  margin-block: var(--sp-4);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+
+.th {
+  text-align: start;
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  padding: var(--sp-3) var(--sp-5);
+  white-space: nowrap;
+}
+
+.td {
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  padding: var(--sp-3) var(--sp-5);
+  vertical-align: top;
+}
+
+/* Zebra body rows for the editorial, unhurried read the reference design
+   leans on. */
+.table tbody tr:nth-child(even) {
+  background: var(--bg-sunken);
+}
+
+/* ── Inline images ────────────────────────────────────────────────────────── */
+
+.inlineImage {
+  max-width: 100%;
+  /* Large, soft corner — claude applies ~16px to media. We use --r-xl (14px),
+     the closest token; slightly softer than the card radius. */
+  border-radius: var(--r-xl);
+  border: 1px solid var(--border-subtle);
+  /* Cap height so a model-pasted tall image doesn't consume the whole reply. */
+  max-height: 360px;
+  object-fit: contain;
+  margin-block: var(--sp-3);
+}
+
+.imgFallback {
+  display: inline-block;
+  background: var(--bg-sunken);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--r-sm);
+  padding: 0 var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  max-width: 60ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ── Task lists (checklists) ────────────────────────────────────────────── */
+
+.taskList {
+  list-style: none;
+  padding-inline-start: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-block: var(--sp-4);
+}
+
+.taskItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  /* No default bullet — the checkbox glyph IS the marker. */
+  list-style: none;
+  padding-inline-start: 0;
+}
+
+.taskCheckbox {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg-input);
+  font-size: var(--fs-2xs);
+  line-height: 1;
+  color: transparent;
+  /* Pre-rendered state — not a real input so the user can't mutate it. */
+  user-select: none;
+}
+
+.taskChecked {
+  background: var(--accent-gradient);
+  border-color: var(--accent-primary);
+  color: #fff;
+}
+
+.taskBody {
+  flex: 1;
+  min-width: 0;
+  /* Checked items read as crossed-out — the editorial "done" cue. */
+}
+
+/* A checked task's body text gets a soft strikethrough tint via opacity only,
+   so nested structure (lists inside the task) still reads. */
+.taskItem:has(.taskChecked) .taskBody {
+  opacity: 0.65;
+}
+
+[data-motion="reduced"] .taskChecked {
+  /* No animation here, but the gradient is fine — leave intact. */
+}

@@ -1,0 +1,153 @@
+/* ConversationMenu — per-recent popover (Open, Rename, Branch, Archive, Delete) */
+
+.menu {
+  position: absolute;
+  /* Positioned by the parent (Sidebar row). Caller uses position:relative on
+     the list item and sets inset-inline-start or right to push the popover
+     to the end of the row. */
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  z-index: var(--z-dropdown);
+  min-width: 160px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float);
+  padding: var(--sp-2) 0;
+  display: flex;
+  flex-direction: column;
+  animation: kz-scale-in var(--dur-fast) var(--ease-out) both;
+  transform-origin: top right;
+}
+
+/* --------------------------------------------------------------- items --- */
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  width: 100%;
+  height: 30px;
+  padding: 0 var(--sp-5);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  text-align: start;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.itemDanger {
+  color: var(--error);
+}
+
+.itemDanger:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.icon {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+
+.divider {
+  margin: var(--sp-2) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ---------------------------------------------------------- sub-steps --- */
+
+/* Rename, confirm-archive, confirm-delete share the same row layout */
+
+.renameStep,
+.confirmStep {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.renameInput {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--sp-3);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.renameInput::placeholder {
+  color: var(--text-muted);
+}
+
+.renameInput:focus-visible {
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-focus);
+}
+
+.confirmText {
+  flex: 1;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  line-height: var(--lh-snug);
+}
+
+/* --------------------------------------------------------- step actions -- */
+
+.stepActions {
+  display: flex;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+}
+
+.stepBtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.stepBtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.stepBtn:disabled {
+  opacity: 0.45;
+}
+
+.stepBtnConfirm {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+}
+
+.stepBtnConfirm:hover:not(:disabled) {
+  background: var(--accent-primary);
+  opacity: 0.88;
+}
+
+.stepBtnDanger {
+  background: var(--error);
+  border-color: var(--error);
+  color: #fff;
+}
+
+.stepBtnDanger:hover:not(:disabled) {
+  opacity: 0.88;
+}

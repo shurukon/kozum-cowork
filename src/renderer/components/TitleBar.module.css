@@ -1,0 +1,78 @@
+.bar {
+  display: flex;
+  align-items: center;
+  height: var(--titlebar-h);
+  padding: 0 0 0 var(--sp-3);
+  background: var(--bg-primary);
+  position: relative;
+  z-index: var(--z-titlebar);
+  flex: 0 0 auto;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.icon:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.icon:disabled {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.divider {
+  width: 1px;
+  height: 14px;
+  margin: 0 var(--sp-2);
+  background: var(--border);
+}
+
+.controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+}
+
+/*
+ * Windows-native control metrics: 46px wide, full-bleed to the top-right
+ * corner, no radius. Matching these exactly is what stops a frameless app
+ * from feeling like a web page pretending to be a window.
+ */
+.ctl {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 100%;
+  color: var(--text-secondary);
+  transition: background var(--dur-instant) linear, color var(--dur-instant) linear;
+}
+
+.ctl:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.close:hover {
+  background: var(--error);
+  color: #fff;
+}

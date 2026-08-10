@@ -1,0 +1,432 @@
+/* ── Card ─────────────────────────────────────────────────────────────── */
+
+/*
+ * The card's glass visual (kz-glass / kz-glass-sweep / kz-glass-busy) comes
+ * from glass.css applied in JSX. Here we only manage:
+ *   - Animation on mount (kz-rise).
+ *   - Status-specific border colours (layered on top of glass-border).
+ *   - Settle and error-flash keyframes.
+ */
+.card {
+  position: relative;
+  overflow: hidden;
+  /* Staged reveal — each card rises up from slightly below. This is the ONLY
+     entrance animation; the ok/error classes below add a *separate* border
+     fade that runs once the status flips (not stacked at mount, which caused
+     a visible double-jog — see plan §2.C). */
+  animation: kz-rise var(--dur-card-rise) var(--ease-out) both;
+  /* kz-glass sets border-radius to --radius-card (= --r-lg) */
+}
+
+/* Running: accent-tinted border over the glass border */
+.cardRunning {
+  border-color: rgba(61, 127, 255, 0.32) !important;
+}
+
+/* Settle animation when the tool completes: a single border fade. This runs
+   ONCE on the status flip to "ok" (when the class is applied), NOT stacked
+   with the entrance kz-rise — so there is exactly one entrance + one settle,
+   never two entrances overlapping. */
+.cardOk {
+  border-color: var(--border-strong) !important;
+  animation: cardSettle var(--dur-slow) var(--ease-out) both;
+}
+
+@keyframes cardSettle {
+  0% {
+    border-color: rgba(34, 197, 94, 0.5);
+    box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.2);
+  }
+  100% {
+    border-color: var(--border-strong);
+    box-shadow: none;
+  }
+}
+
+/* Error: single border flash on the status flip, then settle to muted accent.
+   No stacked kz-rise — the entrance already ran once at mount. */
+.cardError {
+  border-color: rgba(239, 68, 68, 0.22) !important;
+  animation: cardErrorFlash var(--dur-slow) var(--ease-out) both;
+}
+
+@keyframes cardErrorFlash {
+  0% {
+    border-color: rgba(239, 68, 68, 0.7);
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3);
+  }
+  100% {
+    border-color: rgba(239, 68, 68, 0.22);
+    box-shadow: none;
+  }
+}
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  width: 100%;
+  padding: var(--sp-4) var(--sp-5);
+  text-align: start;
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out);
+  min-height: 0;
+  /* Must be above ::before/::after pseudo from kz-glass */
+  position: relative;
+  z-index: 1;
+}
+
+.header:not(:disabled):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.header:disabled {
+  cursor: default;
+}
+
+/* ── Icon ─────────────────────────────────────────────────────────────── */
+
+.iconWrap {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  background: var(--glass-bg-blue);
+  border: 1px solid var(--glass-border-blue);
+  color: var(--accent-bright);
+  transition: background var(--motion-micro) var(--ease-out),
+    color var(--motion-micro) var(--ease-out);
+}
+
+.header:not(:disabled):hover .iconWrap {
+  color: var(--accent-secondary);
+}
+
+/* ── Summary / notes ──────────────────────────────────────────────────── */
+
+.summary {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.note {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 30ch;
+}
+
+/* ── Status indicator ─────────────────────────────────────────────────── */
+
+.status {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+.spinner {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent-primary);
+  border-radius: var(--r-full);
+}
+
+.ok {
+  color: var(--success);
+}
+
+.error {
+  color: var(--error);
+}
+
+.chevron {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+/*
+ * Progress line — only rendered while the tool is running. The .kz-tool-stream
+ * element draws the moving sheen; `.header` already has position:relative so we
+ * only need to position the child absolutely at the bottom edge.
+ */
+.headerProgress {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2px;
+}
+
+/* ── Detail panel ─────────────────────────────────────────────────────── */
+
+.detail {
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Terminal ─────────────────────────────────────────────────────────── */
+
+.terminal {
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.terminalHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.terminalCommand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminalPrompt {
+  color: var(--accent-secondary);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* ── Copy button ──────────────────────────────────────────────────────── */
+
+.copyBtn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.copyBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Terminal output ──────────────────────────────────────────────────── */
+
+.terminalOutput {
+  padding: var(--sp-4) var(--sp-5);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-relaxed);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.terminalStderr {
+  color: var(--error);
+  display: block;
+}
+
+.terminalExit {
+  padding: var(--sp-2) var(--sp-5);
+  font-size: var(--fs-xs);
+  color: var(--error);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ── Diff ─────────────────────────────────────────────────────────────── */
+
+.diff {
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.diffPath {
+  padding: var(--sp-2) var(--sp-5);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.diffPre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-relaxed);
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.diffContext {
+  display: flex;
+  padding: 0 var(--sp-4);
+  color: var(--text-muted);
+}
+
+.diffRemoved {
+  display: flex;
+  padding: 0 var(--sp-4);
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.diffAdded {
+  display: flex;
+  padding: 0 var(--sp-4);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.diffGutter {
+  user-select: none;
+  margin-inline-end: var(--sp-5);
+  opacity: 0.7;
+  min-width: 12px;
+}
+
+/* ── File chips ───────────────────────────────────────────────────────── */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 24px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-full);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  max-width: 200px;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Raw detail ───────────────────────────────────────────────────────── */
+
+.rawDetail {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+}
+
+.errorMsg {
+  font-size: var(--fs-sm);
+  color: var(--error);
+  line-height: var(--lh-snug);
+}
+
+.permissionStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-8);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.thumbGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--sp-4);
+  padding: var(--sp-2) 0;
+}
+
+.thumbBtn {
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.thumbBtn:hover {
+  border-color: var(--accent-primary);
+}
+
+.thumbImg {
+  display: block;
+  width: 100%;
+  height: 72px;
+  object-fit: cover;
+  background: var(--bg-sunken);
+}
+
+/* Reduced motion — every entrance and settle collapses to a static state. */
+[data-motion="reduced"] .card,
+[data-motion="reduced"] .cardOk,
+[data-motion="reduced"] .cardError {
+  animation: none;
+}
+
+/* Inline progress log (P1-4) */
+.progressLog {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.progressLogItem {
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-subtle);
+}

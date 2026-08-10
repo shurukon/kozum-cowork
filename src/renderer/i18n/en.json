@@ -1,0 +1,76 @@
+{
+  "app": {
+    "title": "Kozum Cowork"
+  },
+  "sidebar": {
+    "new": "New",
+    "scheduled": "Scheduled",
+    "projects": "Projects",
+    "customize": "Customize",
+    "account": "Account"
+  },
+  "composer": {
+    "placeholder": "Message…",
+    "waiting": "Waiting for agent…",
+    "attach": "Add attachment",
+    "send": "Send message",
+    "stop": "Stop generation",
+    "takingLonger": "Taking longer than expected…"
+  },
+  "rightPanel": {
+    "progress": "Progress",
+    "subagents": "Subagents",
+    "context": "Context",
+    "noTasks": "No tasks yet.",
+    "noSubagents": "No subagent runs yet.",
+    "showAll": "Show all ({{count}})",
+    "showLess": "Show less"
+  },
+  "task": {
+    "pending": "Pending",
+    "inProgress": "In progress",
+    "completed": "Completed",
+    "failed": "Failed",
+    "stopped": "Stopped",
+    "done": "{{done}} of {{total}} done"
+  },
+  "subagent": {
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "progress": "Progress",
+    "notes": "Notes"
+  },
+  "toolCard": {
+    "running": "Running",
+    "done": "Done",
+    "error": "Error",
+    "copy": "Copy output"
+  },
+  "message": {
+    "thinking": "Thinking…",
+    "thought": "Thought for {{seconds}}s",
+    "bySubagent": "by subagent"
+  },
+  "errors": {
+    "generic": "Something went wrong",
+    "backend": "Could not reach the application backend: {{error}}",
+    "session": "Choose a provider and model before starting a task.",
+    "provider": "Connect a provider and pick a model first."
+  },
+  "settings": {
+    "general": "General",
+    "providers": "Providers",
+    "cowork": "Cowork",
+    "code": "Code",
+    "skills": "Skills",
+    "connectors": "Connectors",
+    "plugins": "Plugins",
+    "appearance": "Appearance",
+    "language": "Language",
+    "autoOpenPreviews": "Auto-open previews",
+    "motion": "Motion",
+    "chatFont": "Chat font"
+  }
+}

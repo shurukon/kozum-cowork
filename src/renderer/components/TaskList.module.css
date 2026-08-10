@@ -1,0 +1,182 @@
+/*
+ * TaskList — live task states panel.
+ * Relies on kz-anim-rise (global.css) and kz-spin (global.css).
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* ── Count summary ─────────────────────────────────────────────────────── */
+
+.summary {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-wide);
+}
+
+/* ── Empty state ───────────────────────────────────────────────────────── */
+
+.empty {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: var(--lh-snug);
+}
+
+/* ── Task list ─────────────────────────────────────────────────────────── */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-3);
+  border-radius: var(--r-sm);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.item:hover {
+  background: var(--bg-hover);
+}
+
+/* ── Task info ─────────────────────────────────────────────────────────── */
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  flex: 1;
+}
+
+.subject {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  line-height: var(--lh-snug);
+}
+
+.desc {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: var(--lh-snug);
+}
+
+/* When a task transitions to completed, mute the subject text slightly. */
+.item[data-status="completed"] .subject {
+  color: var(--text-secondary);
+}
+
+.item[data-status="failed"] .subject {
+  color: var(--error);
+}
+
+/* ── Status glyphs ─────────────────────────────────────────────────────── */
+
+.glyphDone {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--success);
+  margin-top: 1px;
+}
+
+.glyphFailed {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--error);
+  margin-top: 1px;
+}
+
+.glyphInProgress {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  margin-top: 1px;
+}
+
+.glyphStopped {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.glyphPending {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* Check animation: draw the circle + checkmark in on completion. */
+@keyframes check-draw {
+  from {
+    stroke-dashoffset: 40;
+    opacity: 0.4;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+.glyphCheckDraw .checkSvg {
+  display: block;
+}
+
+.glyphCheckDraw .checkPath {
+  stroke-dasharray: 12;
+  stroke-dashoffset: 0;
+  animation: check-draw var(--dur-normal) var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glyphCheckDraw .checkPath {
+    animation: none;
+  }
+}
+
+[data-motion="reduced"] .glyphCheckDraw .checkPath {
+  animation: none;
+}
+
+/* Spinner for in_progress */
+.spinner {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--border-strong);
+  border-top-color: var(--accent-primary);
+  border-radius: var(--r-full);
+}
+
+/* Subtle pulse on the in_progress row */
+@keyframes task-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.glyphPulse {
+  animation: task-pulse 1.8s var(--ease-in-out) infinite;
+}
+
+[data-motion="reduced"] .glyphPulse {
+  animation: none;
+}

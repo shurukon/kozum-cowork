@@ -1,0 +1,76 @@
+{
+  "app": {
+    "title": "Kozum Cowork"
+  },
+  "sidebar": {
+    "new": "جديد",
+    "scheduled": "مجدول",
+    "projects": "مشاريع",
+    "customize": "تخصيص",
+    "account": "الحساب"
+  },
+  "composer": {
+    "placeholder": "رسالة…",
+    "waiting": "بانتظار الوكيل…",
+    "attach": "إرفاق ملف",
+    "send": "إرسال رسالة",
+    "stop": "إيقاف التوليد",
+    "takingLonger": "تستغرق وقتًا أطول من المتوقع…"
+  },
+  "rightPanel": {
+    "progress": "التقدم",
+    "subagents": "الوكلاء الفرعيون",
+    "context": "السياق",
+    "noTasks": "لا توجد مهام بعد.",
+    "noSubagents": "لا توجد عمليات وكلاء فرعية بعد.",
+    "showAll": "عرض الكل ({{count}})",
+    "showLess": "عرض أقل"
+  },
+  "task": {
+    "pending": "معلق",
+    "inProgress": "قيد التنفيذ",
+    "completed": "مكتمل",
+    "failed": "فشل",
+    "stopped": "متوقف",
+    "done": "{{done}} من {{total}} مكتمل"
+  },
+  "subagent": {
+    "running": "قيد التشغيل",
+    "completed": "مكتمل",
+    "failed": "فشل",
+    "cancelled": "ملغى",
+    "progress": "التقدم",
+    "notes": "ملاحظات"
+  },
+  "toolCard": {
+    "running": "قيد التشغيل",
+    "done": "تم",
+    "error": "خطأ",
+    "copy": "نسخ المخرجات"
+  },
+  "message": {
+    "thinking": "أفكر…",
+    "thought": "فكرت لـ {{seconds}} ث",
+    "bySubagent": "بواسطة وكيل فرعي"
+  },
+  "errors": {
+    "generic": "حدث خطأ ما",
+    "backend": "تعذر الوصول إلى الخلفية: {{error}}",
+    "session": "اختر مزودًا ونموذجًا قبل بدء مهمة.",
+    "provider": "قم بتوصيل مزود واختر نموذجًا أولاً."
+  },
+  "settings": {
+    "general": "عام",
+    "providers": "المزودون",
+    "cowork": "Cowork",
+    "code": "Code",
+    "skills": "المهارات",
+    "connectors": "الموصلات",
+    "plugins": "الإضافات",
+    "appearance": "المظهر",
+    "language": "اللغة",
+    "autoOpenPreviews": "فتح المعاينات تلقائيًا",
+    "motion": "الحركة",
+    "chatFont": "خط المحادثة"
+  }
+}

@@ -1,0 +1,607 @@
+/*
+ * Kozum Cowork — design tokens.
+ *
+ * Dark palette is fixed by spec and lives under :root[data-theme="dark"].
+ * Light palette keeps the same accent identity with near-white surfaces.
+ * System resolves via prefers-color-scheme when data-theme="system".
+ *
+ * Cairo (Arabic display font) must be imported BEFORE any other rule —
+ * CSS "@import" must precede everything except @charset, or Chromium silently
+ * drops it and the RTL font never loads.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&display=swap");
+
+/* ── Dark theme (spec, do not drift) ─────────────────────────────────────── */
+
+:root[data-theme="dark"] {
+  /* ---- Palette -------------------------------------------------------- */
+  --bg-primary: #05081a;
+  --bg-secondary: #080d24;
+  /* Card surface: slightly lighter than bg-primary so cards lift off the page */
+  --bg-card: rgba(255, 255, 255, 0.065);
+  /* Default border: strengthened from 0.08 — near-invisible on #05081A */
+  --border: rgba(255, 255, 255, 0.13);
+
+  --accent-primary: #3d7fff;
+  --accent-secondary: #00c8ff;
+  --accent-deep: #1f3fb0;
+  --accent-bright: #7aa2ff;
+  --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
+  --accent-gradient-soft: linear-gradient(
+    135deg,
+    rgba(61, 127, 255, 0.22),
+    rgba(0, 200, 255, 0.14)
+  );
+
+  --text-primary: #ffffff;
+  /* text-secondary: re-tinted +2° warmer toward an olive veneer (#c6cdca)
+     for the editorial, unhurried feel (DS-A). ~12.5:1 on #05081a — far above
+     WCAG AA. The blue cast is softened without recoloring the accent. */
+  --text-secondary: #c6cdca;
+  /* text-muted: re-tinted warmer toward #8a8d84. ~6:1 on #05081a — passes AA
+     for normal text and the 3:1 UI threshold. */
+  --text-muted: #8a8d84;
+
+  --glow-blue: rgba(61, 127, 255, 0.3);
+  --glow-teal: rgba(0, 200, 255, 0.2);
+  --glow-bright: rgba(122, 162, 255, 0.4);
+
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+
+  /* ---- Elevation ladder — each step must be visibly distinct ---------- */
+  /* Level 0: base surface (bg-primary itself, no override needed)         */
+  /* Level 1: slightly above base — side panels, message bubbles           */
+  --bg-elevated: rgba(255, 255, 255, 0.085);
+  /* Level 2: hover state — clearly above elevated                         */
+  --bg-hover: rgba(255, 255, 255, 0.11);
+  /* Level 3: pressed / active — clearly above hover                       */
+  --bg-active: rgba(255, 255, 255, 0.16);
+  /* Input fields sit slightly below card surfaces for a sunken feel       */
+  --bg-input: rgba(255, 255, 255, 0.055);
+  --bg-overlay: rgba(3, 5, 14, 0.72);
+  --bg-sunken: rgba(0, 0, 0, 0.28);
+
+  /* Borders: default stronger (0.13), strong for hover/active, subtle for
+     dividers; focused elements always get the full accent colour */
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-focus: var(--accent-primary);
+
+  --accent-soft: rgba(61, 127, 255, 0.18);
+  --accent-softer: rgba(61, 127, 255, 0.10);
+  --teal-soft: rgba(0, 200, 255, 0.14);
+
+  /* ---- Blue ambient backdrop — used for home/composer atmospherics. */
+  --ambient-blue: radial-gradient(120% 80% at 50% 0%, rgba(61, 127, 255, 0.14), transparent 60%),
+    radial-gradient(80% 60% at 80% 90%, rgba(0, 200, 255, 0.08), transparent 60%);
+
+  --success-soft: rgba(34, 197, 94, 0.16);
+  --warning-soft: rgba(245, 158, 11, 0.16);
+  --error-soft: rgba(239, 68, 68, 0.16);
+
+  /* ---- Select dropdown colours (Chromium on Windows needs explicit) --- */
+  --select-bg: #0d1530;
+  --select-color: #ffffff;
+  --select-border: rgba(255, 255, 255, 0.18);
+
+  /* ---- Radius consistency -------------------------------------------- */
+  /* Components that previously diverged now pull from the same ladder     */
+  --radius-card: var(--r-2xl);
+  --radius-input: var(--r-xl);
+  --radius-chip: var(--r-full);
+
+  /* ---- Shadow consistency -------------------------------------------- */
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.38), 0 0 0 1px var(--border);
+  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.48), 0 0 0 1px var(--border-strong);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.56), 0 0 0 1px var(--border-strong);
+
+  /* Anthropic-style ring + whisper depth: a hairline ring (no soft drop)
+     for calm card lift, plus a faint raised shadow for hover/elevated. */
+  --surface-ring: 0 0 0 1px var(--border);
+  --elev-raised-soft: rgba(0, 0, 0, 0.05) 0 4px 24px;
+
+  /* ---- Glass layer — the interaction surface for tools, thinking, cards.
+     A translucent pane over a blurred backdrop, with a hairline top highlight
+     so light appears to catch the upper edge. ------------------------------ */
+  --glass-bg: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-highlight: rgba(255, 255, 255, 0.22);
+  --glass-blur: 14px;
+  --glass-sheen: rgba(120, 170, 255, 0.14);
+
+  /* ---- Blue-tinted glass — used for the .kz-glass-blue modifier.
+     Designed to read as "blue glass", not neutral white. ----------------- */
+  --glass-bg-blue: linear-gradient(180deg, rgba(61, 127, 255, 0.10), rgba(0, 200, 255, 0.04));
+  --glass-border-blue: rgba(120, 170, 255, 0.22);
+  --glass-highlight-blue: rgba(122, 162, 255, 0.32);
+  --glass-sheen-blue: rgba(122, 162, 255, 0.28);
+
+  /* Anthropic-style display serif: soft, warm, gently italic for headings. */
+  --font-display: "Newsreader", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+}
+
+/* ── Light theme ──────────────────────────────────────────────────────────── */
+
+:root[data-theme="light"] {
+  /* ---- Palette ------------------------------------------------------- */
+  --bg-primary: #f4f6fb;
+  --bg-secondary: #ffffff;
+  /* Card surface: pure white on the off-white bg for clear lift             */
+  --bg-card: rgba(255, 255, 255, 0.85);
+  /* Border: 0.1 was borderline; raised to 0.16 for a clean visible edge     */
+  --border: rgba(0, 0, 0, 0.16);
+
+  /* Accent identity preserved exactly */
+  --accent-primary: #3d7fff;
+  --accent-secondary: #00c8ff;
+  --accent-deep: #1f3fb0;
+  --accent-bright: #7aa2ff;
+  --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
+  --accent-gradient-soft: linear-gradient(
+    135deg,
+    rgba(61, 127, 255, 0.18),
+    rgba(0, 200, 255, 0.10)
+  );
+
+  --text-primary: #0d1120;
+  /* text-secondary: #4a5a7a on #f4f6fb is ~6.5:1 — good, but slightly dark;
+     keeping as-is since it already passes AA, with cool blue cast preserved */
+  --text-secondary: #4a5a7a;
+  /* text-muted: old #8898b2 on #f4f6fb is ~3.1:1 — marginal for small text.
+     New #6272a0 is ~4.6:1 on #f4f6fb, safely above AA                      */
+  --text-muted: #6272a0;
+
+  --glow-blue: rgba(61, 127, 255, 0.2);
+  --glow-teal: rgba(0, 200, 255, 0.15);
+  --glow-bright: rgba(122, 162, 255, 0.3);
+
+  --success: #16a34a;
+  --warning: #d97706;
+  --error: #dc2626;
+
+  /* ---- Elevation ladder ---------------------------------------------- */
+  /* Each step distinctly lighter/more prominent than the one below        */
+  --bg-elevated: rgba(0, 0, 0, 0.055);
+  --bg-hover: rgba(0, 0, 0, 0.08);
+  --bg-active: rgba(0, 0, 0, 0.13);
+  --bg-input: rgba(255, 255, 255, 0.9);
+  --bg-overlay: rgba(180, 188, 210, 0.6);
+  --bg-sunken: rgba(0, 0, 0, 0.07);
+
+  /* Borders: strengthened from 0.1/0.16 for better definition             */
+  --border-strong: rgba(0, 0, 0, 0.22);
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-focus: var(--accent-primary);
+
+  --accent-soft: rgba(61, 127, 255, 0.12);
+  --accent-softer: rgba(61, 127, 255, 0.07);
+  --teal-soft: rgba(0, 200, 255, 0.1);
+
+  /* ---- Blue ambient backdrop — used for home/composer atmospherics. */
+  --ambient-blue: radial-gradient(120% 80% at 50% 0%, rgba(61, 127, 255, 0.10), transparent 60%),
+    radial-gradient(80% 60% at 80% 90%, rgba(0, 200, 255, 0.06), transparent 60%);
+
+  --success-soft: rgba(22, 163, 74, 0.12);
+  --warning-soft: rgba(217, 119, 6, 0.12);
+  --error-soft: rgba(220, 38, 38, 0.12);
+
+  /* ---- Select dropdown colours --------------------------------------- */
+  --select-bg: #ffffff;
+  --select-color: #0d1120;
+  --select-border: rgba(0, 0, 0, 0.18);
+
+  /* ---- Radius consistency -------------------------------------------- */
+  --radius-card: var(--r-2xl);
+  --radius-input: var(--r-xl);
+  --radius-chip: var(--r-full);
+
+  /* ---- Shadow consistency -------------------------------------------- */
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--border);
+  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--border-strong);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--border-strong);
+
+  /* ---- Glass layer (light) ------------------------------------------- */
+  --glass-bg: linear-gradient(180deg, rgba(255,255,255,0.75), rgba(255,255,255,0.55));
+  --glass-border: rgba(0, 0, 0, 0.10);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-blur: 14px;
+  --glass-sheen: rgba(61, 127, 255, 0.10);
+
+  /* ---- Blue-tinted glass (light) — used for the .kz-glass-blue modifier */
+  --glass-bg-blue: linear-gradient(180deg, rgba(61, 127, 255, 0.10), rgba(0, 200, 255, 0.05));
+  --glass-border-blue: rgba(61, 127, 255, 0.22);
+  --glass-highlight-blue: rgba(122, 162, 255, 0.5);
+  --glass-sheen-blue: rgba(61, 127, 255, 0.22);
+
+  --font-display: "Newsreader", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+}
+
+/* ── System theme — dark variant ─────────────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --bg-primary: #05081a;
+    --bg-secondary: #080d24;
+    --bg-card: rgba(255, 255, 255, 0.065);
+    --border: rgba(255, 255, 255, 0.13);
+
+    --accent-primary: #3d7fff;
+    --accent-secondary: #00c8ff;
+    --accent-deep: #1f3fb0;
+    --accent-bright: #7aa2ff;
+    --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
+    --accent-gradient-soft: linear-gradient(
+      135deg,
+      rgba(61, 127, 255, 0.22),
+      rgba(0, 200, 255, 0.14)
+    );
+
+    --text-primary: #ffffff;
+    --text-secondary: #c6cdca;
+    --text-muted: #8a8d84;
+
+    --glow-blue: rgba(61, 127, 255, 0.3);
+    --glow-teal: rgba(0, 200, 255, 0.2);
+    --glow-bright: rgba(122, 162, 255, 0.4);
+
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --error: #ef4444;
+
+    --bg-elevated: rgba(255, 255, 255, 0.085);
+    --bg-hover: rgba(255, 255, 255, 0.11);
+    --bg-active: rgba(255, 255, 255, 0.16);
+    --bg-input: rgba(255, 255, 255, 0.055);
+    --bg-overlay: rgba(3, 5, 14, 0.72);
+    --bg-sunken: rgba(0, 0, 0, 0.28);
+
+    --border-strong: rgba(255, 255, 255, 0.22);
+    --border-subtle: rgba(255, 255, 255, 0.07);
+    --border-focus: var(--accent-primary);
+
+    --accent-soft: rgba(61, 127, 255, 0.18);
+    --accent-softer: rgba(61, 127, 255, 0.10);
+    --teal-soft: rgba(0, 200, 255, 0.14);
+
+    /* ---- Blue ambient backdrop — used for home/composer atmospherics. */
+    --ambient-blue: radial-gradient(120% 80% at 50% 0%, rgba(61, 127, 255, 0.14), transparent 60%),
+      radial-gradient(80% 60% at 80% 90%, rgba(0, 200, 255, 0.08), transparent 60%);
+
+    --success-soft: rgba(34, 197, 94, 0.16);
+    --warning-soft: rgba(245, 158, 11, 0.16);
+    --error-soft: rgba(239, 68, 68, 0.16);
+
+    --select-bg: #0d1530;
+    --select-color: #ffffff;
+    --select-border: rgba(255, 255, 255, 0.18);
+
+    --radius-card: var(--r-2xl);
+    --radius-input: var(--r-xl);
+    --radius-chip: var(--r-full);
+
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.38), 0 0 0 1px var(--border);
+    --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.48), 0 0 0 1px var(--border-strong);
+    --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.56), 0 0 0 1px var(--border-strong);
+
+    --surface-ring: 0 0 0 1px var(--border);
+    --elev-raised-soft: rgba(0, 0, 0, 0.05) 0 4px 24px;
+
+    --glass-bg-blue: linear-gradient(180deg, rgba(61, 127, 255, 0.10), rgba(0, 200, 255, 0.04));
+    --glass-border-blue: rgba(120, 170, 255, 0.22);
+    --glass-highlight-blue: rgba(122, 162, 255, 0.32);
+    --glass-sheen-blue: rgba(122, 162, 255, 0.28);
+  }
+}
+
+/* ── System theme — light variant ────────────────────────────────────────── */
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    --bg-primary: #f4f6fb;
+    --bg-secondary: #ffffff;
+    --bg-card: rgba(255, 255, 255, 0.85);
+    --border: rgba(0, 0, 0, 0.16);
+
+    --accent-primary: #3d7fff;
+    --accent-secondary: #00c8ff;
+    --accent-deep: #1f3fb0;
+    --accent-bright: #7aa2ff;
+    --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
+    --accent-gradient-soft: linear-gradient(
+      135deg,
+      rgba(61, 127, 255, 0.18),
+      rgba(0, 200, 255, 0.10)
+    );
+
+    --text-primary: #0d1120;
+    --text-secondary: #4a5a7a;
+    --text-muted: #6272a0;
+
+    --glow-blue: rgba(61, 127, 255, 0.2);
+    --glow-teal: rgba(0, 200, 255, 0.15);
+    --glow-bright: rgba(122, 162, 255, 0.3);
+
+    --success: #16a34a;
+    --warning: #d97706;
+    --error: #dc2626;
+
+    --bg-elevated: rgba(0, 0, 0, 0.055);
+    --bg-hover: rgba(0, 0, 0, 0.08);
+    --bg-active: rgba(0, 0, 0, 0.13);
+    --bg-input: rgba(255, 255, 255, 0.9);
+    --bg-overlay: rgba(180, 188, 210, 0.6);
+    --bg-sunken: rgba(0, 0, 0, 0.07);
+
+    --border-strong: rgba(0, 0, 0, 0.22);
+    --border-subtle: rgba(0, 0, 0, 0.08);
+    --border-focus: var(--accent-primary);
+
+    --accent-soft: rgba(61, 127, 255, 0.12);
+    --accent-softer: rgba(61, 127, 255, 0.07);
+    --teal-soft: rgba(0, 200, 255, 0.1);
+
+    /* ---- Blue ambient backdrop — used for home/composer atmospherics. */
+    --ambient-blue: radial-gradient(120% 80% at 50% 0%, rgba(61, 127, 255, 0.10), transparent 60%),
+      radial-gradient(80% 60% at 80% 90%, rgba(0, 200, 255, 0.06), transparent 60%);
+
+    --success-soft: rgba(22, 163, 74, 0.12);
+    --warning-soft: rgba(217, 119, 6, 0.12);
+    --error-soft: rgba(220, 38, 38, 0.12);
+
+    --select-bg: #ffffff;
+    --select-color: #0d1120;
+    --select-border: rgba(0, 0, 0, 0.18);
+
+    --radius-card: var(--r-2xl);
+    --radius-input: var(--r-xl);
+    --radius-chip: var(--r-full);
+
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--border);
+    --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--border-strong);
+    --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--border-strong);
+
+    --glass-bg-blue: linear-gradient(180deg, rgba(61, 127, 255, 0.10), rgba(0, 200, 255, 0.05));
+    --glass-border-blue: rgba(61, 127, 255, 0.22);
+    --glass-highlight-blue: rgba(122, 162, 255, 0.5);
+    --glass-sheen-blue: rgba(61, 127, 255, 0.22);
+  }
+}
+
+/* ── Fallback: dark when no data-theme is set (should not happen in practice) */
+
+:root:not([data-theme]) {
+  --bg-primary: #05081a;
+  --bg-secondary: #080d24;
+  --bg-card: rgba(255, 255, 255, 0.065);
+  --border: rgba(255, 255, 255, 0.13);
+
+  --accent-primary: #3d7fff;
+  --accent-secondary: #00c8ff;
+  --accent-deep: #1f3fb0;
+  --accent-bright: #7aa2ff;
+  --accent-gradient: linear-gradient(135deg, #3d7fff, #00c8ff);
+  --accent-gradient-soft: linear-gradient(
+    135deg,
+    rgba(61, 127, 255, 0.22),
+    rgba(0, 200, 255, 0.14)
+  );
+
+  --text-primary: #ffffff;
+  --text-secondary: #c6cdca;
+  --text-muted: #8a8d84;
+
+  --glow-blue: rgba(61, 127, 255, 0.3);
+  --glow-teal: rgba(0, 200, 255, 0.2);
+  --glow-bright: rgba(122, 162, 255, 0.4);
+
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+
+  --bg-elevated: rgba(255, 255, 255, 0.085);
+  --bg-hover: rgba(255, 255, 255, 0.11);
+  --bg-active: rgba(255, 255, 255, 0.16);
+  --bg-input: rgba(255, 255, 255, 0.055);
+  --bg-overlay: rgba(3, 5, 14, 0.72);
+  --bg-sunken: rgba(0, 0, 0, 0.28);
+
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-focus: var(--accent-primary);
+
+  --accent-soft: rgba(61, 127, 255, 0.18);
+  --accent-softer: rgba(61, 127, 255, 0.10);
+  --teal-soft: rgba(0, 200, 255, 0.14);
+
+  /* ---- Blue ambient backdrop — used for home/composer atmospherics. */
+  --ambient-blue: radial-gradient(120% 80% at 50% 0%, rgba(61, 127, 255, 0.14), transparent 60%),
+    radial-gradient(80% 60% at 80% 90%, rgba(0, 200, 255, 0.08), transparent 60%);
+
+  --success-soft: rgba(34, 197, 94, 0.16);
+  --warning-soft: rgba(245, 158, 11, 0.16);
+  --error-soft: rgba(239, 68, 68, 0.16);
+
+  --select-bg: #0d1530;
+  --select-color: #ffffff;
+  --select-border: rgba(255, 255, 255, 0.18);
+
+  --radius-card: var(--r-2xl);
+  --radius-input: var(--r-xl);
+  --radius-chip: var(--r-full);
+
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.38), 0 0 0 1px var(--border);
+  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.48), 0 0 0 1px var(--border-strong);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.56), 0 0 0 1px var(--border-strong);
+
+  --surface-ring: 0 0 0 1px var(--border);
+  --elev-raised-soft: rgba(0, 0, 0, 0.05) 0 4px 24px;
+
+  --glass-bg-blue: linear-gradient(180deg, rgba(61, 127, 255, 0.10), rgba(0, 200, 255, 0.04));
+  --glass-border-blue: rgba(120, 170, 255, 0.22);
+  --glass-highlight-blue: rgba(122, 162, 255, 0.32);
+  --glass-sheen-blue: rgba(122, 162, 255, 0.28);
+}
+
+/* ── Shared tokens (theme-independent) ────────────────────────────────────── */
+
+:root {
+  /* RTL: Arabic font (Cairo) — the @import is now at the top of this file so
+     Chromium actually applies it. The Cairo font stack activates when the
+     document root has dir="rtl" (set by useDir in App.tsx). */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
+    "Segoe UI", system-ui, sans-serif;
+  --font-serif: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, monospace;
+
+  --fs-2xs: 10.5px;
+  --fs-xs: 11.5px;
+  --fs-sm: 12.5px;
+  --fs-base: 13.5px;
+  --fs-md: 14.5px;
+  --fs-lg: 16px;
+  --fs-xl: 19px;
+  --fs-2xl: 24px;
+  --fs-3xl: 30px;
+  --fs-display: 34px;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  --lh-tight: 1.25;
+  --lh-snug: 1.4;
+  --lh-normal: 1.6;
+  --lh-relaxed: 1.75;
+
+  --tracking-tight: -0.015em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+
+  /* ---- Space (4px base) ----------------------------------------------- */
+  --sp-0: 0;
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 10px;
+  --sp-6: 12px;
+  --sp-7: 14px;
+  --sp-8: 16px;
+  --sp-10: 20px;
+  --sp-12: 24px;
+  --sp-14: 28px;
+  --sp-16: 32px;
+  --sp-20: 40px;
+  --sp-24: 48px;
+  --sp-32: 64px;
+
+  /* ---- Radius ---------------------------------------------------------- */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --r-2xl: 18px;
+  --r-full: 999px;
+
+  /* ---- Elevation -------------------------------------------------------- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.36);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.44);
+  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.52);
+
+  --glow-sm: 0 0 0 1px var(--accent-soft), 0 0 12px var(--glow-blue);
+  --glow-md: 0 0 20px var(--glow-blue), 0 0 40px var(--glow-teal);
+  --glow-focus: 0 0 0 2px rgba(61, 127, 255, 0.35);
+
+  /* ---- Motion ------------------------------------------------------------ */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* OpenDesign "anthropic" motion scale — names are descriptive, not numeric.
+     Use --motion-* in new code; --dur-* kept as aliases for existing rules. */
+  --motion-micro: 120ms;
+  --motion-small: 200ms;
+  --motion-medium: 360ms;
+  /* Slow, deliberate motion for the thinking orb and busy sweep — these are
+     the named tokens glass.css pulls from instead of hardcoding seconds. */
+  --motion-thinking: 1.6s;
+  --motion-busy: 2.4s;
+  --motion-sheen-strong: 1.6s;
+  --motion-send-ack: 0.85s;
+  --motion-sheen-entrance: 1.15s;
+
+  --dur-instant: 80ms;
+  --dur-fast: 140ms;
+  --dur-normal: 220ms;
+  --dur-slow: 340ms;
+  --dur-slower: 520ms;
+  /* Card entrance rise — matches the single CardMock kz-rise duration used
+     across tool cards and message bubbles. */
+  --dur-card-rise: 220ms;
+
+  /* ---- Layout ------------------------------------------------------------- */
+  --titlebar-h: 36px;
+  --sidebar-w: 264px;
+  --sidebar-w-collapsed: 0px;
+  --rightpanel-w: 300px;
+  --composer-max-w: 720px;
+  --content-max-w: 800px;
+
+  --z-base: 0;
+  --z-sticky: 100;
+  --z-panel: 200;
+  --z-titlebar: 300;
+  --z-dropdown: 400;
+  --z-modal: 500;
+  --z-toast: 600;
+  --z-tooltip: 700;
+}
+
+/* ── RTL: Arabic display font activates when the document root is RTL ──
+   The Cairo @import at the top of this file supplies the weights; this
+   selector just swaps the sans-serif stack so Arabic glyphs render in Cairo
+   instead of the Latin-first Inter stack. Kept separate from :root so the
+   Latin default is untouched. */
+:root[dir="rtl"] {
+  --font-sans: "Cairo", "Segoe UI Variable Text", system-ui, sans-serif;
+}
+
+/*
+ * Motion preference. The app exposes a System/Reduced control (mirroring the
+ * reference app) which sets data-motion="reduced" on <html>; we also honour the
+ * OS-level setting. Durations collapse to ~0 rather than animations being
+ * removed, so no layout depends on a transition having run.
+ */
+[data-motion="reduced"],
+[data-motion="system"] {
+  --dur-instant: 0ms;
+}
+
+[data-motion="reduced"] {
+  --dur-fast: 0ms;
+  --dur-normal: 0ms;
+  --dur-slow: 0ms;
+  --dur-slower: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-motion="system"] {
+    --dur-fast: 0ms;
+    --dur-normal: 0ms;
+    --dur-slow: 0ms;
+    --dur-slower: 0ms;
+  }
+}
+
+[data-motion="reduced"] *,
+[data-motion="reduced"] *::before,
+[data-motion="reduced"] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+  scroll-behavior: auto !important;
+}

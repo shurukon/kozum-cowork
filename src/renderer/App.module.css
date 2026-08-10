@@ -1,0 +1,106 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-primary);
+  overflow: hidden;
+  position: relative;
+}
+
+/*
+ * Ambient blueprint backdrop — sits behind everything, never above.
+ * OpenDesign "anthropic" atmosphere retinted with technical blue; max alpha
+ * capped at 0.14 in dark so foreground text ≥ 4.5:1.
+ */
+.app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--ambient-blue);
+  -webkit-mask-image: radial-gradient(ellipse 110% 70% at 50% 0%, #000 0%, transparent 78%);
+  mask-image: radial-gradient(ellipse 110% 70% at 50% 0%, #000 0%, transparent 78%);
+  z-index: 0;
+}
+
+.app > * {
+  position: relative;
+  z-index: 1;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4) var(--sp-4);
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
+  border-radius: var(--r-xl);
+}
+
+/* ---------------------------------------------------------------- banner -- */
+
+/*
+ * Errors used to vanish silently — a message would be sent and nothing would
+ * happen. Every failure now surfaces here, dismissable, above the content.
+ */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  margin: 0 var(--sp-4) var(--sp-3);
+  padding: var(--sp-5) var(--sp-6);
+  background: var(--error-soft);
+  border: 1px solid var(--error);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  line-height: var(--lh-snug);
+  animation: kz-rise var(--dur-fast) var(--ease-out) both;
+}
+
+.banner > span {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.banner > button {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-xs);
+  font-size: var(--fs-lg);
+  line-height: 1;
+  color: var(--text-secondary);
+}
+
+.banner > button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ------------------------------------------------------------- session --- */
+
+.sessionWrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+/* Permission picker floats above the Code composer, as in the reference app. */
+.permission {
+  position: absolute;
+  inset-inline-start: var(--sp-8);
+  bottom: 76px;
+  z-index: var(--z-dropdown);
+}

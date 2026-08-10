@@ -1,0 +1,120 @@
+/*
+ * Kozum Cowork — RightPanel.
+ *
+ * Panel chrome and collapsible section headers. Content styling lives in
+ * TaskList.module.css and ContextPanel.module.css.
+ */
+
+/* ── Panel shell ──────────────────────────────────────────────────────── */
+
+.panel {
+  width: var(--rightpanel-w);
+  flex: 0 0 var(--rightpanel-w);
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-4);
+  gap: var(--sp-3);
+  scrollbar-width: thin;
+}
+
+/* ── Collapsible section (glass-trimmed) ─────────────────────────────── */
+
+/*
+ * Each section is a glass card. The `.kz-glass` class from glass.css provides
+ * the translucent surface + hairline highlight. We add radius and overflow here
+ * rather than in kz-glass itself since not all glass uses the same radius.
+ */
+.section {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+/* ── Section header (toggle button) ───────────────────────────────────── */
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--sp-5);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  text-align: start;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.sectionHeader:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.sectionHeader::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 0;
+  width: 3px;
+  background: var(--accent-primary);
+  border-radius: var(--r-full);
+  opacity: 0;
+  transform: scaleY(0.4);
+  transition: opacity var(--motion-micro) var(--ease-out),
+    transform var(--motion-small) var(--ease-out);
+}
+
+.sectionHeader:hover::before {
+  opacity: 0.6;
+  transform: scaleY(0.6);
+}
+
+.sectionHeader:focus-visible::before,
+.sectionHeader[aria-expanded="true"]::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.sectionHeader:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+.sectionIcon {
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.sectionTitle {
+  flex: 1;
+}
+
+/* ── Section body ─────────────────────────────────────────────────────── */
+
+.sectionBody {
+  padding: var(--sp-3) var(--sp-5) var(--sp-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.subagentList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.empty {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  padding: var(--sp-2) 0;
+}

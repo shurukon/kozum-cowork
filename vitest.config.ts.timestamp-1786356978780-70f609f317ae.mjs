@@ -1,0 +1,32 @@
+// vitest.config.ts
+import { defineConfig } from "file:///D:/kozum-cowork-0.5.0/kozum-cowork-0.5.0/node_modules/vitest/dist/config.js";
+import react from "file:///D:/kozum-cowork-0.5.0/kozum-cowork-0.5.0/node_modules/@vitejs/plugin-react/dist/index.js";
+import { resolve } from "node:path";
+var vitest_config_default = defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": resolve("src/renderer"),
+      "@shared": resolve("src/shared")
+    }
+  },
+  css: {
+    // Treat CSS module imports as no-ops so tests aren't blocked on stylesheet
+    // content — components' styling is irrelevant to behaviour assertions.
+    modules: {
+      // Return an object where every class name maps to itself (identity proxy),
+      // so `styles.foo` evaluates to `"foo"` rather than undefined.
+      generateScopedName: "[local]"
+    }
+  },
+  test: {
+    include: ["tests/component/**/*.test.tsx", "tests/component/**/*.test.ts"],
+    environment: "jsdom",
+    globals: false,
+    setupFiles: ["tests/component/setup.ts"]
+  }
+});
+export {
+  vitest_config_default as default
+};
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsidml0ZXN0LmNvbmZpZy50cyJdLAogICJzb3VyY2VzQ29udGVudCI6IFsiY29uc3QgX192aXRlX2luamVjdGVkX29yaWdpbmFsX2Rpcm5hbWUgPSBcIkQ6XFxcXGtvenVtLWNvd29yay0wLjUuMFxcXFxrb3p1bS1jb3dvcmstMC41LjBcIjtjb25zdCBfX3ZpdGVfaW5qZWN0ZWRfb3JpZ2luYWxfZmlsZW5hbWUgPSBcIkQ6XFxcXGtvenVtLWNvd29yay0wLjUuMFxcXFxrb3p1bS1jb3dvcmstMC41LjBcXFxcdml0ZXN0LmNvbmZpZy50c1wiO2NvbnN0IF9fdml0ZV9pbmplY3RlZF9vcmlnaW5hbF9pbXBvcnRfbWV0YV91cmwgPSBcImZpbGU6Ly8vRDova296dW0tY293b3JrLTAuNS4wL2tvenVtLWNvd29yay0wLjUuMC92aXRlc3QuY29uZmlnLnRzXCI7LyoqXG4gKiBWaXRlc3QgY29uZmlnIGZvciBjb21wb25lbnQgdGVzdHMgT05MWS5cbiAqXG4gKiBUaGUgZXhpc3Rpbmcgbm9kZTp0ZXN0IHN1aXRlcyAodGVzdHMvaW50ZWdyYXRpb24vIGFuZCB0ZXN0cy91bml0LykgYXJlXG4gKiBOT1QgdG91Y2hlZCBcdTIwMTQgdGhleSBzdGF5IG9uIGBub2RlIC0tZXhwZXJpbWVudGFsLXN0cmlwLXR5cGVzIC0tdGVzdGAuXG4gKiBUaGlzIGNvbmZpZyBpcyBzY29wZWQgZXhjbHVzaXZlbHkgdG8gdGVzdHMvY29tcG9uZW50LyoqLlxuICovXG5cbmltcG9ydCB7IGRlZmluZUNvbmZpZyB9IGZyb20gXCJ2aXRlc3QvY29uZmlnXCI7XG5pbXBvcnQgcmVhY3QgZnJvbSBcIkB2aXRlanMvcGx1Z2luLXJlYWN0XCI7XG5pbXBvcnQgeyByZXNvbHZlIH0gZnJvbSBcIm5vZGU6cGF0aFwiO1xuXG5leHBvcnQgZGVmYXVsdCBkZWZpbmVDb25maWcoe1xuICBwbHVnaW5zOiBbcmVhY3QoKV0sXG4gIHJlc29sdmU6IHtcbiAgICBhbGlhczoge1xuICAgICAgXCJAXCI6IHJlc29sdmUoXCJzcmMvcmVuZGVyZXJcIiksXG4gICAgICBcIkBzaGFyZWRcIjogcmVzb2x2ZShcInNyYy9zaGFyZWRcIiksXG4gICAgfSxcbiAgfSxcbiAgY3NzOiB7XG4gICAgLy8gVHJlYXQgQ1NTIG1vZHVsZSBpbXBvcnRzIGFzIG5vLW9wcyBzbyB0ZXN0cyBhcmVuJ3QgYmxvY2tlZCBvbiBzdHlsZXNoZWV0XG4gICAgLy8gY29udGVudCBcdTIwMTQgY29tcG9uZW50cycgc3R5bGluZyBpcyBpcnJlbGV2YW50IHRvIGJlaGF2aW91ciBhc3NlcnRpb25zLlxuICAgIG1vZHVsZXM6IHtcbiAgICAgIC8vIFJldHVybiBhbiBvYmplY3Qgd2hlcmUgZXZlcnkgY2xhc3MgbmFtZSBtYXBzIHRvIGl0c2VsZiAoaWRlbnRpdHkgcHJveHkpLFxuICAgICAgLy8gc28gYHN0eWxlcy5mb29gIGV2YWx1YXRlcyB0byBgXCJmb29cImAgcmF0aGVyIHRoYW4gdW5kZWZpbmVkLlxuICAgICAgZ2VuZXJhdGVTY29wZWROYW1lOiBcIltsb2NhbF1cIixcbiAgICB9LFxuICB9LFxuICB0ZXN0OiB7XG4gICAgaW5jbHVkZTogW1widGVzdHMvY29tcG9uZW50LyoqLyoudGVzdC50c3hcIiwgXCJ0ZXN0cy9jb21wb25lbnQvKiovKi50ZXN0LnRzXCJdLFxuICAgIGVudmlyb25tZW50OiBcImpzZG9tXCIsXG4gICAgZ2xvYmFsczogZmFsc2UsXG4gICAgc2V0dXBGaWxlczogW1widGVzdHMvY29tcG9uZW50L3NldHVwLnRzXCJdLFxuICB9LFxufSk7XG4iXSwKICAibWFwcGluZ3MiOiAiO0FBUUEsU0FBUyxvQkFBb0I7QUFDN0IsT0FBTyxXQUFXO0FBQ2xCLFNBQVMsZUFBZTtBQUV4QixJQUFPLHdCQUFRLGFBQWE7QUFBQSxFQUMxQixTQUFTLENBQUMsTUFBTSxDQUFDO0FBQUEsRUFDakIsU0FBUztBQUFBLElBQ1AsT0FBTztBQUFBLE1BQ0wsS0FBSyxRQUFRLGNBQWM7QUFBQSxNQUMzQixXQUFXLFFBQVEsWUFBWTtBQUFBLElBQ2pDO0FBQUEsRUFDRjtBQUFBLEVBQ0EsS0FBSztBQUFBO0FBQUE7QUFBQSxJQUdILFNBQVM7QUFBQTtBQUFBO0FBQUEsTUFHUCxvQkFBb0I7QUFBQSxJQUN0QjtBQUFBLEVBQ0Y7QUFBQSxFQUNBLE1BQU07QUFBQSxJQUNKLFNBQVMsQ0FBQyxpQ0FBaUMsOEJBQThCO0FBQUEsSUFDekUsYUFBYTtBQUFBLElBQ2IsU0FBUztBQUFBLElBQ1QsWUFBWSxDQUFDLDBCQUEwQjtBQUFBLEVBQ3pDO0FBQ0YsQ0FBQzsiLAogICJuYW1lcyI6IFtdCn0K

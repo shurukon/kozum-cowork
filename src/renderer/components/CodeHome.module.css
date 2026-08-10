@@ -1,0 +1,146 @@
+/*
+ * CodeHome — Code-mode home screen (rework).
+ *
+ * Greeting + folder row + composer slot. No stats grid, no heat-map.
+ */
+
+.wrap {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: var(--sp-16) var(--sp-10);
+  background: var(--bg-primary);
+}
+
+.inner {
+  width: 100%;
+  max-width: var(--composer-max-w);
+  /* Sit slightly above true centre — optically centred beats mathematically
+     centred when there is a tall empty area below. */
+  transform: translateY(-6vh);
+  animation: kz-rise var(--dur-slow) var(--ease-out) both;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+
+/* ─── Greeting ─────────────────────────────────────────────────────────── */
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  font-family: var(--font-serif);
+  font-size: var(--fs-display);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+}
+
+.mark {
+  flex: 0 0 auto;
+  border-radius: var(--r-sm);
+  filter: drop-shadow(0 0 10px var(--glow-blue));
+}
+
+/* ─── Folder row ────────────────────────────────────────────────────────── */
+
+.folderRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+/* "Local" static chip */
+.chipLocal {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 26px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--accent-secondary);
+  background: var(--teal-soft);
+  border: 1px solid rgba(0, 200, 255, 0.25);
+  user-select: none;
+}
+
+/* Folder name chips — clickable */
+.chipFolder {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.chipFolder:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+/* Add another folder button */
+.chipAdd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 26px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px dashed var(--border);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.chipAdd:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+  border-style: solid;
+}
+
+/* ─── Composer area ─────────────────────────────────────────────────────── */
+
+/* The slot just contains whatever composerSlot the parent passes.
+   We give it full width so ComposerBar can lay itself out normally. */
+.composerArea {
+  width: 100%;
+}
+
+/* ─── Reduced motion ────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .inner {
+    animation: none;
+    transform: none;
+  }
+}
+
+[data-motion="reduced"] .inner {
+  animation: none;
+  transform: none;
+}

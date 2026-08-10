@@ -1,0 +1,40 @@
+appId: app.kozum.cowork
+productName: Kozum Cowork
+copyright: ""
+
+directories:
+  buildResources: build
+  output: release
+
+files:
+  - out/**/*
+  - resources/**/*
+  - package.json
+  - bundled/**/*
+
+# Native modules must be unpacked to be loadable from inside the asar.
+asarUnpack:
+  - "**/*.node"
+  - resources/**
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: Kozum-Cowork-Setup-${version}.${ext}
+  # No code-signing certificate configured; SmartScreen will warn on first run.
+  signAndEditExecutable: true
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Kozum Cowork
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  deleteAppDataOnUninstall: false
+  include: build/installer.nsh

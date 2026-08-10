@@ -1,0 +1,129 @@
+.card {
+  border-radius: var(--radius-card);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.running {
+  border-color: var(--accent-primary);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: start;
+  width: 100%;
+}
+
+.pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--accent-primary);
+  box-shadow: 0 0 0 0 var(--accent-primary);
+  animation: subagentPulse 1.4s var(--ease-out) infinite;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--text-muted);
+}
+
+.name {
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress {
+  height: 4px;
+  background: var(--bg-input);
+  border-radius: var(--r-full);
+  overflow: hidden;
+}
+
+.progressBar {
+  height: 100%;
+  background: var(--accent-gradient);
+  /* Ease width changes so progress updates glide instead of jumping. The
+     width is set imperatively in the component (style={{ width }}), so the
+     transition must target `width` (and inline-size for logical-property
+     parity under RTL). */
+  transition: width var(--motion-small) var(--ease-out),
+    inline-size var(--motion-small) var(--ease-out);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.note {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  padding-inline-start: var(--sp-2);
+  border-inline-start: 2px solid var(--border-subtle);
+}
+
+.result {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.error {
+  color: var(--error);
+  font-size: var(--fs-xs);
+  margin: 0;
+}
+
+@keyframes subagentPulse {
+  0% { box-shadow: 0 0 0 0 var(--accent-primary); opacity: 1; }
+  70% { box-shadow: 0 0 0 6px transparent; opacity: 0.6; }
+  100% { box-shadow: 0 0 0 0 transparent; opacity: 1; }
+}
+
+[data-motion="reduced"] .pulse,
+[data-motion="reduced"] .running {
+  animation: none;
+}

@@ -1,0 +1,258 @@
+/* ------------------------------------------------------------ user --- */
+
+.userRow {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--sp-4);
+  animation: kz-rise var(--dur-normal) var(--ease-out) both;
+}
+
+.userBubble {
+  max-width: 72%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl) var(--r-xl) var(--r-xs) var(--r-xl);
+  padding: var(--sp-5) var(--sp-6);
+  /* kz-send-ack applied via JS on first mount (from glass.css) */
+}
+
+.userText {
+  font-size: var(--fs-base);
+  line-height: var(--lh-relaxed);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* -------------------------------------------------------- assistant --- */
+
+.assistantRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4);
+}
+
+.assistantText {
+  font-size: var(--fs-base);
+  line-height: var(--lh-relaxed);
+  color: var(--text-primary);
+  /* kz-caret appended via global.css when streaming */
+}
+
+/* --------------------------------------------------------- thinking: settled --- */
+
+/*
+ * Settled thinking: glass pane (kz-glass + kz-glass-sweep added in JSX).
+ * The kz-glass class handles border, border-radius, backdrop-blur, and the
+ * top-edge highlight from glass.css. We only add the layout here.
+ */
+.thinking {
+  overflow: hidden;
+  /* border-radius is set by kz-glass via --radius-card, which resolves to --r-lg */
+}
+
+.thinkingToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-5);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  letter-spacing: var(--tracking-wide);
+  text-align: start;
+  text-transform: uppercase;
+  transition: color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.thinkingToggle:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.thinkingToggle:focus-visible {
+  outline: none;
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 2px var(--accent-primary);
+}
+
+.thinkingBody {
+  padding: var(--sp-4) var(--sp-5);
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-relaxed);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* --------------------------------------------------------- thinking: live --- */
+
+/*
+ * Live thinking: kz-glass + kz-glass-busy applied in JSX for the animated
+ * sweep, plus the left-accent border below. Layout only here.
+ */
+.thinkingLive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  /* A coloured left edge makes it clear this is the live reasoning strip */
+  border-inline-start: 2px solid var(--accent-primary) !important;
+}
+
+.thinkingLiveHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+/*
+ * Wrap the breathing orb in a positioned span so .kz-orb-pulse can absolute-
+ * fill it. The pulse is a soft halo behind the orb that radiates outward and
+ * fades — gives the "model is thinking" signal presence above dense text.
+ */
+.thinkingOrbWrap {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.thinkingLiveLabel {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+/* Streaming reasoning text: dimmed, italic, monospace */
+.thinkingStream {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-style: italic;
+  line-height: var(--lh-relaxed);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+/* ----------------------------------------------------------- error --- */
+
+.errorMsg {
+  font-size: var(--fs-sm);
+  color: var(--error);
+  line-height: var(--lh-relaxed);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--error-soft);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ------------------------------------------------- inline images (§4.1) --- */
+
+.inlineImage {
+  max-width: 360px;
+  width: 100%;
+  height: auto;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+}
+
+.imageRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+}
+
+.userBubble:has(.inlineImage) {
+  padding: var(--sp-4);
+}
+
+/* ------------------------------------------------- tool_result compact (§4.1) --- */
+
+.toolResultRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4);
+  animation: kz-rise var(--dur-normal) var(--ease-out) both;
+}
+
+.toolResultChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  max-width: 100%;
+}
+
+.toolResultArrow {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.toolResultFileChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-6);
+  border-radius: var(--r-full);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.toolResultFileChip:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.toolResultFileName {
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolResultSummary {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 48ch;
+}
+
+/* P1-1: subtle badge for subagent-produced messages */
+.subagentBadge {
+  align-self: flex-start;
+  margin-bottom: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  color: var(--accent-bright);
+  background: var(--accent-soft);
+  border-radius: var(--r-full);
+  border: 1px solid var(--accent-primary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}

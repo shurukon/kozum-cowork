@@ -1,0 +1,123 @@
+/*
+ * AddMenu — "+" popover listing Files / Connectors / Skills / Plugins.
+ * Positioned by the parent (ComposerBar uses absolute + bottom offset).
+ */
+
+.menu {
+  position: absolute;
+  bottom: calc(100% + var(--sp-4));
+  left: 0;
+  z-index: var(--z-dropdown);
+  min-width: 240px;
+  padding: var(--sp-3) 0;
+
+  /* Glass surface */
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-elevated);
+  overflow: hidden;
+
+  animation: addMenuIn var(--dur-fast) var(--ease-out) both;
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .menu {
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+  }
+}
+
+/* Top-edge highlight (glass lip) */
+.menu::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--glass-highlight) 20%,
+    var(--glass-highlight) 80%,
+    transparent
+  );
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+@keyframes addMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(var(--sp-3)) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ── Rows ──────────────────────────────────────────────────────────────────── */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  width: 100%;
+  padding: var(--sp-4) var(--sp-6);
+  text-align: start;
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.row:hover,
+.row:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.row:active {
+  background: var(--bg-active);
+}
+
+/* ── Icon ──────────────────────────────────────────────────────────────────── */
+
+.iconWrap {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md);
+  background: var(--accent-softer);
+  color: var(--accent-primary);
+}
+
+/* ── Text block ───────────────────────────────────────────────────────────── */
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: inherit;
+  line-height: var(--lh-tight);
+}
+
+.description {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: var(--lh-snug);
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+
+[data-motion="reduced"] .menu {
+  animation: none;
+}
