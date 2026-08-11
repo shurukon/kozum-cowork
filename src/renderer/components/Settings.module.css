@@ -656,6 +656,30 @@
   color: var(--text-muted);
 }
 
+/* Optional per-row inspect + remove buttons for connectors/plugins. */
+.toggleInspectBtn,
+.toggleRemoveBtn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-xs);
+  color: var(--text-muted);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.toggleInspectBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.toggleRemoveBtn:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
 /* -------------------------------------------------------- empty --- */
 
 .emptyNote {

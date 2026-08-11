@@ -9,8 +9,9 @@
  *   bypass_permissions — nothing asks; all tools run immediately.
  *
  * "Mutating" means any tool whose group is filesystem (write/edit/delete/move),
- * shell, process, or computer. Read-only filesystem tools (file_read, glob_match,
- * file_search, dir_list, dir_tree) are never blocked.
+ * shell, process, or computer. Read-only filesystem tools (file_read,
+ * file_read_image, file_read_pdf, glob_match, file_search, directory_list)
+ * are never blocked.
  */
 
 import type { ToolResult } from "../../shared/types.ts";
@@ -19,16 +20,19 @@ import type { PermissionMode } from "../../shared/types.ts";
 /** Tool groups that always mutate the system. */
 const SHELL_GROUPS = new Set(["shell", "process", "computer"]);
 
-/** Tool names within the filesystem group that are pure reads — never blocked. */
+/**
+ * Tool names within the filesystem group that are pure reads — never blocked.
+ * Fixed: removed phantom entries (dir_list, dir_tree, dir_stats, env_list)
+ * and added real read-only tools (file_read_image, file_read_pdf, directory_list).
+ */
 const READ_ONLY_FS_TOOLS = new Set([
   "file_read",
+  "file_read_image",
+  "file_read_pdf",
   "glob_match",
   "file_search",
-  "dir_list",
-  "dir_tree",
-  "dir_stats",
+  "directory_list",
   "env_get",
-  "env_list",
   "system_info",
 ]);
 

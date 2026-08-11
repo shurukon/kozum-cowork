@@ -73,10 +73,9 @@ Python with pillow and numpy).
 
 - **The installer is unsigned.** Windows SmartScreen warns on first run — More
   info → Run anyway. Signing needs a paid OV/EV certificate.
-- **Four provider protocols are stubs.** Only `openai-chat` has an adapter, which
-  covers 14 of the 18 providers. Anthropic Messages, OpenAI Responses, Gemini
-  native and Vertex throw a named "not implemented" error rather than silently
-  falling back to the wrong wire format.
+- **All five provider protocols are implemented.** `openai-chat`,
+  `openai-responses`, `anthropic-messages`, `gemini-generative`, and
+  `vertex-gemini` each have a full streaming + listModels adapter.
 - **Windows-only paths are unverified.** Everything was built and tested on
   Linux, so the PowerShell computer-use scripts and the Electron browser backend
   are correct by construction and by unit tests on the generated script text, but

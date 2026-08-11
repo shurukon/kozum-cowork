@@ -41,11 +41,13 @@ export const BROWSER_PREVIEW_TOOLS = new Set<string>([
   "browser_click",
   "browser_type",
   "browser_scroll",
-  "browser_wait_for",
+  "browser_wait",
   "browser_screenshot",
   "browser_extract",
-  "browser_go_back",
-  "browser_go_forward",
+  "browser_back",
+  "browser_forward",
+  "browser_get_content",
+  "browser_close",
 ]);
 
 export function shouldOpenBrowserPreview(toolName: string): boolean {

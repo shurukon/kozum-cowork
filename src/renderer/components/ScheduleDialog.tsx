@@ -1,14 +1,19 @@
 /**
- * ScheduleDialog — real form for creating a scheduled task.
+ * ScheduleDialog — form for creating OR editing a scheduled task.
  *
  * Fields: Name, Prompt (required), Cadence (friendly picker → cron),
- * Working folder (optional). Shows live cron expression and next-run preview.
- * Pre-fillable for "Daily brief" / "Weekly review" quick-creates.
+ * Mode (cowork / code), Project (optional), Working folder (optional).
+ * Shows live cron expression and next-run preview.
+ *
+ * When `editId` is provided the save button calls `schedule.update`; otherwise
+ * it calls `schedule.create`. The prefill shape is shared between the two
+ * flows so a parent can open the dialog with a task's existing values to edit.
  */
 
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AlertCircle, Folder, Loader2 } from "lucide-react";
-import type { ScheduledTask } from "@shared/types.ts";
+import type { ScheduledTask, Mode, Project } from "@shared/types.ts";
 import { bridge } from "../bridge.ts";
 import {
   buildCron,
@@ -30,6 +35,17 @@ export interface ScheduleDialogPrefill {
 
 interface Props {
   prefill?: ScheduleDialogPrefill;
+  /**
+   * When set, the dialog is in "edit" mode and the save button calls
+   * `bridge().schedule.update(editId, …)` instead of `schedule.create`.
+   */
+  editId?: string;
+  /** Available projects (for the project picker). */
+  projects?: Project[];
+  /** Initial mode + project when editing. */
+  initialMode?: Mode;
+  initialProjectId?: string | null;
+  initialWorkingFolder?: string | null;
   onSave: (task: ScheduledTask) => void;
   onClose: () => void;
 }
@@ -48,10 +64,22 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-export function ScheduleDialog({ prefill, onSave, onClose }: Props) {
+export function ScheduleDialog({
+  prefill,
+  editId,
+  projects,
+  initialMode,
+  initialProjectId,
+  initialWorkingFolder,
+  onSave,
+  onClose,
+}: Props) {
+  const { t } = useTranslation();
   const [name, setName] = useState(prefill?.name ?? "");
   const [prompt, setPrompt] = useState(prefill?.prompt ?? "");
-  const [workingFolder, setWorkingFolder] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>(initialMode ?? "cowork");
+  const [projectId, setProjectId] = useState<string | null>(initialProjectId ?? null);
+  const [workingFolder, setWorkingFolder] = useState<string | null>(initialWorkingFolder ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [promptError, setPromptError] = useState<string | null>(null);
@@ -103,23 +131,28 @@ export function ScheduleDialog({ prefill, onSave, onClose }: Props) {
     setPromptError(null);
 
     if (!prompt.trim()) {
-      setPromptError("Prompt is required — describe what the agent should do.");
+      setPromptError(t("scheduled.prompt") + " is required.");
       return;
     }
 
     setBusy(true);
     try {
-      const res = await bridge().schedule.create({
+      const payload = {
         name: name.trim() || "Untitled task",
         prompt: prompt.trim(),
         cron: cronExpr,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         enabled: true,
-        mode: "cowork",
-        projectId: null,
+        mode,
+        projectId,
         workingFolder,
         selection: null,
-      });
+      };
+
+      const res = editId
+        ? await bridge().schedule.update(editId, payload)
+        : await bridge().schedule.create(payload);
+
       if (!res.ok) {
         setError(res.error);
         return;
@@ -135,31 +168,33 @@ export function ScheduleDialog({ prefill, onSave, onClose }: Props) {
   const footer = (
     <>
       <button className={styles.cancelBtn} onClick={onClose} disabled={busy}>
-        Cancel
+        {t("common.cancel")}
       </button>
       <button
         className={styles.saveBtn}
         onClick={() => void handleSave()}
         disabled={busy}
       >
-        {busy ? <Loader2 size={14} className="kz-spin" /> : "Schedule"}
+        {busy ? <Loader2 size={14} className="kz-spin" /> : editId ? t("common.save") : t("scheduled.newTask")}
       </button>
     </>
   );
 
+  const title = editId ? t("scheduled.edit") : t("scheduled.newTask");
+
   return (
-    <Dialog title="New scheduled task" onClose={onClose} footer={footer}>
+    <Dialog title={title} onClose={onClose} footer={footer}>
       {/* Name */}
       <div className={styles.field}>
         <label className={styles.label} htmlFor="sd-name">
-          Name
+          {t("scheduled.name")}
         </label>
         <input
           id="sd-name"
           className={styles.input}
           type="text"
           value={name}
-          placeholder="My scheduled task"
+          placeholder={t("scheduled.name")}
           onChange={(e) => setName(e.target.value)}
           disabled={busy}
         />
@@ -168,13 +203,13 @@ export function ScheduleDialog({ prefill, onSave, onClose }: Props) {
       {/* Prompt */}
       <div className={styles.field}>
         <label className={styles.label} htmlFor="sd-prompt">
-          Prompt <span aria-hidden="true">*</span>
+          {t("scheduled.prompt")} <span aria-hidden="true">*</span>
         </label>
         <textarea
           id="sd-prompt"
           className={styles.textarea}
           value={prompt}
-          placeholder="Describe what the agent should do each time this task runs…"
+          placeholder={t("scheduled.prompt")}
           onChange={(e) => {
             setPrompt(e.target.value);
             if (promptError && e.target.value.trim()) setPromptError(null);
@@ -189,10 +224,49 @@ export function ScheduleDialog({ prefill, onSave, onClose }: Props) {
         )}
       </div>
 
+      {/* Mode + project */}
+      <div className={styles.field}>
+        <label className={styles.label} htmlFor="sd-mode">
+          {t("scheduled.mode")}
+        </label>
+        <select
+          id="sd-mode"
+          className={styles.select}
+          value={mode}
+          onChange={(e) => setMode(e.target.value as Mode)}
+          disabled={busy}
+        >
+          <option value="cowork">Cowork</option>
+          <option value="code">Code</option>
+        </select>
+
+        {projects && projects.length > 0 && (
+          <>
+            <label className={styles.label} htmlFor="sd-project" style={{ marginTop: "var(--sp-4)" }}>
+              {t("projects.title")}
+            </label>
+            <select
+              id="sd-project"
+              className={styles.select}
+              value={projectId ?? ""}
+              onChange={(e) => setProjectId(e.target.value || null)}
+              disabled={busy}
+            >
+              <option value="">— {t("common.none")} —</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+      </div>
+
       {/* Cadence */}
       <div className={styles.field}>
         <label className={styles.label} htmlFor="sd-cadence">
-          Cadence
+          {t("scheduled.title")}
         </label>
         <select
           id="sd-cadence"
@@ -296,16 +370,16 @@ export function ScheduleDialog({ prefill, onSave, onClose }: Props) {
         <div className={styles.cronPreview} aria-live="polite">
           <span className={styles.cronExpr}>{cronExpr}</span>
           <span className={styles.cronSep}>·</span>
-          <span className={styles.nextRunLabel}>Next: {nextRunText}</span>
+          <span className={styles.nextRunLabel}>{t("scheduled.nextRun")}: {nextRunText}</span>
         </div>
       </div>
 
       {/* Working folder */}
       <div className={styles.field}>
-        <label className={styles.label}>Working folder (optional)</label>
+        <label className={styles.label}>{t("projects.folder")} ({t("common.optional")})</label>
         <div className={styles.folderRow}>
           <div className={styles.folderInput}>
-            {workingFolder ?? "No folder selected"}
+            {workingFolder ?? t("common.none")}
           </div>
           <button
             className={styles.folderBtn}
@@ -314,7 +388,7 @@ export function ScheduleDialog({ prefill, onSave, onClose }: Props) {
             type="button"
           >
             <Folder size={13} />
-            <span> Browse</span>
+            <span> {t("projects.folder")}</span>
           </button>
         </div>
       </div>

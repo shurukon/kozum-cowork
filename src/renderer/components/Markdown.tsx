@@ -6,7 +6,8 @@
  * escapes all text node values automatically.
  */
 
-import type { ReactNode } from "react";
+import { useState, useCallback, type ReactNode } from "react";
+import { Copy, Check } from "lucide-react";
 import {
   parseMarkdown,
   type BlockToken,
@@ -73,6 +74,45 @@ function renderInline(tokens: InlineToken[], key?: string): ReactNode {
 
 // ── Block renderer ─────────────────────────────────────────────────────────
 
+// F-2g: code block with copy button + language badge. Renders a header strip
+// above the <pre> with the language label (or "text") and a copy button that
+// writes the raw code to the clipboard. Falls back to bare <pre> only if the
+// clipboard API is unavailable.
+function CodeBlock({ code, lang }: { code: string; lang: string }): ReactNode {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard may be unavailable (e.g. insecure context) — silently ignore */
+    }
+  }, [code]);
+
+  return (
+    <div className={styles.codeBlockWrap}>
+      <div className={styles.codeBlockHeader}>
+        <span className={styles.codeLang}>{lang || "text"}</span>
+        <button
+          type="button"
+          className={styles.copyBtn}
+          onClick={handleCopy}
+          aria-label={copied ? "Copied" : "Copy code"}
+          title={copied ? "Copied" : "Copy code"}
+        >
+          {copied ? <Check size={12} aria-hidden={true} /> : <Copy size={12} aria-hidden={true} />}
+        </button>
+      </div>
+      <pre className={styles.pre}>
+        <code className={lang ? styles.codeWithLang : undefined} data-lang={lang || undefined}>
+          {code}
+        </code>
+      </pre>
+    </div>
+  );
+}
+
 function renderBlock(token: BlockToken, idx: number): ReactNode {
   const k = `b-${idx}`;
   switch (token.type) {
@@ -91,13 +131,7 @@ function renderBlock(token: BlockToken, idx: number): ReactNode {
     case "paragraph":
       return <p key={k} className={styles.p}>{renderInline(token.children, k)}</p>;
     case "code_block":
-      return (
-        <pre key={k} className={styles.pre}>
-          <code className={token.lang ? styles.codeWithLang : undefined} data-lang={token.lang || undefined}>
-            {token.code}
-          </code>
-        </pre>
-      );
+      return <CodeBlock key={k} code={token.code} lang={token.lang} />;
     case "blockquote":
       return (
         <blockquote key={k} className={styles.blockquote}>

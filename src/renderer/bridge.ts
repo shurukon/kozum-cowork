@@ -140,6 +140,8 @@ export interface KozumBridge {
       patch: Partial<ScheduledTask>,
     ) => Promise<Result<ScheduledTask>>;
     remove: (id: string) => Promise<Result<void>>;
+    /** Fire a scheduled task immediately without disturbing its cadence. */
+    runNow: (id: string) => Promise<Result<void>>;
   };
 
   mcp: {
@@ -160,11 +162,18 @@ export interface KozumBridge {
     setEnabled: (id: string, enabled: boolean) => Promise<Result<void>>;
     remove: (id: string) => Promise<Result<void>>;
     installFromUrl: (url: string) => Promise<Result<Plugin>>;
+    /** Install a plugin from a local .zip file path (BUG-5 fix). */
+    installFromZip: (path: string) => Promise<Result<Plugin>>;
   };
 
   skills: {
     list: () => Promise<Skill[]>;
     setEnabled: (id: string, enabled: boolean) => Promise<Result<void>>;
+  };
+
+  subagents: {
+    /** Cancel a running subagent by run id (best-effort). */
+    cancel: (runId: string) => Promise<Result<void>>;
   };
 
   dialog: {

@@ -111,7 +111,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   // can persist a sidecar of the turn and the renderer can reattach after a
   // refresh (P1-7 / §9.2). The wrapper injects it; call sites use `emit(...)`.
   const runId = randomUUID();
-  const emit = (e: AgentEvent): void => emit({ ...e, runId });
+  const emit = (e: AgentEvent): void => opts.emit({ ...e, runId });
 
   const defs = opts.tools.list(opts.mode);
 

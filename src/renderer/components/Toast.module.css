@@ -142,6 +142,34 @@
   color: var(--text-primary);
 }
 
+/* ── Action button (inline retry etc.) ─────────────────────────────────── */
+
+.actionBtn {
+  margin-top: var(--sp-3);
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  background: var(--accent-gradient);
+  color: #fff;
+  border: 1px solid transparent;
+  box-shadow: 0 0 8px var(--glow-blue);
+  transition: filter var(--dur-fast) var(--ease-out);
+}
+
+.actionBtn:hover {
+  filter: brightness(1.1);
+}
+
+.actionBtn:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 1px;
+}
+
 /* ── Reduced motion: no animation at all ──────────────────────────────── */
 
 [data-motion="reduced"] .toast,

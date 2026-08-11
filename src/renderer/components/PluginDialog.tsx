@@ -8,7 +8,8 @@
  * Shows a spinner while installing (slow: network + extract).
  * Displays discovered contributions from the returned Plugin on success.
  * Shows backend error messages inline on failure.
- * bridge().plugins.installFromUrl handles both zip paths and GitHub URLs.
+ * The zip tab calls installFromZip; the github tab calls installFromUrl
+ * (BUG-5 fix — see handleInstall).
  */
 
 import { useState, type ReactNode } from "react";
@@ -58,7 +59,14 @@ export function PluginDialog({ onSave, onClose }: Props) {
 
     setBusy(true);
     try {
-      const res = await bridge().plugins.installFromUrl(src);
+      // BUG-5 fix: route the zip tab to the dedicated installFromZip handler
+      // (which resolves a local file path), and only the github tab to the
+      // URL handler. Previously both called installFromUrl, which tried to
+      // treat a local .zip path as a GitHub repo URL and broke.
+      const res =
+        tab === "zip"
+          ? await bridge().plugins.installFromZip(src)
+          : await bridge().plugins.installFromUrl(src);
       if (!res.ok) {
         setError(res.error);
         return;

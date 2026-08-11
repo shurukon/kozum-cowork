@@ -38,6 +38,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  Info,
 } from "lucide-react";
 import type {
   AppSettings,
@@ -880,11 +881,17 @@ function PaneToggleList({
   items,
   onToggle,
   onAdd,
+  onRemove,
+  onInspect,
 }: {
   title: string;
   items: Array<{ id: string; name: string; description: string; enabled: boolean }>;
   onToggle: (id: string, enabled: boolean) => void;
   onAdd: () => void;
+  /** Optional per-row remove (used for connectors/plugins). */
+  onRemove?: (id: string) => void;
+  /** Optional per-row inspect — opens a details view (used for connectors/plugins). */
+  onInspect?: (id: string) => void;
 }) {
   return (
     <div className={styles.pane}>
@@ -906,6 +913,17 @@ function PaneToggleList({
                 <span className={styles.toggleName}>{item.name}</span>
                 <span className={styles.toggleDesc}>{item.description}</span>
               </div>
+              {onInspect && (
+                <button
+                  type="button"
+                  className={styles.toggleInspectBtn}
+                  onClick={() => onInspect(item.id)}
+                  aria-label={`Inspect ${item.name}`}
+                  title="Inspect"
+                >
+                  <Info size={14} />
+                </button>
+              )}
               <button
                 className={styles.toggleBtn}
                 onClick={() => onToggle(item.id, !item.enabled)}
@@ -918,6 +936,19 @@ function PaneToggleList({
                   <ToggleLeft size={22} className={styles.toggleOff} />
                 )}
               </button>
+              {onRemove && (
+                <button
+                  type="button"
+                  className={styles.toggleRemoveBtn}
+                  onClick={() => {
+                    if (confirm(`Remove ${item.name}?`)) onRemove(item.id);
+                  }}
+                  aria-label={`Remove ${item.name}`}
+                  title="Remove"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -959,6 +990,12 @@ export interface SettingsProps {
   onAddSkill: () => void;
   onAddConnector: () => void;
   onAddPlugin: () => void;
+  /** Optional remove handlers for connectors and plugins (best-effort). */
+  onRemoveConnector?: (id: string) => void;
+  onRemovePlugin?: (id: string) => void;
+  /** Optional inspect handlers for connectors and plugins (best-effort). */
+  onInspectConnector?: (id: string) => void;
+  onInspectPlugin?: (id: string) => void;
   /**
    * Called when the user clicks "Browse" for a default folder.
    * Caller should: dialog.selectFolder() → save to settings.general.defaultFolders[mode].
@@ -990,6 +1027,10 @@ export function Settings({
   onAddSkill,
   onAddConnector,
   onAddPlugin,
+  onRemoveConnector,
+  onRemovePlugin,
+  onInspectConnector,
+  onInspectPlugin,
   onPickFolder,
   onClose,
   initialPane = "general",
@@ -1095,6 +1136,8 @@ export function Settings({
                 }))}
                 onToggle={onToggleConnector}
                 onAdd={onAddConnector}
+                onRemove={onRemoveConnector}
+                onInspect={onInspectConnector}
               />
             )}
             {activeNav === "plugins" && (
@@ -1108,6 +1151,8 @@ export function Settings({
                 }))}
                 onToggle={onTogglePlugin}
                 onAdd={onAddPlugin}
+                onRemove={onRemovePlugin}
+                onInspect={onInspectPlugin}
               />
             )}
           </div>

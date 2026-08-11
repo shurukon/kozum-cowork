@@ -4,10 +4,10 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kozum Cowork</title>
+    <title>Kozum Cowork — Preview</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -17,6 +17,9 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Mock bridge: provides stub window.kozum so the UI renders in a browser.
+         Loaded before the app so bridge() calls don't throw. -->
+    <script type="module" src="./mock-bridge.ts"></script>
     <script type="module" src="./main.tsx"></script>
   </body>
 </html>

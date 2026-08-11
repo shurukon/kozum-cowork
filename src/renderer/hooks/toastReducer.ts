@@ -9,12 +9,21 @@
 
 export type ToastSeverity = "info" | "success" | "warning" | "error";
 
+export interface ToastActionButton {
+  /** Button label, e.g. "Retry". */
+  label: string;
+  /** Called when the user clicks the action button. */
+  onRun: () => void;
+}
+
 export interface Toast {
   id: string;
   severity: ToastSeverity;
   message: string;
   /** Timestamp (ms since epoch) when the toast was created. */
   createdAt: number;
+  /** Optional inline action button (e.g. "Retry" on a send-failure toast). */
+  action?: ToastActionButton;
 }
 
 export interface ToastState {
@@ -22,7 +31,14 @@ export interface ToastState {
 }
 
 export type ToastAction =
-  | { type: "push"; severity: ToastSeverity; message: string; id: string; createdAt: number }
+  | {
+      type: "push";
+      severity: ToastSeverity;
+      message: string;
+      id: string;
+      createdAt: number;
+      action?: ToastActionButton;
+    }
   | { type: "dismiss"; id: string };
 
 // ── Max visible cap ───────────────────────────────────────────────────────
@@ -39,6 +55,7 @@ export function toastReducer(state: ToastState, action: ToastAction): ToastState
         severity: action.severity,
         message: action.message,
         createdAt: action.createdAt,
+        ...(action.action ? { action: action.action } : {}),
       };
       // Newest on top (prepend), then cap to max visible.
       // When we exceed the cap we drop the oldest (last in array) entries.

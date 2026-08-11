@@ -93,6 +93,22 @@ function ToastItem({ toast, onDismiss }: ItemProps) {
       </span>
       <div className={styles.body}>
         <p className={styles.message}>{toast.message}</p>
+        {toast.action && (
+          <button
+            type="button"
+            className={styles.actionBtn}
+            onClick={() => {
+              clearTimer();
+              try {
+                toast.action!.onRun();
+              } finally {
+                setExiting(true);
+              }
+            }}
+          >
+            {toast.action.label}
+          </button>
+        )}
       </div>
       <button
         className={styles.close}

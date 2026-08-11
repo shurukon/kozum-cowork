@@ -127,3 +127,50 @@
   font-family: var(--font-mono);
   color: var(--accent-primary);
 }
+
+/* ── Danger styling for the bypass option ──────────────────────────────── */
+
+.triggerDanger {
+  color: var(--error);
+}
+
+.optionDanger .label {
+  color: var(--error);
+}
+
+.optionArmed {
+  background: var(--error-soft);
+  border: 1px solid var(--error);
+  animation: bypassPulse 1s var(--ease-in-out) infinite;
+}
+
+.optionArmed .desc {
+  color: var(--error);
+  font-weight: var(--fw-medium);
+}
+
+.optionArmed .badge {
+  background: var(--error);
+  border-color: var(--error);
+  color: #fff;
+}
+
+@keyframes bypassPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
+  }
+}
+
+[data-motion="reduced"] .optionArmed {
+  animation: none;
+}
+
+.footerHint {
+  margin: var(--sp-2) var(--sp-4) var(--sp-3);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  line-height: var(--lh-snug);
+}

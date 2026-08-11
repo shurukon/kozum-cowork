@@ -23,3 +23,12 @@ export function resolveDir(language: string | undefined | null): Direction {
   const primary = language.toLowerCase().split(/[-_]/)[0] ?? "";
   return RTL_LANGUAGES.has(primary) ? "rtl" : "ltr";
 }
+
+export interface LanguageOption {
+  value: "en" | "ar";
+  label: string;
+}
+export const LANGUAGE_OPTIONS: readonly LanguageOption[] = [
+  { value: "en", label: "English" },
+  { value: "ar", label: "العربية" },
+] as const;

@@ -65,6 +65,10 @@ export interface SidebarProps {
   onSelectRecent: (id: string) => void;
   /** ConversationMenu callbacks — wired by App to bridge.sessions.* */
   conversationCallbacks: ConversationCallbacks;
+  /** Session id of the currently-active conversation, used to highlight its row. */
+  activeSessionId?: string | null;
+  /** Session ids whose agent loop is currently running, used for the pulse. */
+  runningSessionIds?: ReadonlySet<string>;
 }
 
 // ── Nav definitions ────────────────────────────────────────────────────────
@@ -87,9 +91,13 @@ interface RecentRowProps {
   item: RecentItem;
   onSelect: () => void;
   callbacks: ConversationCallbacks;
+  /** True when this row is the active conversation. */
+  isActive?: boolean;
+  /** True when this row's agent loop is currently running. */
+  isRunning?: boolean;
 }
 
-function RecentRow({ item, onSelect, callbacks }: RecentRowProps) {
+function RecentRow({ item, onSelect, callbacks, isActive, isRunning }: RecentRowProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const rowRef = useRef<HTMLLIElement>(null);
 
@@ -107,13 +115,20 @@ function RecentRow({ item, onSelect, callbacks }: RecentRowProps) {
   }, [menuOpen]);
 
   return (
-    <li ref={rowRef} className={styles.recentRow}>
+    <li
+      ref={rowRef}
+      className={`${styles.recentRow} ${isActive ? styles.recentRowActive : ""} ${isRunning ? styles.recentRowRunning : ""}`}
+    >
       <button
         className={styles.recent}
         title={item.title}
         onClick={onSelect}
+        aria-current={isActive ? "true" : undefined}
       >
-        <span className={styles.dot} aria-hidden />
+        <span
+          className={`${styles.dot} ${isRunning ? styles.dotRunning : ""} ${isActive ? styles.dotActive : ""}`}
+          aria-hidden
+        />
         <span className="kz-truncate">{item.title}</span>
       </button>
 
@@ -158,6 +173,8 @@ export function Sidebar({
   onAccountClick,
   onSelectRecent,
   conversationCallbacks,
+  activeSessionId,
+  runningSessionIds,
 }: SidebarProps) {
   const nav = mode === "cowork" ? COWORK_NAV : CODE_NAV;
   const [filterQuery, setFilterQuery] = useState("");
@@ -245,6 +262,8 @@ export function Sidebar({
                   item={r}
                   onSelect={() => onSelectRecent(r.id)}
                   callbacks={conversationCallbacks}
+                  isActive={activeSessionId === r.id}
+                  isRunning={Boolean(runningSessionIds?.has(r.id))}
                 />
               ))}
             </ul>

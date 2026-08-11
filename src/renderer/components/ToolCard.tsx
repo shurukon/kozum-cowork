@@ -16,6 +16,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import type { PreviewTarget } from "./PreviewPanel.tsx";
 import {
   ChevronDown,
@@ -171,6 +172,114 @@ function FileChips({ files, onOpenFile }: FileChipsProps) {
   );
 }
 
+// ── Tool input viewer (F-4) ─────────────────────────────────────────────────
+
+/**
+ * F-4: a compact viewer for the tool's input payload. Hides empty/null/undefined
+ * values, special-cases "command" (terminal-styled) and renders everything else
+ * as either a flat key/value list or a JSON fallback.
+ */
+function hasInput(input: unknown): boolean {
+  if (input === null || input === undefined) return false;
+  if (typeof input !== "object") return false;
+  const rec = input as Record<string, unknown>;
+  const keys = Object.keys(rec);
+  if (keys.length === 0) return false;
+  return keys.some((k) => {
+    const v = rec[k];
+    if (v === null || v === undefined) return false;
+    if (typeof v === "string") return v.length > 0;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === "object") return Object.keys(v as Record<string, unknown>).length > 0;
+    return true;
+  });
+}
+
+function formatInput(input: unknown, _toolName: string): {
+  command?: string;
+  kv: Array<{ key: string; value: string }>;
+  json?: string;
+} {
+  if (input === null || input === undefined || typeof input !== "object") {
+    return { kv: [] };
+  }
+  const rec = input as Record<string, unknown>;
+  const entries = Object.entries(rec).filter(([, v]) => {
+    if (v === null || v === undefined) return false;
+    if (typeof v === "string") return v.length > 0;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === "object") return Object.keys(v as Record<string, unknown>).length > 0;
+    return true;
+  });
+
+  const commandEntry = entries.find(([k]) => k === "command" || k === "cmd");
+  const command =
+    commandEntry && typeof commandEntry[1] === "string" ? commandEntry[1] : undefined;
+
+  const kv: Array<{ key: string; value: string }> = [];
+  let json: string | undefined;
+  for (const [k, v] of entries) {
+    if (k === commandEntry?.[0]) continue;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+      kv.push({ key: k, value: String(v) });
+    } else {
+      try {
+        kv.push({ key: k, value: JSON.stringify(v) });
+      } catch {
+        kv.push({ key: k, value: String(v) });
+      }
+    }
+  }
+
+  // If a single non-string field dominates, fall back to pretty JSON.
+  const nonScalarCount = entries.filter(([, v]) => typeof v === "object").length;
+  if (nonScalarCount >= 2) {
+    try {
+      json = JSON.stringify(input, null, 2);
+    } catch {
+      /* keep empty */
+    }
+  }
+
+  return { command, kv, json };
+}
+
+interface ToolInputViewProps {
+  input: unknown;
+  toolName: string;
+}
+
+function ToolInputView({ input, toolName }: ToolInputViewProps): React.ReactNode {
+  const { t } = useTranslation();
+  if (!hasInput(input)) return null;
+  const { command, kv, json } = formatInput(input, toolName);
+  return (
+    <div className={styles.inputView} aria-label="Tool input">
+      <div className={styles.inputHeader}>
+        <span className={styles.inputLabel}>{t("toolCard.input")}</span>
+        <span className={styles.inputToolName}>{toolName}</span>
+      </div>
+      {command && (
+        <pre className={styles.inputCmd}>
+          <span className={styles.terminalPrompt} aria-hidden={true}>$</span>
+          {command}
+        </pre>
+      )}
+      {kv.length > 0 && (
+        <dl className={styles.inputKv}>
+          {kv.map(({ key, value }) => (
+            <div key={key} className={styles.inputKvRow}>
+              <dt className={styles.inputKvKey}>{key}</dt>
+              <dd className={styles.inputKvVal}>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {json && <pre className={styles.inputJson}>{json}</pre>}
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export interface ToolCardProps {
@@ -188,6 +297,7 @@ export interface ToolCardProps {
 const MAX_THUMBNAILS = 12;
 
 export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPreview }: ToolCardProps) {
+  const { t } = useTranslation();
   // P1-4: running cards default expanded; error cards stay expanded; ok cards
   // collapse once the reducer marks `autoCollapse` at turn_end. The user can
   // still re-expand manually — `expanded` is uncontrolled from then on.
@@ -217,7 +327,8 @@ export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPrev
       display?.files?.length ||
       display?.terminal ||
       card.result?.images?.length ||
-      card.result?.error,
+      card.result?.error ||
+      hasInput(card.input),
   );
 
   // Build the className set for the card.
@@ -267,14 +378,14 @@ export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPrev
           {isRunning && (
             <span
               className={`${styles.spinner} kz-spin`}
-              aria-label="Running"
+              aria-label={t("toolCard.running")}
             />
           )}
           {isOk && (
-            <CheckCircle size={14} className={styles.ok} aria-label="Done" />
+            <CheckCircle size={14} className={styles.ok} aria-label={t("toolCard.done")} />
           )}
           {isError && (
-            <XCircle size={14} className={styles.error} aria-label="Error" />
+            <XCircle size={14} className={styles.error} aria-label={t("toolCard.error")} />
           )}
         </span>
 
@@ -303,6 +414,7 @@ export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPrev
 
       {expanded && hasDetail && (
         <div className={styles.detail}>
+          <ToolInputView input={card.input} toolName={card.name} />
           {display?.terminal && <TerminalView terminal={display.terminal} />}
           {display?.diff && <DiffView diff={display.diff} />}
           {display?.files && display.files.length > 0 && (

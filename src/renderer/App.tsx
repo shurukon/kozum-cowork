@@ -11,7 +11,7 @@
  * tabs is a view change and never interrupts a running turn.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   ApiKeyEntry,
@@ -33,6 +33,7 @@ import type { AddMenuKind } from "./components/AddMenu.tsx";
 import type { PreviewTarget } from "./components/PreviewPanel.tsx";
 import type { NavKey } from "./components/Sidebar.tsx";
 import type { ScheduleDialogPrefill } from "./components/ScheduleDialog.tsx";
+import type { PaletteCommand } from "./components/CommandPalette.tsx";
 import { TitleBar } from "./components/TitleBar.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { HomeView } from "./components/HomeView.tsx";
@@ -50,6 +51,10 @@ import { ToastRegion } from "./components/Toast.tsx";
 import { ScheduleDialog } from "./components/ScheduleDialog.tsx";
 import { ConnectorDialog } from "./components/ConnectorDialog.tsx";
 import { PluginDialog } from "./components/PluginDialog.tsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
+import { TranscriptSkeleton } from "./components/TranscriptSkeleton.tsx";
+import { CommandPalette } from "./components/CommandPalette.tsx";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts.ts";
 import { useSessionStore } from "./store/session.ts";
 import { useTheme } from "./hooks/useTheme.ts";
 import { useDir } from "./hooks/useDir.ts";
@@ -92,11 +97,19 @@ export function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
 
+  // TranscriptSkeleton shows while the active session's history is loading.
+  const [loadingSession, setLoadingSession] = useState(false);
+
+  // Command palette open state (Cmd+K).
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
   // Dialog open state
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [schedulePrefill, setSchedulePrefill] = useState<ScheduleDialogPrefill | undefined>(
     undefined,
   );
+  const [scheduleEditId, setScheduleEditId] = useState<string | undefined>(undefined);
+  const [scheduleEditInitial, setScheduleEditInitial] = useState<ScheduledTask | undefined>(undefined);
   const [connectorDialogOpen, setConnectorDialogOpen] = useState(false);
   const [pluginDialogOpen, setPluginDialogOpen] = useState(false);
 
@@ -125,25 +138,57 @@ export function App() {
   useEffect(() => {
     if (!activeSessionId) {
       clearMode(mode);
+      setLoadingSession(false);
       return;
     }
     let cancelled = false;
+    setLoadingSession(true);
     void (async () => {
       try {
         const msgs = await bridge().sessions.messages(activeSessionId);
-        if (!cancelled) {
-          if (msgs.length > 0) {
-            setSessionMessages(mode, msgs);
+        if (cancelled) return;
+        if (msgs.length > 0) {
+          setSessionMessages(mode, msgs);
+        }
+
+        // INT-3: reattach to any in-flight run for this session and replay its
+        // persisted events through applyEvent so a refresh-interrupted turn is
+        // reconstructed in the UI. Also re-hydrate the task list from the
+        // backend so the RightPanel doesn't show a stale "no tasks" state.
+        try {
+          const replay = await bridge().sessions.reattach(activeSessionId);
+          if (!cancelled && replay.events.length > 0) {
+            for (const ev of replay.events) {
+              applyEvent(ev);
+            }
           }
+        } catch {
+          /* reattach best-effort — sessions may have no persisted runs */
+        }
+
+        try {
+          const tasks = await bridge().sessions.tasks(activeSessionId);
+          if (!cancelled && tasks.length > 0) {
+            applyEvent({
+              type: "task_update",
+              mode,
+              sessionId: activeSessionId,
+              tasks,
+            });
+          }
+        } catch {
+          /* tasks best-effort */
         }
       } catch {
         /* keep optimistic messages */
+      } finally {
+        if (!cancelled) setLoadingSession(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, mode, clearMode, setSessionMessages]);
+  }, [activeSessionId, mode, clearMode, setSessionMessages, applyEvent]);
 
   /* ------------------------------------------------------------ loading -- */
 
@@ -233,6 +278,15 @@ export function App() {
           setScheduled(await b.schedule.list());
         } catch {
           /* scheduler may be disabled */
+        }
+
+        // INT-3: fetch the projects list at startup so Projects nav shows real
+        // data on first render. The store may not be initialised in some test
+        // environments, so swallow the error.
+        try {
+          setProjects(await b.projects.list());
+        } catch {
+          /* projects store may not be initialised */
         }
       } catch (e) {
         // If the bridge itself is missing the app is unusable — say so loudly
@@ -423,16 +477,41 @@ export function App() {
     const sid = await ensureSession();
     if (!sid) return;
 
+    // BUG-4 fix: attachments were dropped on the floor — the previous call
+    // passed only `text` to the backend, so the agent never saw the files the
+    // user had attached. We now both annotate the prompt with a
+    // human-readable file list (so the model can reference them) and forward
+    // the array as the third arg so the backend can register them as
+    // context-tracking attachments.
+    const attachedFiles = sharedFiles.length > 0 ? sharedFiles : undefined;
+    let finalText = text;
+    if (attachedFiles) {
+      finalText = `${text}\n\n[Attached files]\n${attachedFiles.map((f) => `- ${f}`).join("\n")}`;
+    }
+
     // Render the user's turn immediately; the backend echoes it back on reload.
     addUserMessage(mode, {
       id: `local-${Date.now()}`,
       role: "user",
-      content: [{ type: "text", text }],
+      content: [{ type: "text", text: finalText }],
       createdAt: Date.now(),
     });
 
-    const res = await bridge().sessions.send(sid, text);
-    if (!res.ok) setBanner(res.error);
+    const res = await bridge().sessions.send(sid, finalText, attachedFiles);
+    if (res.ok) {
+      // Clear attachments only after the backend accepted the send, so a
+      // failed send doesn't silently throw away the user's file list.
+      if (attachedFiles) setSharedFiles([]);
+    } else {
+      // Send-failure toast with a Retry action so the user can resend the
+      // exact same text without retyping it.
+      pushToast("error", res.error, {
+        label: "Retry",
+        onRun: () => {
+          void handleSubmit(text);
+        },
+      });
+    }
   }
 
   async function handleCancel() {
@@ -753,6 +832,17 @@ export function App() {
   // Derive the tools used from active modeState toolCards
   const toolsUsed = Array.from(modeState.toolCards.values()).map((tc) => tc.name);
 
+  // Build the set of currently-running session ids for the sidebar's running
+  // indicator. We only know about the active mode's loop directly; the other
+  // mode may also be running, but we don't poll its state from here.
+  const runningSessionIds = useMemo<ReadonlySet<string>>(() => {
+    const s = new Set<string>();
+    if (modeState.status === "running" && activeSessionId) {
+      s.add(activeSessionId);
+    }
+    return s;
+  }, [modeState.status, activeSessionId]);
+
   // Current session's working folder (or mode default)
   const sessionWorkingFolder = settings?.general.defaultFolders[mode] ?? null;
 
@@ -762,6 +852,63 @@ export function App() {
     keyId: null,
     modelId: "",
   };
+
+  // Command palette: build the command list once per render. Memoizing would
+  // require stable callback identities; the list is small enough that this is
+  // not a concern.
+  const paletteCommands: PaletteCommand[] = [
+    { id: "nav.new", label: "New session", hint: "⌘N", group: "Navigation", run: () => handleNavKey("new") },
+    { id: "nav.projects", label: "Open Projects", group: "Navigation", run: () => handleNavKey("projects") },
+    { id: "nav.scheduled", label: "Open Scheduled tasks", group: "Navigation", run: () => handleNavKey("scheduled") },
+    { id: "nav.customize", label: "Customize (Skills)", group: "Navigation", run: () => handleNavKey("customize") },
+    { id: "app.settings", label: "Open Settings", hint: "⌘,", group: "App", run: () => openSettings() },
+    {
+      id: "app.toggleSidebar",
+      label: sidebarOpen ? "Hide sidebar" : "Show sidebar",
+      hint: "⌘B",
+      group: "App",
+      run: () => setSidebarOpen((v) => !v),
+    },
+    {
+      id: "mode.cowork",
+      label: "Switch to Cowork mode",
+      group: "Mode",
+      run: () => switchMode("cowork"),
+    },
+    {
+      id: "mode.code",
+      label: "Switch to Code mode",
+      group: "Mode",
+      run: () => switchMode("code"),
+    },
+  ];
+
+  useKeyboardShortcuts({
+    onOpenPalette: () => setPaletteOpen(true),
+    onNewSession: () => handleNavKey("new"),
+    onToggleSidebar: () => setSidebarOpen((v) => !v),
+    onOpenSettings: () => openSettings(),
+    onCloseOverlay: () => {
+      // Close whatever happens to be open — palette first, then dialogs.
+      setPaletteOpen((v) => {
+        if (v) return false;
+        return v;
+      });
+      if (scheduleDialogOpen) {
+        setScheduleDialogOpen(false);
+        return;
+      }
+      if (connectorDialogOpen) {
+        setConnectorDialogOpen(false);
+        return;
+      }
+      if (pluginDialogOpen) {
+        setPluginDialogOpen(false);
+        return;
+      }
+      if (settingsOpen) setSettingsOpen(false);
+    },
+  });
 
   // PermissionPicker for Code mode
   const codePermissionPicker = settings ? (
@@ -819,6 +966,8 @@ export function App() {
               onArchive: (id) => void handleConversationArchive(id),
               onDelete: (id) => void handleConversationDelete(id),
             }}
+            activeSessionId={activeSessionId}
+            runningSessionIds={runningSessionIds}
           />
         )}
 
@@ -838,23 +987,29 @@ export function App() {
               />
             ) : inSession ? (
               <div className={styles.sessionWrap}>
-                <ChatView
-                  mode={mode}
-                  sessionId={activeSessionId!}
-                  onSend={(t) => void handleSubmit(t)}
-                  onCancel={() => void handleCancel()}
-                  onAttach={(kind) => void handleAttach(kind)}
-                  selection={currentSelection}
-                  presets={presets}
-                  keysByProvider={keys}
-                  modelsByProvider={modelsByProvider}
-                  onSelectionChange={(next) => void handleSelectionChange(next)}
-                  onRefreshModels={(pid) => handleRefreshModels(pid)}
-                  permissionSlot={mode === "code" ? codePermissionPicker : undefined}
-                  onOpenFile={(path) => setPreviewTarget({ kind: "file", path })}
-                  onReply={(requestId, answer) => void handleReply(requestId, answer)}
-                  onResolveQuestion={(requestId) => handleResolveQuestion(requestId)}
-                />
+                <ErrorBoundary label="chat view">
+                  {loadingSession ? (
+                    <TranscriptSkeleton rows={4} />
+                  ) : (
+                    <ChatView
+                      mode={mode}
+                      sessionId={activeSessionId!}
+                      onSend={(t) => void handleSubmit(t)}
+                      onCancel={() => void handleCancel()}
+                      onAttach={(kind) => void handleAttach(kind)}
+                      selection={currentSelection}
+                      presets={presets}
+                      keysByProvider={keys}
+                      modelsByProvider={modelsByProvider}
+                      onSelectionChange={(next) => void handleSelectionChange(next)}
+                      onRefreshModels={(pid) => handleRefreshModels(pid)}
+                      permissionSlot={mode === "code" ? codePermissionPicker : undefined}
+                      onOpenFile={(path) => setPreviewTarget({ kind: "file", path })}
+                      onReply={(requestId, answer) => void handleReply(requestId, answer)}
+                      onResolveQuestion={(requestId) => handleResolveQuestion(requestId)}
+                    />
+                  )}
+                </ErrorBoundary>
               </div>
             ) : mode === "code" ? (
               <CodeHome
@@ -907,6 +1062,26 @@ export function App() {
                   dayOfWeek: 5,
                 })
               }
+              onEdit={(task) => openScheduleDialog(undefined, task)}
+              onDelete={async (id) => {
+                const res = await bridge().schedule.remove(id);
+                if (!res.ok) setBanner(res.error);
+                setScheduled(await bridge().schedule.list());
+              }}
+              onRunNow={async (id) => {
+                const res = await bridge().schedule.runNow(id);
+                if (!res.ok) setBanner(res.error);
+                else pushToast("info", "Task triggered.");
+                setScheduled(await bridge().schedule.list());
+              }}
+              onPause={async (id) => {
+                await bridge().schedule.update(id, { enabled: false });
+                setScheduled(await bridge().schedule.list());
+              }}
+              onResume={async (id) => {
+                await bridge().schedule.update(id, { enabled: true });
+                setScheduled(await bridge().schedule.list());
+              }}
             />
           )}
 
@@ -917,6 +1092,16 @@ export function App() {
               onOpen={(id) => {
                 const p = projects.find((x) => x.id === id);
                 if (p) pushToast("info", `Opened project ${p.name}`);
+              }}
+              onArchive={async (id) => {
+                const res = await bridge().projects.archive(id);
+                if (!res.ok) setBanner(res.error);
+                setProjects(await bridge().projects.list());
+              }}
+              onDelete={async (id) => {
+                const res = await bridge().projects.remove(id);
+                if (!res.ok) setBanner(res.error);
+                setProjects(await bridge().projects.list());
               }}
             />
           )}
@@ -976,6 +1161,22 @@ export function App() {
           }
           onAddConnector={() => setConnectorDialogOpen(true)}
           onAddPlugin={() => setPluginDialogOpen(true)}
+          onRemoveConnector={async (id) => {
+            const res = await bridge().mcp.remove(id);
+            if (!res.ok) setBanner(res.error);
+            await reloadExtensions();
+          }}
+          onRemovePlugin={async (id) => {
+            const res = await bridge().plugins.remove(id);
+            if (!res.ok) setBanner(res.error);
+            await reloadExtensions();
+          }}
+          onInspectConnector={(id) =>
+            pushToast("info", `Connector: ${connectors.find((c) => c.id === id)?.name ?? id}`)
+          }
+          onInspectPlugin={(id) =>
+            pushToast("info", `Plugin: ${plugins.find((p) => p.id === id)?.name ?? id}`)
+          }
           onPickFolder={(m) => void handlePickFolder(m)}
           onClose={() => setSettingsOpen(false)}
           initialPane={settingsInitialPane}
@@ -985,12 +1186,30 @@ export function App() {
       {scheduleDialogOpen && (
         <ScheduleDialog
           prefill={schedulePrefill}
+          editId={scheduleEditId}
+          projects={projects}
+          initialMode={scheduleEditInitial?.mode}
+          initialProjectId={scheduleEditInitial?.projectId ?? null}
+          initialWorkingFolder={scheduleEditInitial?.workingFolder ?? null}
           onSave={(task) => {
             setScheduleDialogOpen(false);
-            setScheduled((prev) => [...prev, task]);
-            pushToast("success", `Scheduled task "${task.name}" created.`);
+            void (async () => {
+              setScheduled(await bridge().schedule.list());
+              pushToast(
+                "success",
+                scheduleEditId
+                  ? `Scheduled task "${task.name}" updated.`
+                  : `Scheduled task "${task.name}" created.`,
+              );
+              setScheduleEditId(undefined);
+              setScheduleEditInitial(undefined);
+            })();
           }}
-          onClose={() => setScheduleDialogOpen(false)}
+          onClose={() => {
+            setScheduleDialogOpen(false);
+            setScheduleEditId(undefined);
+            setScheduleEditInitial(undefined);
+          }}
         />
       )}
 
@@ -1021,6 +1240,12 @@ export function App() {
           onClose={() => setPluginDialogOpen(false)}
         />
       )}
+
+      <CommandPalette
+        open={paletteOpen}
+        commands={paletteCommands}
+        onClose={() => setPaletteOpen(false)}
+      />
     </div>
   );
 
@@ -1047,8 +1272,19 @@ export function App() {
     setProjects(await bridge().projects.list());
   }
 
-  function openScheduleDialog(prefill?: ScheduleDialogPrefill) {
+  function openScheduleDialog(prefill?: ScheduleDialogPrefill, editTask?: ScheduledTask) {
     setSchedulePrefill(prefill);
+    if (editTask) {
+      setScheduleEditId(editTask.id);
+      setScheduleEditInitial(editTask);
+      setSchedulePrefill({
+        name: editTask.name,
+        prompt: editTask.prompt,
+      });
+    } else {
+      setScheduleEditId(undefined);
+      setScheduleEditInitial(undefined);
+    }
     setScheduleDialogOpen(true);
   }
 }

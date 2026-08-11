@@ -157,6 +157,7 @@ const api = {
     ): Promise<Result<ScheduledTask>> =>
       ipcRenderer.invoke("schedule:update", id, patch),
     remove: (id: string): Promise<Result<void>> => ipcRenderer.invoke("schedule:remove", id),
+    runNow: (id: string): Promise<Result<void>> => ipcRenderer.invoke("schedule:runNow", id),
   },
 
   mcp: {
@@ -178,12 +179,19 @@ const api = {
     remove: (id: string): Promise<Result<void>> => ipcRenderer.invoke("plugins:remove", id),
     installFromUrl: (url: string): Promise<Result<Plugin>> =>
       ipcRenderer.invoke("plugins:installFromUrl", url),
+    installFromZip: (path: string): Promise<Result<Plugin>> =>
+      ipcRenderer.invoke("plugins:installFromZip", path),
   },
 
   skills: {
     list: (): Promise<Skill[]> => ipcRenderer.invoke("skills:list"),
     setEnabled: (id: string, enabled: boolean): Promise<Result<void>> =>
       ipcRenderer.invoke("skills:setEnabled", id, enabled),
+  },
+
+  subagents: {
+    cancel: (runId: string): Promise<Result<void>> =>
+      ipcRenderer.invoke("subagents:cancel", runId),
   },
 
   dialog: {

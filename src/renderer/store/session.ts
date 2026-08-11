@@ -8,8 +8,18 @@
  */
 
 import { create } from "zustand";
-import type { Mode, Message, AgentEvent } from "@shared/types.ts";
-import type { ModeState } from "./sessionTypes.ts";
+import type {
+  Mode,
+  Message,
+  AgentEvent,
+  ToolResult,
+  ContentBlock,
+  ToolUseBlock,
+  ToolResultBlock,
+  TextBlock,
+  ImageBlock,
+} from "@shared/types.ts";
+import type { ModeState, ToolCard } from "./sessionTypes.ts";
 import { applyEventToMode, emptyModeState } from "./sessionReducer.ts";
 
 // Re-export for consumers who import from session.ts.
@@ -82,6 +92,75 @@ export function resolveTargetMode(
 
 // ── Store ─────────────────────────────────────────────────────────────────
 
+/**
+ * Rebuild a `toolCards` map from persisted messages.
+ *
+ * BUG-3 fix: when a session is reloaded from disk the renderer previously
+ * dropped every ToolCard by resetting the map to `new Map()`. That wiped the
+ * whole tool-call transcript on reload — cards only existed in live event
+ * state. This pure helper walks the persisted `Message[]` and reconstructs a
+ * card per `tool_use` block (status "running") then patches in the matching
+ * `tool_result` (status "ok"|"error") from the next user message.
+ *
+ * The reconstructed `ToolResult` is intentionally minimal — it only carries
+ * what the transcript card UI needs (ok flag, text content, any images). The
+ * full `display` payload is not persisted, so we don't try to fake one.
+ */
+export function reconstructToolCards(messages: Message[]): Map<string, ToolCard> {
+  const cards = new Map<string, ToolCard>();
+
+  // First pass: create a card per tool_use block in assistant messages.
+  for (const msg of messages) {
+    if (msg.role !== "assistant") continue;
+    for (const block of msg.content as ContentBlock[]) {
+      if (block.type !== "tool_use") continue;
+      const tu = block as ToolUseBlock;
+      cards.set(tu.id, {
+        toolUseId: tu.id,
+        name: tu.name,
+        input: tu.input,
+        status: "running",
+        notes: [],
+        result: null,
+        autoCollapse: true,
+      });
+    }
+  }
+
+  // Second pass: match tool_result blocks in user messages to cards.
+  for (const msg of messages) {
+    if (msg.role !== "user") continue;
+    for (const block of msg.content as ContentBlock[]) {
+      if (block.type !== "tool_result") continue;
+      const tr = block as ToolResultBlock;
+      const card = cards.get(tr.toolUseId);
+      if (!card) continue;
+
+      const textParts: string[] = [];
+      const images: Array<{ mimeType: string; data: string }> = [];
+      for (const part of tr.content) {
+        if (part.type === "text") {
+          textParts.push((part as TextBlock).text);
+        } else if (part.type === "image") {
+          const im = part as ImageBlock;
+          images.push({ mimeType: im.mimeType, data: im.data });
+        }
+      }
+
+      const result: ToolResult = {
+        ok: !tr.isError,
+        content: textParts.join("\n"),
+      };
+      if (images.length > 0) result.images = images;
+
+      card.status = tr.isError ? "error" : "ok";
+      card.result = result;
+    }
+  }
+
+  return cards;
+}
+
 export const useSessionStore = create<SessionStore>((set, get) => ({
   cowork: emptyModeState(),
   code: emptyModeState(),
@@ -117,7 +196,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         streamingMessageId: null,
         streamingText: "",
         streamingThinking: "",
-        toolCards: new Map(),
+        toolCards: reconstructToolCards(messages),
         error: null,
         // Pending question/permission arrays are UI-only state; once messages
         // are replaced from the backend there is nothing live to answer, so

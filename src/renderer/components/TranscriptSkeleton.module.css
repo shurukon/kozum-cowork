@@ -1,0 +1,94 @@
+.host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+  padding: var(--sp-6) var(--sp-4);
+  width: 100%;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.userBubble {
+  align-self: flex-end;
+  max-width: 60%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl) var(--r-xl) var(--r-xs) var(--r-xl);
+}
+
+.assistantBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-4);
+}
+
+.line {
+  height: 10px;
+  border-radius: var(--r-xs);
+  background: var(--bg-elevated);
+  position: relative;
+  overflow: hidden;
+}
+
+.lineUser {
+  width: 100%;
+}
+
+.lineAssistant {
+  width: 100%;
+}
+
+.short {
+  width: 55%;
+}
+
+.toolCard {
+  height: 28px;
+  width: 60%;
+  border-radius: var(--r-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Shimmer sweep — a translucent highlight that travels left-to-right. */
+.line::after,
+.toolCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(122, 162, 255, 0.18) 50%,
+    transparent 100%
+  );
+  animation: skeletonShimmer 1.4s var(--ease-in-out) infinite;
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Reduced motion: static translucent surface, no shimmer. */
+[data-motion="reduced"] .line::after,
+[data-motion="reduced"] .toolCard::after {
+  animation: none;
+  display: none;
+}

@@ -96,29 +96,35 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--sp-4);
 }
 
 .card {
   display: flex;
-  align-items: center;
-  gap: var(--sp-5);
-  padding: var(--sp-5) var(--sp-6);
+  flex-direction: column;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--r-xl);
-  text-align: start;
-  width: 100%;
+  overflow: hidden;
   transition: background var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-spring);
+    border-color var(--dur-fast) var(--ease-out);
 }
 
 .card:hover {
   background: var(--bg-hover);
   border-color: var(--border-strong);
-  transform: translateY(-1px);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-5);
+  padding: var(--sp-5) var(--sp-6);
+  text-align: start;
+  width: 100%;
+  background: transparent;
+  cursor: pointer;
 }
 
 .cardIcon {
@@ -161,6 +167,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.cardDates {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  margin-top: 2px;
 }
 
 .cardMode {
@@ -172,4 +185,42 @@
   background: var(--accent-softer);
   color: var(--accent-secondary);
   text-transform: capitalize;
+}
+
+.archivedBadge {
+  flex: 0 0 auto;
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  padding: 2px var(--sp-3);
+  border-radius: var(--r-full);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
+.cardActions {
+  display: flex;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4) var(--sp-3);
+  justify-content: flex-end;
+}
+
+.cardActionBtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-xs);
+  color: var(--text-muted);
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.cardActionBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.cardActionDanger:hover {
+  background: var(--error-soft);
+  color: var(--error);
 }

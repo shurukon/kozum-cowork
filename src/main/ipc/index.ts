@@ -29,6 +29,7 @@ import type { TaskPatch } from "../schedule/scheduler.ts";
 import type { ProjectStore } from "../store/projects.ts";
 import type { UpdateProjectPatch, CreateProjectInput } from "../store/projects.ts";
 import type { BrowserSurface, SurfaceRect } from "../browser/surface.ts";
+import type { SubagentManager } from "../agent/subagents.ts";
 
 /* ---------------------------------------------------------------- dialog facade --- */
 
@@ -65,6 +66,8 @@ export interface IpcDeps {
   sessionModes?: Map<string, Mode>;
   /** Visible browser surface for live browser preview (BP-A). */
   browserSurface?: BrowserSurface;
+  /** Subagent manager — used for the subagents:cancel IPC (§10.3). */
+  subagents?: SubagentManager;
   /** Returns the ElectronBrowserBackend's WebContentsView for attachment, or null. */
   getBrowserView?: () =>
     | {
@@ -347,6 +350,13 @@ export function registerIpc(deps: IpcDeps): void {
     return deps.tasks.list(String(sessionId));
   });
 
+  handle(ipcMain, "subagents:cancel", async (_e, runId) => {
+    if (!deps.subagents) return err("subagent manager not configured");
+    const cancelled = deps.subagents.cancel(String(runId));
+    if (!cancelled) return err(`Subagent "${String(runId)}" not running`);
+    return ok(undefined);
+  });
+
   /* ---------------------------------------------------------- schedule --- */
 
   handle(ipcMain, "schedule:list", async () => {
@@ -377,6 +387,16 @@ export function registerIpc(deps: IpcDeps): void {
     const removed = deps.scheduler.remove(String(id));
     if (!removed) return err(`Scheduled task "${String(id)}" not found`);
     return ok(undefined);
+  });
+
+  handle(ipcMain, "schedule:runNow", async (_e, id) => {
+    try {
+      await deps.scheduler.runNow(String(id));
+      return ok(undefined);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return err(msg);
+    }
   });
 
   /* -------------------------------------------------------------- mcp --- */
@@ -457,6 +477,34 @@ export function registerIpc(deps: IpcDeps): void {
   handle(ipcMain, "plugins:installFromUrl", async (_e, url) => {
     const plugin = await deps.plugins.installFromGitHub(String(url));
     return ok(plugin);
+  });
+
+  handle(ipcMain, "plugins:installFromZip", async (_e, rawPath) => {
+    // BUG-5 fix: the renderer's "Install from .zip" tab used to call the URL
+    // handler with a local file path, which then tried to fetch it as a
+    // GitHub URL and broke. This dedicated handler resolves the local path
+    // (same rules as preview:readFile) and hands the buffer to the plugin
+    // manager's installFromZip.
+    const path = String(rawPath ?? "");
+    if (!path) return err("path is required");
+    if (!path.toLowerCase().endsWith(".zip")) {
+      return err("path must point to a .zip file");
+    }
+
+    const resolved = await resolvePath(path, { workingFolder: null }).catch((e: unknown) => {
+      if (e instanceof PathError) return e;
+      throw e;
+    });
+    if (resolved instanceof PathError) return err(resolved.message);
+
+    try {
+      const buf = await readFile(resolved);
+      const plugin = await deps.plugins.installFromZip(buf, resolved);
+      return ok(plugin);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return err(msg);
+    }
   });
 
   /* ---------------------------------------------------------- projects --- */

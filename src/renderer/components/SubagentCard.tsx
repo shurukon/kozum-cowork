@@ -11,8 +11,10 @@
  */
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { SubagentView } from "../store/sessionTypes.ts";
+import { bridge } from "../bridge.ts";
 import styles from "./SubagentCard.module.css";
 
 export interface SubagentCardProps {
@@ -30,10 +32,28 @@ function relativeTime(startedAt: number, endedAt?: number): string {
 }
 
 export function SubagentCard({ view }: SubagentCardProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const isRunning = view.status === "running";
   const progressPct = Math.round((view.progress ?? 0) * 100);
   const recentNotes = view.emitHistory.slice(-3);
+
+  const statusLabel = isRunning
+    ? `${t("subagent.running")} · ${relativeTime(view.startedAt)}`
+    : view.status === "completed"
+      ? `${t("subagent.completed")} · ${relativeTime(view.startedAt, view.endedAt)}`
+      : view.status === "failed"
+        ? t("subagent.failed")
+        : t("subagent.cancelled");
+
+  async function handleCancel(e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      await bridge().subagents.cancel(view.id);
+    } catch {
+      /* best-effort; the card will update on the next subagent_end event */
+    }
+  }
 
   return (
     <div
@@ -50,20 +70,23 @@ export function SubagentCard({ view }: SubagentCardProps) {
           <span className={styles.dot} aria-hidden={true} />
         )}
         <span className={styles.name}>{view.name}</span>
-        <span className={styles.meta}>
-          {isRunning
-            ? `running · ${relativeTime(view.startedAt)}`
-            : view.status === "completed"
-              ? `Completed in ${relativeTime(view.startedAt, view.endedAt)}`
-              : view.status === "failed"
-                ? `Failed${view.error ? ` — ${view.error.slice(0, 40)}` : ""}`
-                : "Cancelled"}
-        </span>
+        <span className={styles.meta}>{statusLabel}</span>
+        {isRunning && (
+          <button
+            type="button"
+            className={styles.cancelBtn}
+            onClick={handleCancel}
+            aria-label={t("subagent.cancel")}
+            title={t("subagent.cancel")}
+          >
+            <X size={11} />
+          </button>
+        )}
         {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
       </button>
 
       {isRunning && (
-        <div className={styles.progress} aria-label="Subagent progress">
+        <div className={styles.progress} aria-label={t("subagent.progress")}>
           <div className={styles.progressBar} style={{ width: `${progressPct}%` }} />
         </div>
       )}

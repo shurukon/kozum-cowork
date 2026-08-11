@@ -10,6 +10,7 @@ import {
   toastReducer,
   TOAST_MAX_VISIBLE,
   type Toast,
+  type ToastActionButton,
   type ToastSeverity,
   type ToastState,
   type ToastAction,
@@ -20,6 +21,7 @@ export {
   toastReducer,
   TOAST_MAX_VISIBLE,
   type Toast,
+  type ToastActionButton,
   type ToastSeverity,
   type ToastState,
   type ToastAction,
@@ -29,22 +31,26 @@ export {
 
 export interface UseToastsReturn {
   toasts: Toast[];
-  push: (severity: ToastSeverity, message: string) => void;
+  push: (severity: ToastSeverity, message: string, action?: ToastActionButton) => void;
   dismiss: (id: string) => void;
 }
 
 export function useToasts(): UseToastsReturn {
   const [state, dispatch] = useReducer(toastReducer, { toasts: [] });
 
-  const push = useCallback((severity: ToastSeverity, message: string) => {
-    dispatch({
-      type: "push",
-      severity,
-      message,
-      id: `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      createdAt: Date.now(),
-    });
-  }, []);
+  const push = useCallback(
+    (severity: ToastSeverity, message: string, action?: ToastActionButton) => {
+      dispatch({
+        type: "push",
+        severity,
+        message,
+        id: `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        createdAt: Date.now(),
+        ...(action ? { action } : {}),
+      });
+    },
+    [],
+  );
 
   const dismiss = useCallback((id: string) => {
     dispatch({ type: "dismiss", id });

@@ -163,7 +163,7 @@ const modeState = useSessionStore((s) => s[mode]);
               key={msg.id}
               message={msg}
               isStreaming={streamingMessageId === msg.id}
-              toolCards={streamingMessageId === msg.id ? toolCards : new Map()}
+              toolCards={toolCards}
               onOpenFile={onOpenFile}
               onReply={onReply}
               onResolveQuestion={onResolveQuestion}

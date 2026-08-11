@@ -14,8 +14,15 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, FileText } from "lucide-react";
-import type { Message as MessageType, ContentBlock } from "@shared/types.ts";
+import { ChevronDown, ChevronRight, FileText, Zap, AlertTriangle, CircleStop } from "lucide-react";
+import type { ReactNode } from "react";
+import type {
+  Message as MessageType,
+  ContentBlock,
+  TokenUsage,
+  StopReason,
+} from "@shared/types.ts";
+import { useTranslation } from "react-i18next";
 import type { ToolCard as ToolCardType, PendingQuestion, PendingPermission } from "../store/session.ts";
 import { ToolCard } from "./ToolCard.tsx";
 import { QuestionFormView } from "./QuestionFormView.tsx";
@@ -31,6 +38,7 @@ interface ThinkingBlockProps {
 }
 
 function ThinkingBlock({ text, isStreaming }: ThinkingBlockProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const startRef = useRef<number>(Date.now());
   const [elapsed, setElapsed] = useState(0);
@@ -61,7 +69,7 @@ function ThinkingBlock({ text, isStreaming }: ThinkingBlockProps) {
             <span className="kz-orb-pulse" aria-hidden={true} />
             <span className="kz-think-orb" aria-hidden={true} />
          </span>
-          <span className={styles.thinkingLiveLabel}>Thinking…</span>
+          <span className={styles.thinkingLiveLabel}>{t("message.thinking")}</span>
         </div>
         {text.length > 0 && (
           <p className={styles.thinkingStream}>{text}</p>
@@ -71,7 +79,7 @@ function ThinkingBlock({ text, isStreaming }: ThinkingBlockProps) {
   }
 
   // Settled state: collapsible summary with glass treatment.
-  const summary = elapsed > 0 ? `Thought for ${elapsed}s` : "Thought";
+  const summary = elapsed > 0 ? t("message.thought", { seconds: elapsed }) : t("message.thinking");
   return (
     <div className={`${styles.thinking} kz-glass kz-glass-sweep`}>
       <button
@@ -121,6 +129,7 @@ export function Message({
   onReply,
   onResolveQuestion,
 }: Props) {
+  const { t } = useTranslation();
   // Track whether this is the very first mount so we can add kz-send-ack once.
   const isMountedRef = useRef(false);
   const [sendAck, setSendAck] = useState(false);
@@ -220,7 +229,7 @@ export function Message({
   return (
     <div className={`${styles.assistantRow} kz-anim-rise`}>
       {isSubagentMessage && (
-        <span className={styles.subagentBadge}>by subagent</span>
+        <span className={styles.subagentBadge}>{t("message.bySubagent")}</span>
       )}
       {thinkingBlocks.map((b, i) =>
         b.type === "thinking" ? (
@@ -305,6 +314,10 @@ export function Message({
         </div>
       )}
 
+      {!isStreaming && (message.usage || message.stopReason) && (
+        <TurnFooter usage={message.usage} stopReason={message.stopReason} model={message.model} />
+      )}
+
       {message.error && (
         <p className={styles.errorMsg}>{message.error}</p>
       )}
@@ -333,5 +346,73 @@ function PendingPermissionInline({
       onAllow={() => onReply?.(permission.requestId, ["yes"])}
       onDeny={() => onReply?.(permission.requestId, ["no"])}
     />
+  );
+}
+
+// ── TurnFooter ───────────────────────────────────────────────────────────────
+//
+// F-3: compact muted footer appended to a settled assistant turn. Shows the
+// input/output/cache token counts, the stop reason, and the model name.
+
+function formatTokens(n: number): string {
+  if (n >= 1000) {
+    const k = n / 1000;
+    return Number.isInteger(k) ? `${k}k` : `${k.toFixed(1)}k`;
+  }
+  return String(n);
+}
+
+const STOP_REASON_KEY: Record<StopReason, string> = {
+  end_turn: "message.stopCompleted",
+  tool_use: "message.stopToolCall",
+  max_tokens: "message.stopMaxTokens",
+  stop_sequence: "message.stopCompleted",
+  cancelled: "message.stopCancelled",
+  error: "message.stopErrored",
+};
+
+interface TurnFooterProps {
+  usage?: TokenUsage;
+  stopReason?: StopReason;
+  model?: string;
+}
+
+function TurnFooter({ usage, stopReason, model }: TurnFooterProps): ReactNode {
+  const { t } = useTranslation();
+  return (
+    <div className={styles.turnFooter} aria-label="Turn metadata">
+      <Zap size={11} className={styles.footerIcon} aria-hidden={true} />
+      <span className={styles.footerTokens}>
+        {usage ? (
+          <>
+            <span className={styles.footerTokenIn}>
+              {t("message.tokensIn")} {formatTokens(usage.inputTokens)}
+            </span>
+            <span className={styles.footerTokenArrow} aria-hidden={true}>→</span>
+            <span className={styles.footerTokenOut}>
+              {t("message.tokensOut")} {formatTokens(usage.outputTokens)}
+            </span>
+            {usage.cacheReadTokens !== undefined && usage.cacheReadTokens > 0 && (
+              <span className={styles.footerTokenCache}>
+                · {t("message.cached")} {formatTokens(usage.cacheReadTokens)}
+              </span>
+            )}
+          </>
+        ) : null}
+      </span>
+      {stopReason && (
+        <span className={`${styles.footerStop} ${stopReason === "error" || stopReason === "cancelled" ? styles.footerStopWarn : ""}`}>
+          {stopReason === "error" || stopReason === "cancelled" ? (
+            <AlertTriangle size={10} aria-hidden={true} />
+          ) : (
+            <CircleStop size={10} aria-hidden={true} />
+          )}
+          {t(STOP_REASON_KEY[stopReason])}
+        </span>
+      )}
+      {model && (
+        <span className={styles.footerModel} title={model}>{model}</span>
+      )}
+    </div>
   );
 }

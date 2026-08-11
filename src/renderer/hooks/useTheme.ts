@@ -14,6 +14,10 @@ import type { AppSettings } from "@shared/types.ts";
 import { resolveTheme } from "../lib/theme.ts";
 
 import "../i18n/index.ts"; // initialize i18n
+import i18n from "../i18n/index.ts";
+import { LANGUAGE_OPTIONS } from "../lib/dir.ts";
+
+const SUPPORTED_LANGUAGES = new Set<string>(LANGUAGE_OPTIONS.map((o) => o.value));
 
 // Re-export so callers that used to import resolveTheme from here still work.
 export { resolveTheme } from "../lib/theme.ts";
@@ -27,6 +31,7 @@ export function useTheme(settings: AppSettings | null): void {
   const appearance = settings?.general.appearance ?? "dark";
   const motion = settings?.general.motion ?? "system";
   const chatFont = settings?.general.chatFont ?? "sans";
+  const language = settings?.general.language ?? "en";
 
   useEffect(() => {
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -40,4 +45,10 @@ export function useTheme(settings: AppSettings | null): void {
   useEffect(() => {
     document.documentElement.dataset.font = chatFont;
   }, [chatFont]);
+
+  useEffect(() => {
+    if (SUPPORTED_LANGUAGES.has(language)) {
+      void i18n.changeLanguage(language);
+    }
+  }, [language]);
 }

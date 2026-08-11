@@ -58,6 +58,24 @@
   font-variant-numeric: tabular-nums;
 }
 
+.cancelBtn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  color: var(--text-muted);
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.cancelBtn:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
 .progress {
   height: 4px;
   background: var(--bg-input);

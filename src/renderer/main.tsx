@@ -1,6 +1,11 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 
+// Import the mock bridge FIRST so window.kozum exists before App boots.
+// In Electron this is a no-op (the preload script already set window.kozum);
+// in a browser preview it injects stub implementations.
+import "./mock-bridge.ts";
+
 import "./styles/global.css";
 import { App } from "./App.tsx";
 

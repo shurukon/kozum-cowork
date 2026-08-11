@@ -345,6 +345,7 @@ if (!app.requestSingleInstanceLock()) {
       },
       sessionModes,
       browserSurface,
+      subagents,
       getBrowserView: () => browserBackend.getWebContentsView(),
     });
 
