@@ -118,3 +118,123 @@
   font-size: var(--fs-sm);
   padding: var(--sp-2) 0;
 }
+
+/* Cowork reference right rail. Code mode uses the base panel rules above. */
+:global(.kz-cowork-shell) .panel {
+  width: 260px;
+  flex-basis: 260px;
+  padding: 18px 14px 18px;
+  gap: 10px;
+  background: #11131b;
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+:global(.kz-cowork-shell) .section {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: #1d1f27;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+}
+
+:global(.kz-cowork-shell) .sectionHeader {
+  min-height: 40px;
+  padding: 0 12px;
+  color: #8c90a0;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+:global(.kz-cowork-shell) .sectionHeader:hover {
+  background: rgba(255, 255, 255, 0.035);
+  color: #e1e2ed;
+}
+
+:global(.kz-cowork-shell) .sectionBody {
+  padding: 10px 12px 13px;
+  border-top-color: rgba(255, 255, 255, 0.07);
+}
+
+:global(.kz-cowork-shell) .panelIntro {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 2px 3px 6px;
+}
+
+:global(.kz-cowork-shell) .panelEyebrow {
+  color: #e1e2ed;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+}
+
+:global(.kz-cowork-shell) .panelHint {
+  color: #424654;
+  font-size: 10px;
+}
+
+:global(.kz-cowork-shell) .artifactList,
+:global(.kz-cowork-shell) .connectorList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+:global(.kz-cowork-shell) .artifactRow,
+:global(.kz-cowork-shell) .connectorRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 7px;
+  border-radius: 7px;
+  color: #8c90a0;
+  font-size: 11px;
+  text-align: start;
+}
+
+:global(.kz-cowork-shell) .artifactRow:hover {
+  background: rgba(255, 255, 255, 0.045);
+  color: #e1e2ed;
+}
+
+:global(.kz-cowork-shell) .artifactRow svg {
+  flex: 0 0 auto;
+  color: #00c8ff;
+}
+
+:global(.kz-cowork-shell) .connectorRow {
+  min-height: 28px;
+  padding-inline: 7px;
+}
+
+:global(.kz-cowork-shell) .connectorDot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
+}
+
+:global(.kz-cowork-shell) .connectorState {
+  margin-inline-start: auto;
+  color: #22c55e;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 1080px) {
+  :global(.kz-cowork-shell) .panel {
+    width: 232px;
+    flex-basis: 232px;
+  }
+}
+
+@media (max-width: 860px) {
+  :global(.kz-cowork-shell) .panel {
+    display: none;
+  }
+}

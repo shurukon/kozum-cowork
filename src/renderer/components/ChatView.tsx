@@ -34,6 +34,7 @@ import { Message } from "./Message.tsx";
 import { ComposerBar } from "./ComposerBar.tsx";
 import { PinnedTodoSlot } from "./PinnedTodoSlot.tsx";
 import type { AddMenuKind } from "./AddMenu.tsx";
+import type { PreviewTarget } from "./PreviewPanel.tsx";
 import styles from "./ChatView.module.css";
 
 // ── Props ──────────────────────────────────────────────────────────────────
@@ -60,8 +61,14 @@ export interface ChatViewProps {
   /** Code mode passes a <PermissionPicker />; Cowork omits. */
   permissionSlot?: ReactNode;
 
+  /** Optional Cowork-only project/folder picker rendered in the composer. */
+  projectSlot?: ReactNode;
+
   /** Called when the user clicks a file chip inside a tool card. */
   onOpenFile?: (path: string) => void;
+
+  /** Open a preview for a tool-produced image, file, URL, or browser result. */
+  onPreview?: (target: PreviewTarget) => void;
 
   /** Reply to a pending question/permission via the bridge. */
   onReply?: (requestId: string, answer: string[]) => void;
@@ -90,7 +97,9 @@ export function ChatView({
   onSelectionChange,
   onRefreshModels,
   permissionSlot,
+  projectSlot,
   onOpenFile,
+  onPreview,
   onReply,
   onResolveQuestion,
 }: ChatViewProps) {
@@ -165,6 +174,7 @@ const modeState = useSessionStore((s) => s[mode]);
               isStreaming={streamingMessageId === msg.id}
               toolCards={toolCards}
               onOpenFile={onOpenFile}
+              onPreview={onPreview}
               onReply={onReply}
               onResolveQuestion={onResolveQuestion}
               pendingQuestions={pendingQuestions}
@@ -202,6 +212,8 @@ const modeState = useSessionStore((s) => s[mode]);
         onSelectionChange={onSelectionChange}
         onRefreshModels={onRefreshModels}
         permissionSlot={permissionSlot}
+        projectSlot={projectSlot}
+        placeholder={mode === "cowork" ? "Give Kozum a followup..." : undefined}
         takingLonger={takingLonger}
         elapsedMs={elapsedMs}
       />

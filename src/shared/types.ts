@@ -366,7 +366,7 @@ export interface Project {
  * and task-level events may omit it where no turn is in flight. The three
  * `subagent_*` events always carry `runId` (the subagent run id).
  */
-export type AgentEvent =
+export type AgentEventPayload =
   | { type: "turn_start"; mode: Mode; sessionId: string; messageId: string; model: string; runId?: string }
   | { type: "text_delta"; mode: Mode; sessionId: string; messageId: string; delta: string; runId?: string }
   | { type: "thinking_delta"; mode: Mode; sessionId: string; messageId: string; delta: string; runId?: string }
@@ -401,6 +401,9 @@ export type AgentEvent =
   | { type: "subagent_start"; mode: Mode; sessionId: string; parentMessageId?: string; run: SubagentRun; runId: string }
   | { type: "subagent_progress"; mode: Mode; sessionId: string; runId: string; note: string; progress?: number }
   | { type: "subagent_end"; mode: Mode; sessionId: string; runId: string; status: "completed" | "failed" | "cancelled"; result?: string; error?: string };
+
+/** Stable identity added by the emitter for renderer-side idempotency. */
+export type AgentEvent = AgentEventPayload & { eventId?: string };
 
 /** Summary of a persisted run, returned by `sessions:listRuns` (P1-7). */
 export interface RunSummary {

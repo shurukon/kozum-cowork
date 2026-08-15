@@ -20,6 +20,8 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    // Allow the temporary preview proxy hostname used by the workspace.
+    allowedHosts: true,
   },
   build: {
     outDir: resolve(__dirname, "../public/kozum-preview"),

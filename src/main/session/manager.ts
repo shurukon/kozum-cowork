@@ -41,6 +41,7 @@ import { checkPermission, blockedResult } from "../tools/permissions.ts";
 interface InFlight {
   controller: AbortController;
   promise: Promise<void>;
+  clientTurnId?: string;
 }
 
 /* ---------------------------------------------------------------- class --- */
@@ -58,6 +59,9 @@ export class SessionManager {
 
   /** Active loops keyed by sessionId */
   private inFlight = new Map<string, InFlight>();
+  /** Recently completed client turns; protects delayed renderer retries. */
+  private completedTurns = new Map<string, number>();
+  private readonly completedTurnTtlMs = 10 * 60_000;
 
   constructor(opts: {
     sessions: SessionStore;
@@ -90,23 +94,46 @@ export class SessionManager {
     sessionId: string,
     text: string,
     attachments: string[] = [],
+    clientTurnId?: string,
   ): Promise<Result<void>> {
     const session = await this.sessions.get(sessionId);
     if (!session) return err(`Session "${sessionId}" not found`);
 
-    // If already running, cancel and wait before starting again
+    // A renderer retry can arrive after the original run reached its terminal
+    // event but before the UI received the acknowledgement. Treat it as a
+    // no-op for a short window, just like a duplicate that arrived in-flight.
+    if (clientTurnId) {
+      const completedAt = this.completedTurns.get(`${sessionId}:${clientTurnId}`);
+      if (completedAt !== undefined) {
+        if (Date.now() - completedAt < this.completedTurnTtlMs) return ok(undefined);
+        this.completedTurns.delete(`${sessionId}:${clientTurnId}`);
+      }
+    }
+
+    // Never cancel a healthy autonomous run just because a second submit
+    // arrived. Same clientTurnId is an idempotent retry; a different turn is
+    // rejected until the current run reaches a terminal status.
     const existing = this.inFlight.get(sessionId);
     if (existing) {
-      existing.controller.abort();
-      await existing.promise.catch(() => undefined);
+      if (clientTurnId && existing.clientTurnId === clientTurnId) return ok(undefined);
+      return err("This session is already running. Wait for it to finish or cancel it explicitly.");
     }
 
     const controller = new AbortController();
-    const loopPromise = this.runLoop(session, text, attachments, controller);
-    this.inFlight.set(sessionId, { controller, promise: loopPromise });
+    const loopPromise = this.runLoop(session, text, attachments, controller, clientTurnId);
+    this.inFlight.set(sessionId, { controller, promise: loopPromise, clientTurnId });
 
     loopPromise.catch(() => undefined).finally(() => {
       this.inFlight.delete(sessionId);
+      if (clientTurnId) {
+        const key = `${sessionId}:${clientTurnId}`;
+        this.completedTurns.set(key, Date.now());
+        // Keep the map bounded even when a long-lived app receives many turns.
+        const cutoff = Date.now() - this.completedTurnTtlMs;
+        for (const [storedKey, completedAt] of this.completedTurns) {
+          if (completedAt < cutoff) this.completedTurns.delete(storedKey);
+        }
+      }
     });
 
     return ok(undefined);
@@ -140,6 +167,7 @@ export class SessionManager {
     text: string,
     _attachments: string[],
     controller: AbortController,
+    clientTurnId?: string,
   ): Promise<void> {
     const sessionId = session.id;
 
@@ -185,7 +213,7 @@ export class SessionManager {
 
       // Append user turn
       const userMsg: Message = {
-        id: `msg_${Date.now().toString(36)}`,
+        id: clientTurnId ? `msg_${clientTurnId}` : `msg_${Date.now().toString(36)}`,
         role: "user",
         content: [{ type: "text", text }],
         createdAt: Date.now(),

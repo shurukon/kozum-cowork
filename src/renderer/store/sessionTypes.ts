@@ -82,4 +82,6 @@ export interface ModeState {
   pendingPermissions: PendingPermission[];
   /** Live subagent runs keyed by run id (P1-1). */
   subagents: Record<string, SubagentView>;
+  /** Event identities already applied to this mode; bounded by the store lifecycle. */
+  seenEventIds: Set<string>;
 }

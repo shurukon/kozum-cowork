@@ -62,11 +62,15 @@
   bottom: calc(100% + var(--sp-3));
   left: 0;
   z-index: var(--z-dropdown);
-  min-width: 220px;
+  min-width: 240px;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(430px, calc(100vh - 128px));
+  display: flex;
+  flex-direction: column;
 
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  border-radius: var(--r-xl);
+  border-radius: 16px;
   box-shadow: var(--shadow-elevated);
   overflow: hidden;
 
@@ -110,7 +114,10 @@
 /* ── Popover inner structure ───────────────────────────────────────────── */
 
 .popoverInner {
-  padding: var(--sp-3) 0 var(--sp-3);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-3) 0;
 }
 
 .popoverTopBar {
@@ -181,11 +188,35 @@
   border-color: var(--border-focus);
 }
 
+/* ── Scrollable option lists ──────────────────────────────────────────── */
+
+.optionList,
+.modelList {
+  min-height: 0;
+  max-height: min(280px, 42vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.optionList::-webkit-scrollbar,
+.modelList::-webkit-scrollbar {
+  width: 8px;
+}
+
+.optionList::-webkit-scrollbar-thumb,
+.modelList::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
 /* ── Model list (scrollable for long lists) ──────────────────────────── */
 
 .modelList {
-  max-height: 240px;
-  overflow-y: auto;
+  min-height: 0;
 }
 
 /* ── Option rows ───────────────────────────────────────────────────────── */

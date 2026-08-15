@@ -27,32 +27,13 @@ import {
   Check,
   FileText,
 } from "lucide-react";
-import * as LucideIcons from "lucide-react";
 import type { ToolDisplay } from "@shared/types.ts";
 import type { ToolCard as ToolCardType, PendingPermission } from "../store/session.ts";
 import { toolIcon } from "../lib/toolIcons.ts";
 import { toolCategory } from "../lib/toolCategory.ts";
 import styles from "./ToolCard.module.css";
 import { PermissionBanner } from "./PermissionBanner.tsx";
-
-// ── Dynamic icon lookup ─────────────────────────────────────────────────────
-
-type LucideComponent = React.ComponentType<{ size?: number; className?: string }>;
-
-/**
- * Map a kebab-case lucide icon name (e.g. "file-plus") to the React component.
- * Lucide exports PascalCase names, e.g. FilePlus.
- */
-function getLucideIcon(name: string): LucideComponent {
-  // "file-plus" → "FilePlus"
-  const pascal = name
-    .split("-")
-    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-    .join("");
-
-  const icons = LucideIcons as unknown as Record<string, LucideComponent | undefined>;
-  return icons[pascal] ?? (LucideIcons.Wrench as LucideComponent);
-}
+import { ToolGlyph } from "./ToolGlyph.tsx";
 
 // ── Diff renderer ──────────────────────────────────────────────────────────
 
@@ -316,8 +297,7 @@ export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPrev
     };
   }, []);
 
-  const { icon: iconName, label: humanLabel } = toolIcon(card.name);
-  const Icon = getLucideIcon(iconName);
+  const { label: humanLabel } = toolIcon(card.name);
   const display = card.result?.display;
   const category = toolCategory(card.name);
 
@@ -362,9 +342,9 @@ export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPrev
         disabled={!hasDetail}
         aria-expanded={expanded}
       >
-        <span className={styles.iconWrap}>
-          <Icon size={14} />
-        </span>
+          <span className={styles.iconWrap}>
+            <ToolGlyph toolName={card.name} size={16} />
+          </span>
 
         <span className={summaryClass}>
           {display?.summary ?? humanLabel}

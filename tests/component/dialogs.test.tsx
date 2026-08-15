@@ -100,7 +100,7 @@ describe("ScheduleDialog — empty prompt validation", () => {
       />,
     );
 
-    const promptTextarea = screen.getByPlaceholderText(/describe what the agent should do/i);
+    const promptTextarea = screen.getByLabelText(/scheduled\.prompt/i);
     fireEvent.change(promptTextarea, { target: { value: "Do the daily standup report." } });
 
     const scheduleBtn = screen.getByRole("button", { name: /schedule/i });

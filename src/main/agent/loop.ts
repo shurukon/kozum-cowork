@@ -63,6 +63,8 @@ export interface LoopOptions {
   maxTokens: number;
   temperature: number;
   maxIterations: number;
+  /** Maximum wall-clock time for one tool call before it is aborted. */
+  toolTimeoutMs?: number;
   signal: AbortSignal;
   emit: (e: AgentEvent) => void;
 }
@@ -90,6 +92,26 @@ function newId(prefix: string): string {
 }
 
 const EMPTY_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+const DEFAULT_TOOL_TIMEOUT_MS = 120_000;
+
+function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new Error("Cancelled"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("Cancelled"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   return {
@@ -111,7 +133,11 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   // can persist a sidecar of the turn and the renderer can reattach after a
   // refresh (P1-7 / §9.2). The wrapper injects it; call sites use `emit(...)`.
   const runId = randomUUID();
-  const emit = (e: AgentEvent): void => opts.emit({ ...e, runId });
+  let eventSeq = 0;
+  const emit = (e: AgentEvent): void => {
+    const eventId = e.eventId ?? `${runId}:${++eventSeq}`;
+    opts.emit({ ...e, runId, eventId });
+  };
 
   const defs = opts.tools.list(opts.mode);
 
@@ -141,83 +167,115 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     let turnStop: StopReason = "end_turn";
     let turnUsage: TokenUsage = { ...EMPTY_USAGE };
     let streamError: Error | null = null;
+    let providerAttempts = 0;
 
-    try {
-      const stream = opts.adapter.stream(opts.ctx, {
-        model: opts.model,
-        system: opts.system,
-        messages: working,
-        tools: defs,
-        maxTokens: opts.maxTokens,
-        temperature: opts.temperature,
-        signal: opts.signal,
-      });
-
-      for await (const d of stream) {
-        switch (d.type) {
-          case "text":
-            text += d.text;
-        emit({
-          type: "text_delta",
-          mode: opts.mode,
-          sessionId: opts.sessionId,
-          messageId: assistantId,
-          delta: d.text,
+    // Retry only a clean, pre-output provider failure. Retrying after visible
+    // deltas would duplicate text/tool calls in the transcript, which is worse
+    // than surfacing a recoverable error to the user.
+    while (true) {
+      try {
+        const stream = opts.adapter.stream(opts.ctx, {
+          model: opts.model,
+          system: opts.system,
+          messages: working,
+          tools: defs,
+          maxTokens: opts.maxTokens,
+          temperature: opts.temperature,
+          signal: opts.signal,
         });
-            break;
 
-          case "thinking":
-            thinking += d.text;
-        emit({
-          type: "thinking_delta",
-          mode: opts.mode,
-          sessionId: opts.sessionId,
-          messageId: assistantId,
-          delta: d.text,
-        });
-            break;
+        for await (const d of stream) {
+          switch (d.type) {
+            case "text":
+              text += d.text;
+              emit({
+                type: "text_delta",
+                mode: opts.mode,
+                sessionId: opts.sessionId,
+                messageId: assistantId,
+                delta: d.text,
+              });
+              break;
 
-          case "tool_start":
-            if (!calls.has(d.id)) {
-              calls.set(d.id, { id: d.id, name: d.name, args: "", order: order++ });
+            case "thinking":
+              thinking += d.text;
+              emit({
+                type: "thinking_delta",
+                mode: opts.mode,
+                sessionId: opts.sessionId,
+                messageId: assistantId,
+                delta: d.text,
+              });
+              break;
+
+            case "tool_start":
+              if (!calls.has(d.id)) {
+                calls.set(d.id, { id: d.id, name: d.name, args: "", order: order++ });
+              }
+              break;
+
+            case "tool_args": {
+              const c = calls.get(d.id);
+              if (c) c.args += d.partial;
+              break;
             }
-            break;
 
-          case "tool_args": {
-            const c = calls.get(d.id);
-            if (c) c.args += d.partial;
+            case "tool_end":
+              break; // arguments are parsed after the stream closes
+
+            case "usage":
+              turnUsage = d.usage;
+              break;
+
+            case "stop":
+              turnStop = d.reason;
+              break;
+          }
+        }
+        break;
+      } catch (e) {
+        // An abort mid-stream is a cancellation, not a failure.
+        if (opts.signal.aborted) {
+          turnStop = "cancelled";
+          break;
+        }
+
+        const candidate = e instanceof Error ? e : new Error(String(e));
+        const canRetry =
+          candidate instanceof ProviderError &&
+          candidate.retryable &&
+          !text &&
+          !thinking &&
+          calls.size === 0 &&
+          providerAttempts < 2;
+
+        if (canRetry) {
+          providerAttempts += 1;
+          const delayMs = 500 * 2 ** (providerAttempts - 1);
+          const note = `Provider connection interrupted. Retrying (${providerAttempts}/2)…`;
+          thinking += note;
+          emit({
+            type: "thinking_delta",
+            mode: opts.mode,
+            sessionId: opts.sessionId,
+            messageId: assistantId,
+            delta: note,
+          });
+          try {
+            await sleepWithAbort(delayMs, opts.signal);
+          } catch {
+            turnStop = "cancelled";
             break;
           }
-
-          case "tool_end":
-            break; // arguments are parsed after the stream closes
-
-          case "usage":
-            turnUsage = d.usage;
-            break;
-
-          case "stop":
-            turnStop = d.reason;
-            break;
+          continue;
         }
-      }
-    } catch (e) {
-      // An abort mid-stream is a cancellation, not a failure.
-      if (opts.signal.aborted) {
-        turnStop = "cancelled";
-      } else {
-        streamError = e instanceof Error ? e : new Error(String(e));
+
+        streamError = candidate;
         turnStop = "error";
         // Mirror to stdout so failures are visible in `npm run dev` logs even
         // when the renderer's IPC handler is misrouted or unwired.
         console.error(`[${opts.mode}] agent stream error:`, streamError.message);
-        emit({
-          type: "error",
-          mode: opts.mode,
-          sessionId: opts.sessionId,
-          message: streamError.message,
-          recoverable: false,
-        });
+        break;
       }
     }
 
@@ -321,7 +379,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     // Concurrent execution, ordered assembly.
     const settled = await Promise.all(
       ordered.map(async (c) => {
-        const result = await runOne(opts, c, emit);
+        const result = await runOne(opts, c, emit, opts.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS);
         emit({
           type: "tool_end",
           mode: opts.mode,
@@ -396,6 +454,7 @@ async function runOne(
   opts: LoopOptions,
   call: PendingCall,
   emit: (e: AgentEvent) => void,
+  timeoutMs: number,
 ): Promise<ToolResult> {
   const input = parseArgs(call.args);
 
@@ -414,10 +473,16 @@ async function runOne(
     };
   }
 
+  const toolController = new AbortController();
+  const forwardAbort = () => toolController.abort();
+  opts.signal.addEventListener("abort", forwardAbort, { once: true });
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
   try {
-    return await opts.tools.execute(call.name, input, {
+    const execution = opts.tools.execute(call.name, input, {
       sessionId: opts.sessionId,
-      signal: opts.signal,
+      signal: toolController.signal,
       onProgress: (note) =>
         emit({
           type: "tool_progress",
@@ -427,7 +492,33 @@ async function runOne(
           note,
         }),
     });
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        toolController.abort();
+        reject(new Error(`Tool timed out after ${Math.ceil(timeoutMs / 1000)}s.`));
+      }, timeoutMs);
+    });
+    return await Promise.race([execution, timeout]);
   } catch (e) {
+    if (opts.signal.aborted) {
+      return {
+        ok: false,
+        content: "",
+        error: `${call.name} cancelled before completion.`,
+        display: { summary: `${call.name} — cancelled` },
+      };
+    }
+    if (timedOut) {
+      return {
+        ok: false,
+        content: "",
+        error:
+          `${call.name} exceeded the ${Math.ceil(timeoutMs / 1000)}s tool timeout. ` +
+          "The tool was aborted; retry with a smaller scope or a more specific path.",
+        display: { summary: `${call.name} — timed out` },
+      };
+    }
     // A throwing executor is a bug, but the loop must survive it.
     const message = e instanceof Error ? e.message : String(e);
     return {
@@ -436,6 +527,9 @@ async function runOne(
       error: `${call.name} failed: ${message}`,
       display: { summary: `${call.name} — ${message}` },
     };
+  } finally {
+    if (timer) clearTimeout(timer);
+    opts.signal.removeEventListener("abort", forwardAbort);
   }
 }
 

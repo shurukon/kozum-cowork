@@ -107,6 +107,51 @@ describe("App render — unconfigured bridge (no provider)", () => {
   });
 });
 
+describe("App render — saved key with stale selection", () => {
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    const bridge = makeFakeBridge({
+      settings: {
+        get: async () => makeSettings(),
+        set: async (patch) => makeSettings(patch),
+      },
+      providers: {
+        presets: async () => FAKE_PRESETS,
+        listKeys: async (pid) => (pid === "anthropic" ? [
+          {
+            id: "saved-key",
+            providerId: "anthropic",
+            label: "Saved",
+            maskedKey: "sk-ant-…saved",
+            createdAt: Date.now(),
+            status: "valid",
+          },
+        ] : []),
+        listModels: async (pid) => pid === "anthropic" ? [
+          {
+            id: "claude-test",
+            displayName: "Claude Test",
+            providerId: "anthropic",
+            capabilities: { vision: "no", tools: true, streaming: true, reasoning: false },
+          },
+        ] : [],
+      },
+    });
+    cleanup = installFakeBridge(bridge);
+  });
+
+  afterEach(() => cleanup());
+
+  it("does not show FirstRun when a usable saved key exists even if selection is stale", async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.queryByText(/skip for now/i)).toBeNull();
+      expect((document.body.textContent ?? "").length).toBeGreaterThan(10);
+    }, { timeout: 3000 });
+  });
+});
+
 describe("App render — configured bridge (provider set)", () => {
   let cleanup: () => void;
 

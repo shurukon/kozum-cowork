@@ -302,5 +302,6 @@ export function emptyModeState(): ModeState {
     pendingQuestions: [],
     pendingPermissions: [],
     subagents: {},
+    seenEventIds: new Set(),
   };
 }

@@ -9,8 +9,17 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, ListTodo, Plug, Bot } from "lucide-react";
-import type { AgentTask, McpServerConfig } from "@shared/types.ts";
+import {
+  ChevronDown,
+  ChevronRight,
+  Cable,
+  FileBox,
+  FolderOpen,
+  ListTodo,
+  Plug,
+  Bot,
+} from "lucide-react";
+import type { AgentTask, McpServerConfig, Mode } from "@shared/types.ts";
 import type { SubagentView } from "../store/sessionTypes.ts";
 import { TaskList } from "./TaskList.tsx";
 import { ContextPanel } from "./ContextPanel.tsx";
@@ -53,6 +62,7 @@ function Section({ title, icon: Icon, defaultOpen = true, children }: SectionPro
 // ── Props ──────────────────────────────────────────────────────────────────
 
 export interface RightPanelProps {
+  mode: Mode;
   tasks: AgentTask[];
   subagents: Record<string, SubagentView>;
   mcpServers: McpServerConfig[];
@@ -66,6 +76,7 @@ export interface RightPanelProps {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function RightPanel({
+  mode,
   tasks,
   subagents,
   mcpServers,
@@ -84,19 +95,98 @@ export function RightPanel({
 
   const subagentEntries = Object.values(subagents);
   const hasRunningSubagents = subagentEntries.some((s) => s.status === "running");
+  const hasArtifacts = sharedFiles.length > 0 || workingFolder !== null;
+
+  const contextSection = (
+    <Section title="Context" icon={Plug} defaultOpen={hasContext}>
+      <ContextPanel
+        mcpServers={mcpServers}
+        plugins={plugins}
+        toolsUsed={toolsUsed}
+        workingFolder={workingFolder}
+        sharedFiles={sharedFiles}
+        onOpenPath={onOpenPath}
+      />
+    </Section>
+  );
+
+  if (mode === "cowork") {
+    return (
+      <aside className={styles.panel} aria-label="Cowork context panel">
+        <div className={styles.panelIntro}>
+          <span className={styles.panelEyebrow}>WORKSPACE</span>
+          <span className={styles.panelHint}>Live context</span>
+        </div>
+
+        <Section title="Progress" icon={ListTodo} defaultOpen={tasks.length > 0}>
+          <TaskList tasks={tasks} />
+        </Section>
+
+        <Section title="Artifacts" icon={FileBox} defaultOpen={hasArtifacts}>
+          {workingFolder ? (
+            <button
+              type="button"
+              className={styles.artifactRow}
+              onClick={() => onOpenPath(workingFolder)}
+              title={workingFolder}
+            >
+              <FolderOpen size={14} aria-hidden="true" />
+              <span className="kz-truncate">{workingFolder}</span>
+            </button>
+          ) : sharedFiles.length > 0 ? (
+            <div className={styles.artifactList}>
+              {sharedFiles.map((path) => (
+                <button
+                  key={path}
+                  type="button"
+                  className={styles.artifactRow}
+                  onClick={() => onOpenPath(path)}
+                  title={path}
+                >
+                  <FileBox size={14} aria-hidden="true" />
+                  <span className="kz-truncate">{path}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className={styles.empty}>Outputs and files will appear here.</p>
+          )}
+        </Section>
+
+        {contextSection}
+
+        <Section title="Connectors" icon={Cable} defaultOpen={mcpServers.length > 0}>
+          {mcpServers.length === 0 && plugins.length === 0 ? (
+            <p className={styles.empty}>Connectors will appear here when enabled.</p>
+          ) : (
+            <div className={styles.connectorList}>
+              {mcpServers.map((server) => (
+                <div key={server.id} className={styles.connectorRow}>
+                  <span className={styles.connectorDot} aria-hidden="true" />
+                  <span className="kz-truncate">{server.name}</span>
+                  <span className={styles.connectorState}>ON</span>
+                </div>
+              ))}
+              {plugins.map((plugin) => (
+                <div key={plugin.name} className={styles.connectorRow}>
+                  <span className={styles.connectorDot} aria-hidden="true" />
+                  <span className="kz-truncate">{plugin.name}</span>
+                  <span className={styles.connectorState}>ON</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      </aside>
+    );
+  }
 
   return (
     <aside className={styles.panel} aria-label="Side panel">
-      {/* Progress section */}
-      <Section
-        title="Progress"
-        icon={ListTodo}
-        defaultOpen={tasks.length > 0}
-      >
+      <Section title="Progress" icon={ListTodo} defaultOpen={tasks.length > 0}>
         <TaskList tasks={tasks} />
       </Section>
 
-      {/* Subagents section (P1-1 / D4) */}
       <Section
         title="Subagents"
         icon={Bot}
@@ -113,21 +203,7 @@ export function RightPanel({
         )}
       </Section>
 
-      {/* Context section */}
-      <Section
-        title="Context"
-        icon={Plug}
-        defaultOpen={hasContext}
-      >
-        <ContextPanel
-          mcpServers={mcpServers}
-          plugins={plugins}
-          toolsUsed={toolsUsed}
-          workingFolder={workingFolder}
-          sharedFiles={sharedFiles}
-          onOpenPath={onOpenPath}
-        />
-      </Section>
+      {contextSection}
     </aside>
   );
 }

@@ -324,13 +324,14 @@ export function registerIpc(deps: IpcDeps): void {
     return deps.sessions.listRuns(String(sessionId));
   });
 
-  handle(ipcMain, "sessions:send", async (_e, sessionId, text, attachments) => {
+  handle(ipcMain, "sessions:send", async (_e, sessionId, text, attachments, clientTurnId) => {
     const session = await deps.sessions.get(String(sessionId));
     if (session) deps.sessionModes?.set(String(sessionId), session.mode);
     return deps.sessionManager.send(
       String(sessionId),
       String(text),
       Array.isArray(attachments) ? (attachments as string[]) : [],
+      typeof clientTurnId === "string" && clientTurnId.length > 0 ? clientTurnId : undefined,
     );
   });
 

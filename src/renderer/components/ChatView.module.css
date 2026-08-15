@@ -1,86 +1,89 @@
-/*
- * ChatView — transcript wrapper and jump pill.
- * The composer CSS now lives in ComposerBar.module.css.
- */
-
-/* ── Outer frame ─────────────────────────────────────────────────────── */
+/* Kozum Cowork — focused conversation surface. */
 
 .wrap {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
   position: relative;
-  background: var(--bg-primary);
-  border-radius: var(--r-xl);
   overflow: hidden;
+  background: var(--bg-primary);
 }
-
-/* ── Transcript ──────────────────────────────────────────────────────── */
 
 .transcript {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-8) 0;
+  padding: clamp(24px, 4vh, 56px) 0 28px;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
 }
 
 .messages {
-  max-width: var(--content-max-w);
+  width: min(100%, 860px);
   margin: 0 auto;
-  padding: 0 var(--sp-10);
+  padding: 0 28px;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-8);
+  gap: 24px;
 }
 
 .emptyHint {
+  width: min(100%, 560px);
+  margin: clamp(80px, 16vh, 170px) auto 0;
+  padding: 18px 22px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-card) 78%, transparent);
   text-align: center;
   font-size: var(--fs-sm);
-  color: var(--text-muted);
-  padding-top: var(--sp-20);
+  line-height: var(--lh-relaxed);
 }
-
-/* ── Jump-to-latest pill ─────────────────────────────────────────────── */
 
 .jumpPill {
   position: absolute;
-  inset-block-end: 96px;
+  inset-block-end: 112px;
   inset-inline-start: 50%;
   transform: translateX(-50%);
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--sp-3);
-  height: 30px;
-  padding: 0 var(--sp-6);
-  border-radius: var(--r-full);
+  gap: 7px;
+  height: 32px;
+  padding: 0 13px;
+  border-radius: 999px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
-  color: var(--text-secondary);
-  box-shadow: var(--shadow-md);
-  transition: background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) var(--ease-out);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  transition: transform var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
   z-index: var(--z-sticky);
   animation: kz-rise var(--dur-fast) var(--ease-out) both;
 }
 
 .jumpPill:hover {
+  transform: translateX(-50%) translateY(-1px);
   background: var(--bg-hover);
   color: var(--text-primary);
-  box-shadow: var(--shadow-lg);
 }
 
 .jumpPill:focus-visible {
   outline: none;
-  color: var(--text-primary);
-  box-shadow: var(--shadow-lg), 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent-primary);
 }
 
 .jumpPill:active {
   transform: translateX(-50%) scale(0.96);
+}
+
+@media (max-width: 720px) {
+  .messages { padding-inline: 16px; gap: 18px; }
+  .transcript { padding-top: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transcript { scroll-behavior: auto; }
 }

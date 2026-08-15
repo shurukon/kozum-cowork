@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, FolderOpen } from "lucide-react";
 
 import type {
   ApiKeyEntry,
@@ -72,6 +73,7 @@ export function App() {
     "general" | "providers" | "cowork" | "code" | "skills" | "connectors" | "plugins"
   >("general");
   const [skippedSetup, setSkippedSetup] = useState(false);
+  const [bootstrapReady, setBootstrapReady] = useState(false);
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [presets, setPresets] = useState<ProviderPreset[]>([]);
@@ -95,6 +97,7 @@ export function App() {
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const inFlightSend = useRef<Record<Mode, string | null>>({ cowork: null, code: null });
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
 
   // TranscriptSkeleton shows while the active session's history is loading.
@@ -250,6 +253,7 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
+    setBootstrapReady(false);
     void (async () => {
       try {
         const b = bridge();
@@ -288,6 +292,7 @@ export function App() {
         } catch {
           /* projects store may not be initialised */
         }
+        if (!cancelled) setBootstrapReady(true);
       } catch (e) {
         // If the bridge itself is missing the app is unusable — say so loudly
         // rather than rendering a shell that silently does nothing.
@@ -314,6 +319,9 @@ export function App() {
     try {
       off = bridge().sessions.onEvent((e) => {
         applyEvent(e);
+        if (e.type === "session_status" && e.status !== "running") {
+          inFlightSend.current[e.mode] = null;
+        }
         if (e.type === "error") setBanner(e.message);
 
         // BP-A: live browser preview. Open on tool_start for browser_* tools
@@ -384,10 +392,18 @@ export function App() {
 
   const selection = settings?.[mode].selection;
   const hasAnyKeys = Object.values(keys).some((arr) => arr.length > 0);
-  const configured = Boolean(selection?.providerId && selection?.modelId);
+  const activeProviderKeys = selection?.providerId ? (keys[selection.providerId] ?? []) : [];
+  const configured = Boolean(
+    selection?.providerId && selection?.modelId && activeProviderKeys.length > 0,
+  );
 
   const inSession = activeSessionId !== null;
-  const needsSetup = settings !== null && !hasAnyKeys && !configured && !skippedSetup;
+  // A stored key is sufficient to enter the shell; the resolver below selects a
+  // provider/model before the first send. FirstRun is only for a truly empty
+  // installation, never for a previously configured installation with stale or
+  // partially missing selection metadata.
+  const needsSetup =
+    bootstrapReady && settings !== null && !hasAnyKeys && !configured && !skippedSetup;
 
   // Auto-select first available provider & model if selection is empty but keys exist
   useEffect(() => {
@@ -422,20 +438,29 @@ export function App() {
 
   /* ------------------------------------------------------------ actions -- */
 
-  async function ensureSession(): Promise<string | null> {
+  async function ensureSession(selectionOverride?: ModelSelection): Promise<string | null> {
     if (activeSessionId) return activeSessionId;
-    if (!selection) {
+    const requestedSelection = selectionOverride ?? selection;
+    if (!requestedSelection) {
       setBanner("Choose a provider and model before starting a task.");
       return null;
     }
-    const resolvedKeyId = selection.keyId ?? keys[selection.providerId]?.[0]?.id ?? null;
-    const resolvedSelection: ModelSelection = { ...selection, keyId: resolvedKeyId };
+    const resolvedKeyId =
+      requestedSelection.keyId ?? keys[requestedSelection.providerId]?.[0]?.id ?? null;
+    const resolvedSelection: ModelSelection = { ...requestedSelection, keyId: resolvedKeyId };
     const res = await bridge().sessions.create(mode, resolvedSelection);
     if (!res.ok) {
       setBanner(res.error);
       return null;
     }
-    if (selection.keyId !== resolvedKeyId && settings) {
+    const storedSelection = settings?.[mode].selection;
+    if (
+      settings &&
+      (!storedSelection ||
+        storedSelection.providerId !== resolvedSelection.providerId ||
+        storedSelection.keyId !== resolvedSelection.keyId ||
+        storedSelection.modelId !== resolvedSelection.modelId)
+    ) {
       void patchSettings({
         [mode]: { ...settings[mode], selection: resolvedSelection },
       } as Partial<AppSettings>);
@@ -448,8 +473,12 @@ export function App() {
 
   async function handleSubmit(text: string) {
     setBanner(null);
+    if (inFlightSend.current[mode]) return;
 
-    // Auto-resolve selection if configured is false but keys are available
+    // Resolve a usable selection synchronously for this send. React state is
+    // updated as well, but the current handler must not wait for a re-render
+    // before creating the session (the first send after bootstrap used to fail).
+    let effectiveSelection = selection;
     if (!configured) {
       if (hasAnyKeys) {
         const entry = Object.entries(keys).find(([_, list]) => list.length > 0);
@@ -460,22 +489,30 @@ export function App() {
           const preset = presets.find((p) => p.id === pid);
           const modelId =
             selection?.modelId || models[0]?.id || preset?.staticModels?.[0] || "";
-          if (pid && modelId && settings) {
-            const resolvedSel: ModelSelection = { providerId: pid, keyId, modelId };
-            await patchSettings({
-              [mode]: { ...settings[mode], selection: resolvedSel },
-            } as Partial<AppSettings>);
+          if (pid && modelId) {
+            effectiveSelection = { providerId: pid, keyId, modelId };
+            if (settings) {
+              await patchSettings({
+                [mode]: { ...settings[mode], selection: effectiveSelection },
+              } as Partial<AppSettings>);
+            }
           }
         }
-      } else {
+      }
+      if (!effectiveSelection?.providerId || !effectiveSelection.modelId || !hasAnyKeys) {
         setSkippedSetup(false);
         setBanner("Connect a provider and pick a model first.");
         return;
       }
     }
 
-    const sid = await ensureSession();
-    if (!sid) return;
+    const clientTurnId = `turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    inFlightSend.current[mode] = clientTurnId;
+    const sid = await ensureSession(effectiveSelection);
+    if (!sid) {
+      inFlightSend.current[mode] = null;
+      return;
+    }
 
     // BUG-4 fix: attachments were dropped on the floor — the previous call
     // passed only `text` to the backend, so the agent never saw the files the
@@ -491,18 +528,19 @@ export function App() {
 
     // Render the user's turn immediately; the backend echoes it back on reload.
     addUserMessage(mode, {
-      id: `local-${Date.now()}`,
+      id: `local-${clientTurnId}`,
       role: "user",
       content: [{ type: "text", text: finalText }],
       createdAt: Date.now(),
     });
 
-    const res = await bridge().sessions.send(sid, finalText, attachedFiles);
+    const res = await bridge().sessions.send(sid, finalText, attachedFiles, clientTurnId);
     if (res.ok) {
       // Clear attachments only after the backend accepted the send, so a
       // failed send doesn't silently throw away the user's file list.
       if (attachedFiles) setSharedFiles([]);
     } else {
+      inFlightSend.current[mode] = null;
       // Send-failure toast with a Retry action so the user can resend the
       // exact same text without retyping it.
       pushToast("error", res.error, {
@@ -918,7 +956,22 @@ export function App() {
     />
   ) : undefined;
 
-  // ComposerBar shared across Code home and Cowork home
+  const coworkProjectSlot = mode === "cowork" ? (
+    <button
+      type="button"
+      onClick={() => void pickWorkingFolder()}
+      aria-label="Choose project folder"
+      title={settings?.general.defaultFolders?.cowork ?? "Choose project"}
+    >
+      <FolderOpen size={14} aria-hidden="true" />
+      <span className="kz-truncate">
+        {settings?.general.defaultFolders?.cowork ?? "Choose project"}
+      </span>
+      <ChevronDown size={13} aria-hidden="true" />
+    </button>
+  ) : undefined;
+
+  // ComposerBar remains shared, but Cowork receives only visual/slot props.
   const composerBarShared = (
     <ComposerBar
       busy={modeState.status === "running" || modeState.streamingMessageId !== null}
@@ -932,11 +985,13 @@ export function App() {
       onSelectionChange={(next) => void handleSelectionChange(next)}
       onRefreshModels={(pid) => handleRefreshModels(pid)}
       permissionSlot={mode === "code" ? codePermissionPicker : undefined}
+      projectSlot={coworkProjectSlot}
+      placeholder={mode === "cowork" ? "Give Kozum a followup..." : undefined}
     />
   );
 
   return (
-    <div className={styles.app}>
+    <div className={`${styles.app} ${mode === "cowork" ? "kz-cowork-shell" : "kz-code-shell"}`}>
       <TitleBar
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
         sidebarOpen={sidebarOpen}
@@ -944,7 +999,7 @@ export function App() {
 
       <ToastRegion toasts={toasts} onDismiss={dismissToast} />
 
-      <div className={styles.body}>
+      <div className={`${styles.body} ${mode === "cowork" ? styles.coworkBody : styles.codeBody}`}>
         {sidebarOpen && (
           <Sidebar
             mode={mode}
@@ -1004,7 +1059,9 @@ export function App() {
                       onSelectionChange={(next) => void handleSelectionChange(next)}
                       onRefreshModels={(pid) => handleRefreshModels(pid)}
                       permissionSlot={mode === "code" ? codePermissionPicker : undefined}
+                      projectSlot={coworkProjectSlot}
                       onOpenFile={(path) => setPreviewTarget({ kind: "file", path })}
+                      onPreview={(target) => setPreviewTarget(target)}
                       onReply={(requestId, answer) => void handleReply(requestId, answer)}
                       onResolveQuestion={(requestId) => handleResolveQuestion(requestId)}
                     />
@@ -1107,8 +1164,9 @@ export function App() {
           )}
         </main>
 
-        {inSession && (
+        {(inSession || (mode === "cowork" && !needsSetup)) && (
           <RightPanel
+            mode={mode}
             tasks={modeState.tasks}
             subagents={modeState.subagents}
             mcpServers={connectors.filter((c) => c.enabled)}

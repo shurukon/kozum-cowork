@@ -196,7 +196,18 @@ export function Sidebar({
   }
 
   return (
-    <nav className={styles.sidebar} aria-label="Main navigation">
+    <nav
+      className={`${styles.sidebar} ${mode === "cowork" ? styles.coworkSidebar : styles.codeSidebar}`}
+      aria-label="Main navigation"
+    >
+      {mode === "cowork" && (
+        <div className={styles.coworkBrand}>
+          <span className={styles.coworkBrandMark} aria-hidden="true">K</span>
+          <span className={styles.coworkBrandName}>Kozum AI</span>
+          <span className={styles.coworkPro}>PRO</span>
+        </div>
+      )}
+
       {/* Mode switch */}
       <div className={styles.modeSwitch} role="tablist" aria-label="Mode">
         <button

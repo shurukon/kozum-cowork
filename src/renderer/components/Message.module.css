@@ -3,23 +3,24 @@
 .userRow {
   display: flex;
   justify-content: flex-end;
-  padding: 0 var(--sp-4);
+  padding-inline: 8px;
   animation: kz-rise var(--dur-normal) var(--ease-out) both;
 }
 
 .userBubble {
-  max-width: 72%;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xl) var(--r-xl) var(--r-xs) var(--r-xl);
-  padding: var(--sp-5) var(--sp-6);
+  max-width: min(78%, 620px);
+  background: var(--accent-primary);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 76%, white);
+  border-radius: 18px 18px 5px 18px;
+  padding: 12px 16px;
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--accent-primary) 18%, transparent);
   /* kz-send-ack applied via JS on first mount (from glass.css) */
 }
 
 .userText {
   font-size: var(--fs-base);
   line-height: var(--lh-relaxed);
-  color: var(--text-primary);
+  color: #fff;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -29,35 +30,37 @@
 .assistantRow {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
-  padding: 0 var(--sp-4);
+  gap: 12px;
+  padding-inline: 8px;
+  animation: kz-rise var(--dur-normal) var(--ease-out) both;
 }
 
 .assistantText {
   font-size: var(--fs-base);
-  line-height: var(--lh-relaxed);
+  line-height: 1.72;
   color: var(--text-primary);
+  max-width: 78ch;
   /* kz-caret appended via global.css when streaming */
 }
 
 /* --------------------------------------------------------- thinking: settled --- */
 
-/*
- * Settled thinking: glass pane (kz-glass + kz-glass-sweep added in JSX).
- * The kz-glass class handles border, border-radius, backdrop-blur, and the
- * top-edge highlight from glass.css. We only add the layout here.
- */
+/* Settled thinking: compact inline disclosure inside the assistant turn. */
 .thinking {
+  width: fit-content;
+  max-width: min(100%, 680px);
   overflow: hidden;
-  /* border-radius is set by kz-glass via --radius-card, which resolves to --r-lg */
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-sunken);
 }
 
 .thinkingToggle {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
+  gap: 8px;
   width: 100%;
-  padding: var(--sp-3) var(--sp-5);
+  padding: 8px 12px;
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
   color: var(--text-muted);
@@ -94,17 +97,18 @@
 
 /* --------------------------------------------------------- thinking: live --- */
 
-/*
- * Live thinking: kz-glass + kz-glass-busy applied in JSX for the animated
- * sweep, plus the left-accent border below. Layout only here.
- */
+/* Live thinking: compact inline progress row with a quiet accent. */
 .thinkingLive {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-  padding: var(--sp-4) var(--sp-5);
-  /* A coloured left edge makes it clear this is the live reasoning strip */
+  gap: 7px;
+  width: fit-content;
+  max-width: min(100%, 680px);
+  padding: 9px 13px;
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 32%, var(--border-subtle)) !important;
   border-inline-start: 2px solid var(--accent-primary) !important;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-primary) 5%, var(--bg-sunken));
 }
 
 .thinkingLiveHeader {
@@ -131,20 +135,18 @@
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
   color: var(--text-secondary);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
 }
 
 /* Streaming reasoning text: dimmed, italic, monospace */
 .thinkingStream {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  font-style: italic;
+  font-style: normal;
   line-height: var(--lh-relaxed);
   color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 160px;
+  max-height: 120px;
   overflow-y: auto;
 }
 

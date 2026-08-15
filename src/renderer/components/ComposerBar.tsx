@@ -53,6 +53,9 @@ export interface ComposerBarProps {
   /** Optional slot — Code mode injects <PermissionPicker />; Cowork omits. */
   permissionSlot?: ReactNode;
 
+  /** Optional Cowork-only project/folder picker rendered in the toolbar. */
+  projectSlot?: ReactNode;
+
   /** Placeholder text when idle. */
   placeholder?: string;
 
@@ -75,6 +78,7 @@ export function ComposerBar({
   onSelectionChange,
   onRefreshModels,
   permissionSlot,
+  projectSlot,
   placeholder = "Message…",
   takingLonger = false,
 }: ComposerBarProps) {
@@ -183,7 +187,8 @@ export function ComposerBar({
             )}
           </div>
 
-          {/* Permission slot (Code mode only) */}
+          {/* Optional mode-specific slot. Code uses permissionSlot; Cowork uses projectSlot. */}
+          {projectSlot && <div className={styles.projectSlot}>{projectSlot}</div>}
           {permissionSlot && (
             <div className={styles.permSlot}>{permissionSlot}</div>
           )}

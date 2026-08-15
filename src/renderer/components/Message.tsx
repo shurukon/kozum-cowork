@@ -8,9 +8,8 @@
  * Changes in this version:
  * - User bubbles gain `kz-send-ack` on first mount for the "message received"
  *   light-ring feedback the user was missing.
- * - Thinking block live state uses `.kz-think-orb` breathing dot from glass.css
- *   plus a glass-panel treatment around the reasoning text.
- * - Settled thinking block gains the glass surface class for consistency.
+ * - Thinking block live and settled states stay inline in the transcript with
+ *   a quiet status treatment; no separate thinking window or overlay is used.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -55,10 +54,10 @@ function ThinkingBlock({ text, isStreaming }: ThinkingBlockProps) {
   }, [isStreaming]);
 
   if (isStreaming) {
-    // Live state: kz-think-orb breathing dot + glass panel + streaming italic text.
+    // Live state: compact inline status row + streaming reasoning text.
     return (
       <div
-        className={`${styles.thinkingLive} kz-glass kz-glass-busy`}
+        className={styles.thinkingLive}
         aria-live="polite"
         aria-label="Thinking"
       >
@@ -78,10 +77,10 @@ function ThinkingBlock({ text, isStreaming }: ThinkingBlockProps) {
     );
   }
 
-  // Settled state: collapsible summary with glass treatment.
+  // Settled state: collapsible inline summary inside the assistant turn.
   const summary = elapsed > 0 ? t("message.thought", { seconds: elapsed }) : t("message.thinking");
   return (
-    <div className={`${styles.thinking} kz-glass kz-glass-sweep`}>
+    <div className={styles.thinking}>
       <button
         className={styles.thinkingToggle}
         onClick={() => setOpen((v) => !v)}
@@ -109,6 +108,8 @@ interface Props {
   pendingPermissions?: PendingPermission[];
   /** Optional: emit when a file chip is clicked in a ToolCard */
   onOpenFile?: (path: string) => void;
+  /** Optional: open a preview for an image, file, URL, or browser result. */
+  onPreview?: (target: import("./PreviewPanel.tsx").PreviewTarget) => void;
   /** Reply to a pending question / permission from the browser IPC. */
   onReply?: (requestId: string, answer: string[]) => void;
   /** Resolve a pending question in the local store (collapses the form). */
@@ -126,6 +127,7 @@ export function Message({
   pendingQuestions,
   pendingPermissions,
   onOpenFile,
+  onPreview,
   onReply,
   onResolveQuestion,
 }: Props) {
@@ -247,6 +249,7 @@ export function Message({
             key={b.id}
             card={card}
             onOpenFile={onOpenFile}
+            onPreview={onPreview}
             pendingPermissions={myPermissions.filter((p) => p.toolUseId === b.id)}
             onReply={onReply}
           />
@@ -261,6 +264,7 @@ export function Message({
             key={c.toolUseId}
             card={c}
             onOpenFile={onOpenFile}
+            onPreview={onPreview}
             pendingPermissions={myPermissions.filter((p) => p.toolUseId === c.toolUseId)}
             onReply={onReply}
           />

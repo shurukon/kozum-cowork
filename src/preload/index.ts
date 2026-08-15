@@ -110,8 +110,13 @@ const api = {
       ipcRenderer.invoke("sessions:setPermissionMode", sessionId, mode),
     messages: (sessionId: string): Promise<Message[]> =>
       ipcRenderer.invoke("sessions:messages", sessionId),
-    send: (sessionId: string, text: string, attachments?: string[]): Promise<Result<void>> =>
-      ipcRenderer.invoke("sessions:send", sessionId, text, attachments),
+    send: (
+      sessionId: string,
+      text: string,
+      attachments?: string[],
+      clientTurnId?: string,
+    ): Promise<Result<void>> =>
+      ipcRenderer.invoke("sessions:send", sessionId, text, attachments, clientTurnId),
     cancel: (sessionId: string): Promise<Result<void>> =>
       ipcRenderer.invoke("sessions:cancel", sessionId),
     reply: (

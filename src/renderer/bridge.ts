@@ -108,7 +108,12 @@ export interface KozumBridge {
     /** Load the full message history for a session. */
     messages: (sessionId: string) => Promise<Message[]>;
     /** Send a user message and start the agent loop. */
-    send: (sessionId: string, text: string, attachments?: string[]) => Promise<Result<void>>;
+    send: (
+      sessionId: string,
+      text: string,
+      attachments?: string[],
+      clientTurnId?: string,
+    ) => Promise<Result<void>>;
     /** Request the running loop to stop after its current tool completes. */
     cancel: (sessionId: string) => Promise<Result<void>>;
     /** Respond to a permission_request or question event. */

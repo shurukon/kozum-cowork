@@ -170,10 +170,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const targetMode = resolveTargetMode(state, e);
 
     set((prev) => {
-      if (targetMode === "cowork") {
-        return { cowork: applyEventToMode(prev.cowork, e) };
-      }
-      return { code: applyEventToMode(prev.code, e) };
+      const current = prev[targetMode];
+      const seenEventIds = new Set(current.seenEventIds);
+      if (e.eventId && seenEventIds.has(e.eventId)) return prev;
+      if (e.eventId) seenEventIds.add(e.eventId);
+      const next = applyEventToMode(current, e);
+      return { [targetMode]: { ...next, seenEventIds } };
     });
   },
 
@@ -203,6 +205,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         // drop them to avoid a stale dangling form.
         pendingQuestions: [],
         pendingPermissions: [],
+        // Preserve live event ids while the transcript is being reloaded. A
+        // replay can arrive after the live subscription during startup; clearing
+        // this set here would apply those events a second time. clearMode() is
+        // the explicit boundary that resets it for a genuinely new session.
       },
     }));
   },

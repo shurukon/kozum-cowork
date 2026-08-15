@@ -25,6 +25,7 @@ import type { AgentEvent, Message, ToolDefinition, ToolResult } from "../../src/
 
 /** Each entry is the full SSE body for one successive request. */
 let script: string[] = [];
+let statusScript: number[] = [];
 let requests: any[] = [];
 let server: http.Server;
 let base = "";
@@ -59,7 +60,13 @@ before(async () => {
     req.on("data", (d) => (raw += d));
     req.on("end", () => {
       requests.push(raw ? JSON.parse(raw) : null);
+      const status = statusScript[requests.length - 1] ?? 200;
       const body = script[requests.length - 1] ?? sayText("(script exhausted)");
+      if (status >= 400) {
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "temporary upstream failure" } }));
+        return;
+      }
       res.writeHead(200, { "Content-Type": "text/event-stream" });
       res.end(body);
     });
@@ -75,6 +82,7 @@ after(async () => {
 
 beforeEach(async () => {
   script = [];
+  statusScript = [];
   requests = [];
   if (workDir) await rm(workDir, { recursive: true, force: true });
   workDir = await mkdtemp(join(tmpdir(), "kozum-loop-"));
@@ -121,6 +129,15 @@ const DEFS: ToolDefinition[] = [
     group: "system",
     modes: ["cowork", "code"],
   },
+  {
+    name: "sleep",
+    title: "Sleep",
+    description: "Wait for a controlled duration for timeout testing.",
+    inputSchema: { type: "object", properties: { ms: { type: "number" } }, required: ["ms"] },
+    icon: "clock",
+    group: "system",
+    modes: ["cowork", "code"],
+  },
 ];
 
 const executor: ToolExecutor = {
@@ -136,6 +153,10 @@ const executor: ToolExecutor = {
       return { ok: true, content: `wrote ${arg.content.length} bytes`, display: { summary: `Wrote ${arg.path}` } };
     }
     if (name === "explode") throw new Error("boom");
+    if (name === "sleep") {
+      await new Promise((resolve) => setTimeout(resolve, Number(arg.ms) || 0));
+      return { ok: true, content: "slept", display: { summary: "Sleep complete" } };
+    }
     return { ok: false, content: "", error: `unknown tool ${name}` };
   },
 };
@@ -146,7 +167,7 @@ function userTurn(text: string): Message[] {
 
 async function run(
   history: Message[],
-  opts: { maxIterations?: number; signal?: AbortSignal } = {},
+  opts: { maxIterations?: number; signal?: AbortSignal; toolTimeoutMs?: number } = {},
 ) {
   const events: AgentEvent[] = [];
   const result = await runAgentLoop({
@@ -161,6 +182,7 @@ async function run(
     maxTokens: 256,
     temperature: 0,
     maxIterations: opts.maxIterations ?? 8,
+    toolTimeoutMs: opts.toolTimeoutMs,
     signal: opts.signal ?? new AbortController().signal,
     emit: (e) => events.push(e),
   });
@@ -223,6 +245,18 @@ describe("tool round-trip", () => {
 });
 
 describe("resilience", () => {
+  it("retries a transient upstream failure before exposing an error", async () => {
+    // The adapter itself retries twice. A fourth request proves the loop-level
+    // retry also works without duplicating any visible assistant output.
+    statusScript = [503, 503, 503, 200];
+    script = ["", "", "", sayText("Recovered.")];
+    const { result, events } = await run(userTurn("retry"));
+
+    assert.equal(result.stopReason, "end_turn");
+    assert.equal(requests.length, 4);
+    assert.ok(events.some((e) => e.type === "thinking_delta" && /Retrying/.test(e.delta)));
+  });
+
   it("survives a tool that throws and reports it to the model", async () => {
     script = [callTool("c1", "explode", {}), sayText("I saw the error.")];
     const { result, events } = await run(userTurn("break it"));
@@ -238,6 +272,16 @@ describe("resilience", () => {
     // And the model was told, via a tool-role message flagged as an error.
     const toolMsg = requests[1].messages.find((m: any) => m.role === "tool");
     assert.match(toolMsg.content, /boom/);
+  });
+
+  it("converts a hanging tool into a visible timeout result and continues", async () => {
+    script = [callTool("c1", "sleep", { ms: 80 }), sayText("The tool timed out and I can continue.")];
+    const { result, events } = await run(userTurn("wait"), { toolTimeoutMs: 10 });
+
+    const end = events.find((e) => e.type === "tool_end") as any;
+    assert.equal(end.result.ok, false);
+    assert.match(end.result.error, /timeout/i);
+    assert.equal(result.stopReason, "end_turn");
   });
 
   it("turns malformed tool JSON into a correctable error, not a crash", async () => {

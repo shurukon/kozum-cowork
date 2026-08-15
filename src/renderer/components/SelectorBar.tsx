@@ -150,7 +150,8 @@ function ProviderDropdown({
       <Popover isOpen={open} onClose={() => setOpen(false)} anchorRef={btnRef}>
         <div className={styles.popoverInner} role="listbox" aria-label="Choose provider">
           <p className={styles.popoverHeading}>Provider</p>
-          {presets.map((p) => (
+          <div className={styles.optionList}>
+            {presets.map((p) => (
             <button
               key={p.id}
               className={`${styles.option} ${p.id === selection.providerId ? styles.optionActive : ""}`}
@@ -166,7 +167,8 @@ function ProviderDropdown({
                 <Check size={13} className={styles.optionCheck} aria-hidden={true} />
               )}
             </button>
-          ))}
+            ))}
+          </div>
         </div>
       </Popover>
     </div>
@@ -222,7 +224,8 @@ function KeyDropdown({ selection, keys, onChange }: KeyDropdownProps) {
       <Popover isOpen={open} onClose={() => setOpen(false)} anchorRef={btnRef}>
         <div className={styles.popoverInner} role="listbox" aria-label="Choose API key">
           <p className={styles.popoverHeading}>API Key</p>
-          {keys.map((k) => (
+          <div className={styles.optionList}>
+            {keys.map((k) => (
             <button
               key={k.id}
               className={`${styles.option} ${k.id === selection.keyId ? styles.optionActive : ""}`}
@@ -236,7 +239,8 @@ function KeyDropdown({ selection, keys, onChange }: KeyDropdownProps) {
                 <Check size={13} className={styles.optionCheck} aria-hidden={true} />
               )}
             </button>
-          ))}
+            ))}
+          </div>
         </div>
       </Popover>
     </div>
