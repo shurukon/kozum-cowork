@@ -2,7 +2,7 @@
  * ProviderRegistry — adapter selection, model refresh, and key testing.
  */
 
-import type { ModelInfo } from "../../shared/types.ts";
+import type { ModelInfo, ProviderPreset } from "../../shared/types.ts";
 import type { ProviderAdapter, ProviderContext } from "./adapter.ts";
 import { OpenAiChatAdapter } from "./adapters/openai-chat.ts";
 import { AnthropicMessagesAdapter } from "./adapters/anthropic-messages.ts";
@@ -25,10 +25,24 @@ const _vertexGeminiAdapter = new VertexGeminiAdapter();
 export class ProviderRegistry {
   private readonly secrets: SecretStore;
   private readonly appPaths: AppPaths;
+  private readonly loadCustomPresets?: () => Promise<ProviderPreset[]>;
 
-  constructor(secrets: SecretStore, appPaths: AppPaths) {
+  constructor(
+    secrets: SecretStore,
+    appPaths: AppPaths,
+    loadCustomPresets?: () => Promise<ProviderPreset[]>,
+  ) {
     this.secrets = secrets;
     this.appPaths = appPaths;
+    this.loadCustomPresets = loadCustomPresets;
+  }
+
+  /** Resolve built-in and user-defined providers from the persisted settings. */
+  async presetFor(providerId: string): Promise<ProviderPreset | undefined> {
+    const builtIn = getPreset(providerId);
+    if (builtIn) return builtIn;
+    const custom = await this.loadCustomPresets?.().catch(() => []) ?? [];
+    return custom.find((preset) => preset.id === providerId);
   }
 
   /**
@@ -64,7 +78,7 @@ export class ProviderRegistry {
 
   /** Build a ProviderContext for a specific key. */
   async contextFor(providerId: string, keyId: string): Promise<ProviderContext> {
-    const preset = getPreset(providerId);
+    const preset = await this.presetFor(providerId);
     if (!preset) throw new Error(`Unknown provider: "${providerId}"`);
 
     const entry = await this.secrets.getEntry(keyId);
@@ -90,7 +104,7 @@ export class ProviderRegistry {
    * the adapter returns null. Caches result to disk.
    */
   async refreshModels(providerId: string, keyId: string): Promise<ModelInfo[]> {
-    const preset = getPreset(providerId);
+    const preset = await this.presetFor(providerId);
     if (!preset) throw new Error(`Unknown provider: "${providerId}"`);
 
     let models: ModelInfo[] | null = null;
@@ -144,7 +158,7 @@ export class ProviderRegistry {
     const entry = await this.secrets.getEntry(keyId);
     if (!entry) throw new Error(`API key "${keyId}" not found`);
 
-    const preset = getPreset(entry.providerId);
+    const preset = await this.presetFor(entry.providerId);
     if (!preset) {
       await this.secrets.setStatus(keyId, "error", `Unknown provider: ${entry.providerId}`);
       return;

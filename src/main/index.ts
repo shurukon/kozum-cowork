@@ -35,6 +35,13 @@ import type { Mode } from "../shared/types.ts";
 
 const isDev = !app.isPackaged;
 
+// Electron's Linux keychain is unavailable in the headless test sandbox. Keep
+// the live UI harness real while ensuring this opt-in behavior is impossible
+// in packaged/production runs and is confined to the ephemeral test profile.
+if (process.env.NODE_ENV === "test" && process.env.KOZUM_USERDATA) {
+  safeStorage.setUsePlainTextEncryption(true);
+}
+
 /**
  * Windows data dir. Deliberately NOT the reference product's `Claude-3p` path
  * shape, and deliberately tolerant of symlinks/junctions: OneDrive folder
@@ -42,6 +49,8 @@ const isDev = !app.isPackaged;
  * refusing to traverse it is exactly the failure users hit elsewhere.
  */
 function resolveUserData(): string {
+  const testOverride = process.env.KOZUM_USERDATA?.trim();
+  if (process.env.NODE_ENV === "test" && testOverride) return testOverride;
   return join(app.getPath("appData"), "Kozum");
 }
 
@@ -122,8 +131,8 @@ if (!app.requestSingleInstanceLock()) {
     app.setAppUserModelId("app.kozum.cowork");
     nativeTheme.themeSource = "dark";
 
-    const appPaths = { getPath: (name: "appData") => app.getPath(name) };
     const userDataPath = resolveUserData();
+    const appPaths = { getPath: (_name: "appData") => userDataPath };
 
     // ── stores ──────────────────────────────────────────────────────────────
     const settings = new SettingsStore(settingsPath(appPaths));
@@ -135,7 +144,10 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     // ── providers ───────────────────────────────────────────────────────────
-    const registry = new ProviderRegistry(secrets, appPaths);
+    const registry = new ProviderRegistry(secrets, appPaths, async () => {
+      const current = await settings.get();
+      return Array.isArray(current.customProviders) ? current.customProviders : [];
+    });
 
     // ── sessions ────────────────────────────────────────────────────────────
     const sessionStore = new SessionStore(sessionsDir(appPaths));

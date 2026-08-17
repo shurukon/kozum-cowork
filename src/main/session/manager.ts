@@ -31,7 +31,7 @@ import type { PromptContext } from "../agent/prompts/index.ts";
 import { makeExecutor } from "../tools/index.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
 import { looksVisionCapable } from "../providers/capabilities.ts";
-import { getPreset, PROVIDER_PRESETS } from "../providers/presets.ts";
+import { PROVIDER_PRESETS } from "../providers/presets.ts";
 import type { ToolContext } from "../tools/registry.ts";
 import { resolveCapabilities } from "../providers/capabilities.ts";
 import { checkPermission, blockedResult } from "../tools/permissions.ts";
@@ -96,6 +96,7 @@ export class SessionManager {
     attachments: string[] = [],
     clientTurnId?: string,
   ): Promise<Result<void>> {
+    console.error(`[live-debug] send accepted session=${sessionId} clientTurn=${clientTurnId ? "yes" : "no"}`);
     const session = await this.sessions.get(sessionId);
     if (!session) return err(`Session "${sessionId}" not found`);
 
@@ -171,6 +172,7 @@ export class SessionManager {
   ): Promise<void> {
     const sessionId = session.id;
 
+    console.error(`[live-debug] runLoop started session=${sessionId} mode=${session.mode}`);
     try {
       await this.sessions.updateStatus(sessionId, "running");
       this.emitEvent(sessionId, { type: "session_status", mode: session.mode, sessionId, status: "running" });
@@ -220,7 +222,7 @@ export class SessionManager {
 
       if (!modelId) {
         const cachedModels = await this.registry.listModels(providerId).catch(() => []);
-        modelId = cachedModels[0]?.id ?? getPreset(providerId)?.staticModels?.[0] ?? "";
+        modelId = cachedModels[0]?.id ?? (await this.registry.presetFor(providerId))?.staticModels?.[0] ?? "";
         if (!modelId) {
           const refreshedModels = await this.registry.refreshModels(providerId, resolvedKeyId).catch(() => []);
           modelId = refreshedModels[0]?.id ?? "";
@@ -232,7 +234,7 @@ export class SessionManager {
       }
 
       // Look up preset to get protocol
-      const preset = getPreset(providerId);
+      const preset = await this.registry.presetFor(providerId);
       if (!preset) throw new Error(`Unknown provider: "${providerId}"`);
 
       // Get adapter

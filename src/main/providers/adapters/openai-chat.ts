@@ -171,22 +171,88 @@ export class OpenAiChatAdapter implements ProviderAdapter {
       body.tool_choice = req.toolChoice ?? "auto";
     }
 
-    const res = await fetchWithRetry(
-      `${ctx.baseUrl}/chat/completions`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${ctx.apiKey}`,
-          ...ctx.extraHeaders,
-        },
-        body: JSON.stringify(body),
-        signal: req.signal,
+    const requestInit: RequestInit = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ctx.apiKey}`,
+        ...ctx.extraHeaders,
       },
+      body: JSON.stringify(body),
+      signal: req.signal,
+    };
+    let res = await fetchWithRetry(
+      `${ctx.baseUrl}/chat/completions`,
+      requestInit,
       { providerId: ctx.providerId },
     );
-
     if (!res.ok) throw await errorFromResponse(res, ctx.providerId);
+
+    // Some OpenAI-compatible gateways return HTTP 200 with a JSON error when
+    // streaming is unavailable. Retry once as a normal JSON completion so the
+    // agent remains usable; the rest of the app still receives normalised
+    // StreamDelta events and does not need a provider-specific branch.
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/event-stream")) {
+      let json = (await res.json()) as any;
+      if (json?.error && /streaming is not supported/i.test(String(json.error?.message ?? json.error))) {
+        const fallbackBody = { ...body, stream: false };
+        res = await fetchWithRetry(
+          `${ctx.baseUrl}/chat/completions`,
+          { ...requestInit, body: JSON.stringify(fallbackBody) },
+          { providerId: ctx.providerId },
+        );
+        if (!res.ok) throw await errorFromResponse(res, ctx.providerId);
+        json = (await res.json()) as any;
+      }
+
+      if (json?.error) {
+        throw new ProviderError({
+          message: json.error.message ?? String(json.error),
+          providerId: ctx.providerId,
+        });
+      }
+
+      const choice = json?.choices?.[0] ?? {};
+      const message = choice.message ?? {};
+      if (typeof message.content === "string" && message.content) {
+        yield { type: "text", text: message.content };
+      } else if (Array.isArray(message.content)) {
+        for (const part of message.content) {
+          if (part?.type === "text" && part.text) yield { type: "text", text: part.text };
+        }
+      }
+
+      const thinking = message.reasoning_content ?? message.reasoning ?? message.thinking;
+      if (typeof thinking === "string" && thinking) yield { type: "thinking", text: thinking };
+
+      let hadToolCalls = false;
+      for (const [index, toolCall] of (message.tool_calls ?? []).entries()) {
+        const id = toolCall?.id || `call_${ctx.providerId}_${index}_${Date.now()}`;
+        const name = toolCall?.function?.name;
+        if (!name) continue;
+        hadToolCalls = true;
+        yield { type: "tool_start", id, name };
+        const rawArgs = toolCall.function?.arguments;
+        const partial = typeof rawArgs === "string" ? rawArgs : JSON.stringify(rawArgs ?? {});
+        if (partial) yield { type: "tool_args", id, partial };
+        yield { type: "tool_end", id };
+      }
+
+      if (json?.usage) {
+        yield {
+          type: "usage",
+          usage: {
+            inputTokens: json.usage.prompt_tokens ?? 0,
+            outputTokens: json.usage.completion_tokens ?? 0,
+            cacheReadTokens: json.usage.prompt_tokens_details?.cached_tokens,
+          },
+        };
+      }
+      yield { type: "stop", reason: mapFinish(choice.finish_reason ?? null, hadToolCalls) };
+      return;
+    }
+
     if (!res.body) {
       throw new ProviderError({
         message: "provider returned no response body",

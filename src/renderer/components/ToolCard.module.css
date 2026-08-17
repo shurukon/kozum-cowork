@@ -597,3 +597,110 @@
     display: none;
   }
 }
+
+
+/* Cowork activity rows: the tool event is part of the transcript, not a modal card. */
+.inline {
+  width: 100%;
+  overflow: visible;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  animation: none;
+}
+
+.inline:global(.kz-glass)::before,
+.inline:global(.kz-glass)::after,
+.inline:global(.kz-glass-busy)::before,
+.inline:global(.kz-glass-busy)::after {
+  display: none !important;
+}
+
+.inline.cardRunning,
+.inline.cardOk,
+.inline.cardError {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.inline .header {
+  min-height: 32px;
+  padding: 2px 0;
+  gap: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.inline .header:not(:disabled):hover {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.inline .iconWrap {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.inline .summary {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-regular);
+  color: var(--text-secondary);
+}
+
+.inline .note {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.inline .detail {
+  margin-inline-start: 30px;
+  padding: 8px 0 0;
+  border-top: 0;
+}
+
+.inline .permissionStack {
+  margin-inline-start: 30px;
+}
+
+.inline .headerProgress {
+  inset-inline-start: 30px;
+  height: 1px;
+}
+
+.inline .spinner {
+  width: 13px;
+  height: 13px;
+  border-width: 1.5px;
+}
+
+.inline .chevron {
+  opacity: 0.7;
+}
+
+.inline .summary.shimmer-text {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+
+.inline .summary.shimmer-text::after {
+  content: "";
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-inline-start: 0.55em;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 0.08em;
+  opacity: 0.65;
+  animation: inlineToolPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes inlineToolPulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.82); }
+  50% { opacity: 0.9; transform: scale(1); }
+}

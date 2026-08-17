@@ -281,10 +281,10 @@ const MAX_THUMBNAILS = 12;
 
 export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPreview, inline = false }: ToolCardProps) {
   const { t } = useTranslation();
-  // P1-4: running cards default expanded; error cards stay expanded; ok cards
-  // collapse once the reducer marks `autoCollapse` at turn_end. The user can
-  // still re-expand manually — `expanded` is uncontrolled from then on.
-  const initialExpanded = card.status === "running" || card.status === "error";
+  // Cowork activity rows stay compact while live so the timeline remains
+  // readable. Code mode keeps the existing expanded-running/error behavior;
+  // users can still open every inline detail explicitly.
+  const initialExpanded = inline ? false : card.status === "running" || card.status === "error";
   const [expanded, setExpanded] = useState(initialExpanded);
   // Sweep fires once on mount; swept tracks whether we've applied it.
   const [swept, setSwept] = useState(false);

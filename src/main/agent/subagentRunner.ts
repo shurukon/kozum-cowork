@@ -20,7 +20,6 @@ import { makeExecutor } from "../tools/index.ts";
 import { runAgentLoop } from "./loop.ts";
 import { buildSystemPrompt } from "./prompts/index.ts";
 import type { PromptContext } from "./prompts/index.ts";
-import { getPreset } from "../providers/presets.ts";
 import { resolveCapabilities, looksVisionCapable } from "../providers/capabilities.ts";
 import type { AgentRunner } from "./subagents.ts";
 
@@ -71,7 +70,7 @@ export function makeRealRunner(deps: SubagentRunnerDeps): AgentRunner {
       throw new Error("Subagent run aborted: no model configured.");
     }
 
-    const preset = getPreset(providerId);
+    const preset = await deps.registry.presetFor(providerId);
     if (!preset) throw new Error(`Subagent run aborted: unknown provider "${providerId}".`);
 
     const adapter = deps.registry.adapterFor(preset.protocol);

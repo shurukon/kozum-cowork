@@ -21,6 +21,8 @@ import type { Message } from "../../src/shared/types.ts";
 /** Per-test script: the exact byte chunks the server will emit. */
 let chunks: (string | Buffer)[] = [];
 let status = 200;
+let jsonResponse = false;
+let jsonResponses: string[] = [];
 let lastBody: any = null;
 
 let server: http.Server;
@@ -43,9 +45,10 @@ before(async () => {
         return;
       }
 
-      if (status !== 200) {
+      if (status !== 200 || jsonResponse) {
         res.writeHead(status, { "Content-Type": "application/json" });
-        res.end(chunks.join(""));
+        res.end(jsonResponses.shift() ?? chunks.join(""));
+        if (!jsonResponses.length) jsonResponse = false;
         return;
       }
 
@@ -204,6 +207,46 @@ describe("streaming text", () => {
       deltas.filter((d) => d.type === "text").map((d) => (d as any).text).join(""),
       "crlf",
     );
+  });
+});
+
+describe("non-streaming compatibility", () => {
+  it("falls back to a real JSON completion when the gateway rejects streaming", async () => {
+    status = 200;
+    jsonResponse = true;
+    jsonResponses = [
+      JSON.stringify({ error: { message: "Streaming is not supported" } }),
+      JSON.stringify({
+        choices: [{
+          message: {
+            role: "assistant",
+            content: "Created.",
+            tool_calls: [{ id: "call_json", type: "function", function: { name: "file_write", arguments: '{"path":"live.html","content":"ok"}' } }],
+          },
+          finish_reason: "tool_calls",
+        }],
+        usage: { prompt_tokens: 10, completion_tokens: 8 },
+      }),
+    ];
+
+    const adapter = new OpenAiChatAdapter();
+    const deltas: StreamDelta[] = [];
+    for await (const delta of adapter.stream(ctx(), {
+      model: "test-model",
+      system: "You are a test.",
+      messages: [userMsg("create a file")],
+      tools: [{ name: "file_write", description: "write", inputSchema: { type: "object" } } as any],
+      maxTokens: 128,
+      temperature: 0,
+      toolChoice: "required",
+      signal: new AbortController().signal,
+    })) deltas.push(delta);
+
+    assert.equal(lastBody?.stream, false);
+    assert.ok(deltas.some((d) => d.type === "text" && d.text === "Created."));
+    assert.ok(deltas.some((d) => d.type === "tool_start" && d.name === "file_write"));
+    assert.equal(deltas.filter((d) => d.type === "tool_args").map((d: any) => d.partial).join(""), '{"path":"live.html","content":"ok"}');
+    assert.equal((deltas.at(-1) as any).reason, "tool_use");
   });
 });
 
