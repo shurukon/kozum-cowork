@@ -30,6 +30,22 @@ interface SpawnResult {
 
 const MAX_BYTES = 1 * 1024 * 1024; // 1 MB
 
+/** Commands that are normally intended to stay alive and serve/watch files. */
+function isLikelyLongRunningServer(command: string): boolean {
+  const normalized = command
+    .replace(/[\\"'`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+  return (
+    /(^|\s)(vite|webpack-dev-server|parcel|next dev|astro dev|python(?:3)? -m http\.server|ruby -run -e httpd)(\s|$)/.test(normalized) ||
+    /(^|\s)(npm|pnpm|yarn|bun) (run )?(dev|start|serve|preview)(\s|$)/.test(normalized) ||
+    /(^|\s)(nodemon|tsx watch|cargo watch|watchexec)(\s|$)/.test(normalized) ||
+    /(^|\s)(watchman|tail -f|while true;|for \(;;\))(\s|$)/.test(normalized)
+  );
+}
+
 function defaultShell(): ShellName {
   return process.platform === "win32" ? "cmd" : "bash";
 }
@@ -191,11 +207,13 @@ export const shellTools: Tool[] = [
       name: "shell_exec",
       title: "Shell Execute",
       description:
-        "Run a shell command to completion. Returns stdout, stderr, and exit code. " +
-        "Use this to run scripts, build tools, tests, or any command-line program. " +
-        "Prefer short timeouts for interactive tools. Non-zero exit codes are reported " +
-        "as failures in the result, not as tool crashes. " +
-        "Output is capped at 1 MB per stream; long outputs will be noted as truncated.",
+        "Run a finite shell command to completion and return stdout, stderr, and exit code. " +
+        "Use this for short scripts, file transforms, builds, tests, and commands that terminate. " +
+        "NEVER use this to start a development server, preview server, watcher, daemon, or other " +
+        "long-running process; use shell_exec_bg for those and monitor the returned jobId. " +
+        "Prefer short timeouts for interactive commands. Non-zero exit codes are reported " +
+        "as failures in the result, not as tool crashes. Output is capped at 1 MB per stream; " +
+        "long outputs will be noted as truncated.",
       inputSchema: {
         type: "object",
         properties: {
@@ -226,6 +244,16 @@ export const shellTools: Tool[] = [
       const noTimeout = (input["noTimeout"] as boolean | undefined) ?? false;
       const shellName = (input["shell"] as ShellName | undefined) ?? defaultShell();
       const env = input["env"] as Record<string, string> | undefined;
+
+      // Fail fast instead of holding the agent turn until the finite-command timeout.
+      // Long-lived processes must use shell_exec_bg so the agent can continue and
+      // inspect them through shell_job_status/result without blocking the turn.
+      if (isLikelyLongRunningServer(command)) {
+        return fail(
+          "shell_exec only runs finite commands. This command looks like a server, preview, watcher, or daemon; use shell_exec_bg and then shell_job_status/shell_job_result with the returned jobId.",
+          "Long-running command rejected by shell_exec",
+        );
+      }
 
       // Resolve cwd
       let cwd: string | undefined;

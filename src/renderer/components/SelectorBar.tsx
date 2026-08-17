@@ -187,10 +187,19 @@ function KeyDropdown({ selection, keys, onChange }: KeyDropdownProps) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
 
-  // Only render when the provider has >1 key.
-  if (keys.length <= 1) return null;
-
+  // The key indicator is intentionally always visible. A single saved key is
+  // still important state in the chat; only the popover itself is conditional.
   const current = keys.find((k) => k.id === selection.keyId) ?? keys[0];
+  const canChoose = keys.length > 1;
+  const keyStatus = current?.status ?? "missing";
+  const keyStatusClass =
+    keyStatus === "valid"
+      ? styles.keyStatusValid
+      : keyStatus === "invalid"
+        ? styles.keyStatusInvalid
+        : keyStatus === "error"
+          ? styles.keyStatusError
+          : styles.keyStatusMissing;
 
   function pick(k: ApiKeyEntry) {
     onChange({ ...selection, keyId: k.id });
@@ -210,18 +219,25 @@ function KeyDropdown({ selection, keys, onChange }: KeyDropdownProps) {
         ref={btnRef}
         className={styles.selectorBtn}
         onClick={() => setOpen((v) => !v)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
+        aria-haspopup={canChoose ? "listbox" : undefined}
+        aria-expanded={canChoose ? open : undefined}
         aria-label={`API key: ${current?.maskedKey ?? "none"}`}
+        disabled={!canChoose}
+        title={current ? `${current.label} — ${current.status}` : "No API key saved"}
       >
         <Key size={13} aria-hidden={true} />
         <span className={styles.selectorLabel}>
           {current?.maskedKey ?? "No key"}
         </span>
-        <ChevronDown size={12} className={styles.chevron} aria-hidden={true} />
+        <span
+          className={`${styles.keyStatus} ${keyStatusClass}`}
+          aria-label={`API key status: ${keyStatus}`}
+          title={`API key status: ${keyStatus}`}
+        />
+        {canChoose && <ChevronDown size={12} className={styles.chevron} aria-hidden={true} />}
       </button>
 
-      <Popover isOpen={open} onClose={() => setOpen(false)} anchorRef={btnRef}>
+      <Popover isOpen={canChoose && open} onClose={() => setOpen(false)} anchorRef={btnRef}>
         <div className={styles.popoverInner} role="listbox" aria-label="Choose API key">
           <p className={styles.popoverHeading}>API Key</p>
           <div className={styles.optionList}>

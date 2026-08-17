@@ -16,7 +16,14 @@ import type { AddressInfo } from "node:net";
 
 import { ToolRegistry } from "../../src/main/tools/registry.ts";
 import type { ToolContext } from "../../src/main/tools/registry.ts";
-import { webTools, parseDdgHtml, decodeDdgUrl, isPrivateHost } from "../../src/main/tools/web.ts";
+import {
+  webTools,
+  parseDdgHtml,
+  parseDdgLiteHtml,
+  parseDdgApiJson,
+  decodeDdgUrl,
+  isPrivateHost,
+} from "../../src/main/tools/web.ts";
 import { screenshotTools, computeTiles } from "../../src/main/tools/screenshot.ts";
 import {
   decodeEntities,
@@ -501,6 +508,51 @@ describe("parseDdgHtml – attribute order guard", () => {
     // Verify slice behaviour:
     const limited = allResults.slice(0, 2);
     assert.equal(limited.length, 2, "slice should honour the limit");
+  });
+});
+
+const DDG_LITE_FIXTURE = [
+  "<table>",
+  "<tr><td><a rel='nofollow' href='//duckduckgo.com/l/?uddg=https%3A%2F%2Flite.example.com%2F&amp;rut=x' class='result-link'>Lite Result</a></td></tr>",
+  "<tr><td class='result-snippet'>A result from the Lite endpoint.</td></tr>",
+  "</table>",
+].join("\\n");
+
+describe("parseDdgLiteHtml – fallback parser", () => {
+  it("extracts links when href appears before class", () => {
+    const results = parseDdgLiteHtml(DDG_LITE_FIXTURE);
+    assert.equal(results.length, 1);
+    assert.equal(results[0]?.title, "Lite Result");
+    assert.equal(results[0]?.url, "https://lite.example.com/");
+    assert.match(results[0]?.snippet ?? "", /Lite endpoint/);
+  });
+
+  it("does not return DuckDuckGo redirect URLs as results", () => {
+    const html = "<a class='result-link' href='//duckduckgo.com/l/?uddg=https%3A%2F%2Fduckduckgo.com%2F'>DDG</a>";
+    assert.deepEqual(parseDdgLiteHtml(html), []);
+  });
+});
+
+describe("parseDdgApiJson – JSON fallback", () => {
+  it("converts abstract and nested related topics", () => {
+    const results = parseDdgApiJson({
+      Heading: "Example",
+      AbstractText: "An abstract result.",
+      AbstractURL: "https://example.com/abstract",
+      RelatedTopics: [
+        { Text: "Related one", FirstURL: "https://example.com/one" },
+        { Topics: [{ Text: "Related two", FirstURL: "https://example.com/two" }] },
+      ],
+    });
+    assert.equal(results.length, 3);
+    assert.equal(results[0]?.url, "https://example.com/abstract");
+    assert.equal(results[2]?.url, "https://example.com/two");
+  });
+
+  it("returns empty results for malformed JSON values", () => {
+    assert.deepEqual(parseDdgApiJson(null), []);
+    assert.deepEqual(parseDdgApiJson("not-json"), []);
+    assert.deepEqual(parseDdgApiJson({ RelatedTopics: "invalid" }), []);
   });
 });
 

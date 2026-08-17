@@ -222,7 +222,10 @@ export function parseDdgHtml(html: string): SearchResult[] {
   // The URL display has class "result__url"
 
   // Split by result blocks
-  const resultBlocks = html.split(/<div[^>]+class="[^"]*result[^"]*"[^>]*>/i);
+  // Match the top-level `result` class token only. A substring match also
+  // splits nested `result__body`, `result__extras`, and `result__url` divs,
+  // separating titles from snippets in current DuckDuckGo markup.
+  const resultBlocks = html.split(/<div(?=[^>]*class="[^"]*\bresult\b[^"]*")[^>]*>/i);
 
   for (const block of resultBlocks.slice(1)) {
     // Extract title and href from result__a link
@@ -251,6 +254,66 @@ export function parseDdgHtml(html: string): SearchResult[] {
     results.push({ title, url, snippet });
   }
 
+  return results;
+}
+
+/**
+ * Parse DuckDuckGo Lite markup. The regular HTML endpoint can return a 202
+ * anomaly/CAPTCHA page to non-browser clients; Lite remains a text-only
+ * endpoint and uses result-link/result-snippet table cells.
+ */
+export function parseDdgLiteHtml(html: string): SearchResult[] {
+  const results: SearchResult[] = [];
+  const linkRe = /<a\b(?=[^>]*class=['\"][^'\"]*\bresult-link\b[^'\"]*['\"])[^>]*href=['\"]([^'\"]+)['\"][^>]*>([\s\S]*?)<\/a>/gi;
+  const matches = [...html.matchAll(linkRe)];
+  for (let i = 0; i < matches.length; i++) {
+    const match = matches[i]!;
+    const rawHref = (match[1] ?? "").replace(/&amp;/g, "&");
+    const title = htmlToText(match[2] ?? "", { markdown: false }).trim();
+    const nextStart = matches[i + 1]?.index ?? html.length;
+    const afterLink = html.slice((match.index ?? 0) + match[0].length, nextStart);
+    const snippetMatch = afterLink.match(
+      /<td\b[^>]*class=['\"][^'\"]*\bresult-snippet\b[^'\"]*['\"][^>]*>([\s\S]*?)<\/td>/i,
+    );
+    const snippet = htmlToText(snippetMatch?.[1] ?? "", { markdown: false }).trim();
+    const url = decodeDdgUrl(rawHref);
+    if (title && url && !url.startsWith("https://duckduckgo.com")) {
+      results.push({ title, url, snippet });
+    }
+  }
+  return results;
+}
+
+/**
+ * Convert DuckDuckGo's public Instant Answer JSON into search-like results.
+ * It is intentionally conservative: only explicit URLs supplied by DDG are
+ * returned, and no user-controlled URL is fetched during this parsing step.
+ */
+export function parseDdgApiJson(value: unknown): SearchResult[] {
+  if (value === null || typeof value !== "object") return [];
+  const data = value as Record<string, unknown>;
+  const results: SearchResult[] = [];
+  const abstractUrl = typeof data["AbstractURL"] === "string" ? data["AbstractURL"] : "";
+  const abstractText = typeof data["AbstractText"] === "string" ? data["AbstractText"].trim() : "";
+  const heading = typeof data["Heading"] === "string" ? data["Heading"].trim() : "";
+  if (abstractUrl && abstractText) results.push({ title: heading || abstractUrl, url: abstractUrl, snippet: abstractText });
+
+  const visit = (items: unknown): void => {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const entry = item as Record<string, unknown>;
+      if (typeof entry["FirstURL"] === "string" && typeof entry["Text"] === "string") {
+        const url = entry["FirstURL"].trim();
+        const text = entry["Text"].trim();
+        if (url && text && !results.some((result) => result.url === url)) {
+          results.push({ title: text.split(" - ")[0] || text, url, snippet: text });
+        }
+      }
+      visit(entry["Topics"]);
+    }
+  };
+  visit(data["RelatedTopics"]);
   return results;
 }
 
@@ -404,17 +467,17 @@ export const webTools: Tool[] = [
       const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
 
       let ddgHtml: string;
+      let ddgStatus = 0;
+      const ddgHeaders = {
+        "User-Agent":
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+          "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      };
       try {
-        const resp = await fetch(searchUrl, {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-              "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-            Accept: "text/html,application/xhtml+xml",
-            "Accept-Language": "en-US,en;q=0.9",
-          },
-          redirect: "follow",
-        });
+        const resp = await fetch(searchUrl, { headers: ddgHeaders, redirect: "follow" });
+        ddgStatus = resp.status;
         ddgHtml = await resp.text();
       } catch (e) {
         return fail(
@@ -423,7 +486,34 @@ export const webTools: Tool[] = [
         );
       }
 
-      const results = parseDdgHtml(ddgHtml).slice(0, limit);
+      let results = parseDdgHtml(ddgHtml);
+      // DDG may serve an anomaly page (usually HTTP 202) to Node clients.
+      // Use the public text-only Lite endpoint as a read-only fallback; never
+      // attempt to solve or bypass the challenge itself.
+      if (results.length === 0 && (ddgStatus === 202 || /anomaly-modal|captcha/i.test(ddgHtml))) {
+        try {
+          const liteResp = await fetch(
+            `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`,
+            { headers: ddgHeaders, redirect: "follow" },
+          );
+          const liteHtml = await liteResp.text();
+          results = parseDdgLiteHtml(liteHtml);
+        } catch {
+          // Continue to the JSON fallback below.
+        }
+      }
+      if (results.length === 0) {
+        try {
+          const apiResp = await fetch(
+            `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
+            { headers: { "User-Agent": ddgHeaders["User-Agent"], Accept: "application/json" }, redirect: "follow" },
+          );
+          if (apiResp.ok) results = parseDdgApiJson(await apiResp.json());
+        } catch {
+          // Preserve the clear no-results error below if all public endpoints fail.
+        }
+      }
+      results = results.slice(0, limit);
 
       if (results.length === 0) {
         return fail(

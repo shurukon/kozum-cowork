@@ -109,8 +109,10 @@ describe("App render — unconfigured bridge (no provider)", () => {
 
 describe("App render — saved key with stale selection", () => {
   let cleanup: () => void;
+  let refreshCalls = 0;
 
   beforeEach(() => {
+    refreshCalls = 0;
     const bridge = makeFakeBridge({
       settings: {
         get: async () => makeSettings(),
@@ -128,14 +130,25 @@ describe("App render — saved key with stale selection", () => {
             status: "valid",
           },
         ] : []),
-        listModels: async (pid) => pid === "anthropic" ? [
-          {
-            id: "claude-test",
-            displayName: "Claude Test",
-            providerId: "anthropic",
-            capabilities: { vision: "no", tools: true, streaming: true, reasoning: false },
-          },
-        ] : [],
+        // Simulate a real restart with no cached model catalogue. The
+        // bootstrap resolver must refresh using the saved key instead of
+        // treating the provider as unconfigured.
+        listModels: async () => [],
+        refreshModels: async (pid) => {
+          if (pid !== "anthropic") return { ok: true, value: [] };
+          refreshCalls += 1;
+          return {
+            ok: true,
+            value: [
+              {
+                id: "claude-test",
+                displayName: "Claude Test",
+                providerId: "anthropic",
+                capabilities: { vision: "no", tools: true, streaming: true, reasoning: false },
+              },
+            ],
+          };
+        },
       },
     });
     cleanup = installFakeBridge(bridge);
@@ -143,9 +156,10 @@ describe("App render — saved key with stale selection", () => {
 
   afterEach(() => cleanup());
 
-  it("does not show FirstRun when a usable saved key exists even if selection is stale", async () => {
+  it("refreshes missing models and does not show FirstRun when a usable saved key exists", async () => {
     render(<App />);
     await waitFor(() => {
+      expect(refreshCalls).toBeGreaterThan(0);
       expect(screen.queryByText(/skip for now/i)).toBeNull();
       expect((document.body.textContent ?? "").length).toBeGreaterThan(10);
     }, { timeout: 3000 });

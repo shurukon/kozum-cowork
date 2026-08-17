@@ -124,9 +124,10 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     baseUrl: "https://api.kilo.ai/api/gateway",
     authScheme: "bearer",
     modelsPath: "/models",
+    staticModels: ["kilo-auto/free"],
     docsUrl: "https://kilocode.ai/docs",
     notes:
-      "Note the non-standard /api/gateway prefix — there is no /v1. The catalogue endpoint needs no auth. Virtual kilo-auto/* ids route automatically by tier.",
+      "Note the non-standard /api/gateway prefix — there is no /v1. The catalogue endpoint needs no auth. The live catalogue uses kilo-auto/* ids, including kilo-auto/free for the free tier.",
     builtIn: true,
   },
   {

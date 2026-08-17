@@ -37,6 +37,8 @@ export interface CompletionRequest {
   tools: ToolDefinition[];
   maxTokens: number;
   temperature: number;
+  /** Tool selection policy for compatible providers; defaults to auto. */
+  toolChoice?: "auto" | "required";
   /** Aborts the in-flight HTTP request. */
   signal: AbortSignal;
 }

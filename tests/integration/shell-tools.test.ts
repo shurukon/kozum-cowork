@@ -82,6 +82,19 @@ describe("shell_exec", () => {
     assert.equal(term.exitCode, 42);
   });
 
+  it("rejects a preview server command before the finite-command timeout", async () => {
+    const start = Date.now();
+    const r = await exec("shell_exec", {
+      command: "npm run dev -- --host 127.0.0.1",
+      shell: "bash",
+      timeoutSeconds: 30,
+    });
+    const elapsed = Date.now() - start;
+    assert.ok(!r.ok, "long-running preview commands must be rejected by shell_exec");
+    assert.match(r.error ?? r.content, /shell_exec_bg/i);
+    assert.ok(elapsed < 2_000, `server command should fail fast, took ${elapsed}ms`);
+  });
+
   it("timeout kills a sleep and returns partial output", async () => {
     // Use a command that prints something before sleeping
     const command = "echo partial_output && sleep 30";

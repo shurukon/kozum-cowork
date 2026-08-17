@@ -31,7 +31,7 @@ import type { PromptContext } from "../agent/prompts/index.ts";
 import { makeExecutor } from "../tools/index.ts";
 import type { ToolRegistry } from "../tools/registry.ts";
 import { looksVisionCapable } from "../providers/capabilities.ts";
-import { getPreset } from "../providers/presets.ts";
+import { getPreset, PROVIDER_PRESETS } from "../providers/presets.ts";
 import type { ToolContext } from "../tools/registry.ts";
 import { resolveCapabilities } from "../providers/capabilities.ts";
 import { checkPermission, blockedResult } from "../tools/permissions.ts";
@@ -185,13 +185,46 @@ export class SessionManager {
         modelId = modelId || session.selection.modelId;
       }
 
+      // Renderer state can be empty or stale on the first turn after startup.
+      // Resolve from the encrypted key store as the final source of truth.
+      if (!providerId) {
+        for (const preset of PROVIDER_PRESETS) {
+          const candidateKeyId = await this.registry.resolveKeyId(preset.id, null);
+          if (candidateKeyId) {
+            providerId = preset.id;
+            keyId = candidateKeyId;
+            break;
+          }
+        }
+      }
+
       if (!providerId) {
         throw new Error("No provider configured. Please select a provider and model.");
       }
 
-      const resolvedKeyId = await this.registry.resolveKeyId(providerId, keyId);
+      let resolvedKeyId = await this.registry.resolveKeyId(providerId, keyId);
+      if (!resolvedKeyId) {
+        // A stale provider selection should not hide a valid key saved for another provider.
+        for (const preset of PROVIDER_PRESETS) {
+          const candidateKeyId = await this.registry.resolveKeyId(preset.id, null);
+          if (candidateKeyId) {
+            providerId = preset.id;
+            resolvedKeyId = candidateKeyId;
+            break;
+          }
+        }
+      }
       if (!resolvedKeyId) {
         throw new Error(`No API key found for provider "${providerId}". Please add an API key.`);
+      }
+
+      if (!modelId) {
+        const cachedModels = await this.registry.listModels(providerId).catch(() => []);
+        modelId = cachedModels[0]?.id ?? getPreset(providerId)?.staticModels?.[0] ?? "";
+        if (!modelId) {
+          const refreshedModels = await this.registry.refreshModels(providerId, resolvedKeyId).catch(() => []);
+          modelId = refreshedModels[0]?.id ?? "";
+        }
       }
 
       if (!modelId) {

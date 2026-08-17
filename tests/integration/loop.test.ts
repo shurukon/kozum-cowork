@@ -206,6 +206,14 @@ describe("single round", () => {
   });
 });
 
+describe("tool selection policy", () => {
+  it("requires a tool on an actionable Cowork request", async () => {
+    script = [sayText("I should not answer before using a tool.")];
+    await run(userTurn("create an index.html landing page and open the preview"));
+    assert.equal(requests[0].tool_choice, "required");
+  });
+});
+
 describe("tool round-trip", () => {
   it("executes a tool and feeds the result back for a second round", async () => {
     await writeFile(join(workDir, "notes.txt"), "hello from disk", "utf8");

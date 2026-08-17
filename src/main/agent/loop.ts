@@ -181,6 +181,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
           tools: defs,
           maxTokens: opts.maxTokens,
           temperature: opts.temperature,
+          toolChoice: shouldRequireToolChoice(opts.mode, iterations, defs, working) ? "required" : "auto",
           signal: opts.signal,
         });
 
@@ -440,6 +441,24 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
  * failure must not crash the turn — it becomes a tool error the model can see
  * and correct on the next round.
  */
+function shouldRequireToolChoice(
+  mode: Mode,
+  iteration: number,
+  defs: ToolDefinition[],
+  history: Message[],
+): boolean {
+  if (mode !== "cowork" || iteration !== 1 || defs.length === 0) return false;
+  const latestUserText = [...history]
+    .reverse()
+    .find((m) => m.role === "user")
+    ?.content
+    .filter((block) => block.type === "text")
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join(" ")
+    .toLowerCase() ?? "";
+  return /\b(create|write|edit|save|open|preview|run|execute|build|generate|download|search|read|delete|move|shell|server|html|file)\b|أنشئ|اصنع|اكتب|عدّل|احفظ|افتح|شغّل|نفّذ|ملف|معاينة|خادم|ابحث|اقرأ|احذف/.test(latestUserText);
+}
+
 function parseArgs(raw: string): unknown {
   const s = raw.trim();
   if (!s) return {};

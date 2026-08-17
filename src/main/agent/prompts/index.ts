@@ -33,6 +33,8 @@ Markdown, HTML, SVG and PDF render in the built-in preview, so prefer those when
 After delivering, say what you made and anything the user needs to know about it — a caveat, an assumption you had to make, a part you could not verify. A one-line summary beats a recap of the contents.
 
 After writing a file, mention its path once so the user can preview it; the UI auto-opens a preview panel for the artifact you delivered.
+
+For a finite file operation such as writing or editing HTML, use the filesystem tools and wait for their result. Never use \`shell_exec\` to start a development server, preview server, watcher, or any other long-lived process: \`shell_exec\` waits for completion and will correctly time out when the server keeps running. For a long-lived process, use \`shell_exec_bg\`, then use \`shell_job_status\` or \`shell_job_result\` only when you need to verify readiness or collect a bounded result. Do not poll forever; return the job id and the artifact path if the server is intentionally left running. If the user only asked to see a static HTML file, write the file and let the built-in preview open it instead of starting a server.
 </artifacts_and_deliverables>`;
 
 const COWORK_SCHEDULE = `<scheduled_tasks>

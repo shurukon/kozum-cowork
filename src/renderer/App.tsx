@@ -64,6 +64,31 @@ import { shouldAutoOpen, pickPreviewTarget, shouldOpenBrowserPreview } from "./l
 import "./i18n/index.ts"; // initialize i18n
 import styles from "./App.module.css";
 
+function resolveSavedSelection(
+  selection: ModelSelection,
+  keys: Record<string, ApiKeyEntry[]>,
+  modelsByProvider: Record<string, ModelInfo[]>,
+  presets: ProviderPreset[],
+): ModelSelection | null {
+  const preferredProvider = selection.providerId && (keys[selection.providerId] ?? []).length > 0
+    ? selection.providerId
+    : Object.keys(keys).find((providerId) => (keys[providerId] ?? []).length > 0) ?? "";
+  if (!preferredProvider) return null;
+
+  const providerKeys = keys[preferredProvider] ?? [];
+  const keyId = providerKeys.some((key) => key.id === selection.keyId)
+    ? selection.keyId
+    : providerKeys[0]?.id ?? null;
+  const providerModels = modelsByProvider[preferredProvider] ?? [];
+  const preset = presets.find((item) => item.id === preferredProvider);
+  const modelId = providerModels.some((model) => model.id === selection.modelId)
+    ? selection.modelId
+    : providerModels[0]?.id ?? preset?.staticModels?.[0] ?? "";
+
+  if (!keyId || !modelId) return null;
+  return { providerId: preferredProvider, keyId, modelId };
+}
+
 export function App() {
   const [mode, setMode] = useState<Mode>("cowork");
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -78,6 +103,11 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [presets, setPresets] = useState<ProviderPreset[]>([]);
   const [keys, setKeys] = useState<Record<string, ApiKeyEntry[]>>({});
+  // Keep model discovery callbacks stable while still seeing the latest key
+  // catalogue. Recreating reloadModels whenever keys changes can retrigger the
+  // bootstrap effect indefinitely because reloadPresets also reloads keys.
+  const keysRef = useRef<Record<string, ApiKeyEntry[]>>({});
+  keysRef.current = keys;
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, ModelInfo[]>>({});
   const [skills, setSkills] = useState<Skill[]>([]);
   const [connectors, setConnectors] = useState<McpServerConfig[]>([]);
@@ -210,11 +240,21 @@ export function App() {
   }, []);
 
   const reloadModels = useCallback(async (list: ProviderPreset[]) => {
+    const availableKeys = keysRef.current;
     const next: Record<string, ModelInfo[]> = {};
     await Promise.all(
       list.map(async (p) => {
         try {
-          next[p.id] = await bridge().providers.listModels(p.id);
+          const cached = await bridge().providers.listModels(p.id);
+          if (cached.length > 0 || (availableKeys[p.id] ?? []).length === 0) {
+            next[p.id] = cached;
+            return;
+          }
+          // A saved key with an empty model cache is a valid configured state,
+          // not a reason to show FirstRun. Refresh once so gateways such as
+          // Kilo can resolve their current catalogue after a restart.
+          const refreshed = await bridge().providers.refreshModels(p.id);
+          next[p.id] = refreshed.ok ? refreshed.value : cached;
         } catch {
           next[p.id] = [];
         }
@@ -405,25 +445,29 @@ export function App() {
   const needsSetup =
     bootstrapReady && settings !== null && !hasAnyKeys && !configured && !skippedSetup;
 
-  // Auto-select first available provider & model if selection is empty but keys exist
+  // Re-run model discovery after the key catalogue has arrived. The first
+  // bootstrap pass intentionally runs in parallel; this follow-up handles
+  // providers whose models are not cached yet without blocking the shell.
+  useEffect(() => {
+    if (!bootstrapReady || presets.length === 0 || !hasAnyKeys) return;
+    void reloadModels(presets);
+  }, [bootstrapReady, presets, hasAnyKeys, reloadModels]);
+
+  // Resolve provider, key and model together from persisted memory. This also
+  // repairs stale keyId/modelId metadata rather than leaving the UI half-ready.
   useEffect(() => {
     if (!settings || !hasAnyKeys) return;
-    const currentSel = settings[mode].selection;
-    if (!currentSel.providerId || !currentSel.modelId) {
-      const entry = Object.entries(keys).find(([_, list]) => list.length > 0);
-      if (entry) {
-        const [pid, klist] = entry;
-        const keyId = currentSel.keyId ?? klist[0]?.id ?? null;
-        const models = modelsByProvider[pid] ?? [];
-        const preset = presets.find((p) => p.id === pid);
-        const modelId =
-          currentSel.modelId || models[0]?.id || preset?.staticModels?.[0] || "";
-        if (pid && modelId) {
-          void patchSettings({
-            [mode]: { ...settings[mode], selection: { providerId: pid, keyId, modelId } },
-          } as Partial<AppSettings>);
-        }
-      }
+    const resolved = resolveSavedSelection(settings[mode].selection, keys, modelsByProvider, presets);
+    const current = settings[mode].selection;
+    if (
+      resolved &&
+      (current.providerId !== resolved.providerId ||
+        current.keyId !== resolved.keyId ||
+        current.modelId !== resolved.modelId)
+    ) {
+      void patchSettings({
+        [mode]: { ...settings[mode], selection: resolved },
+      } as Partial<AppSettings>);
     }
   }, [settings, mode, keys, hasAnyKeys, modelsByProvider, presets]);
 
@@ -478,28 +522,17 @@ export function App() {
     // Resolve a usable selection synchronously for this send. React state is
     // updated as well, but the current handler must not wait for a re-render
     // before creating the session (the first send after bootstrap used to fail).
-    let effectiveSelection = selection;
+    let effectiveSelection: ModelSelection | null | undefined = selection;
     if (!configured) {
-      if (hasAnyKeys) {
-        const entry = Object.entries(keys).find(([_, list]) => list.length > 0);
-        if (entry) {
-          const [pid, klist] = entry;
-          const keyId = selection?.keyId ?? klist[0]?.id ?? null;
-          const models = modelsByProvider[pid] ?? [];
-          const preset = presets.find((p) => p.id === pid);
-          const modelId =
-            selection?.modelId || models[0]?.id || preset?.staticModels?.[0] || "";
-          if (pid && modelId) {
-            effectiveSelection = { providerId: pid, keyId, modelId };
-            if (settings) {
-              await patchSettings({
-                [mode]: { ...settings[mode], selection: effectiveSelection },
-              } as Partial<AppSettings>);
-            }
-          }
+      if (settings && hasAnyKeys) {
+        effectiveSelection = resolveSavedSelection(settings[mode].selection, keys, modelsByProvider, presets);
+        if (effectiveSelection) {
+          await patchSettings({
+            [mode]: { ...settings[mode], selection: effectiveSelection },
+          } as Partial<AppSettings>);
         }
       }
-      if (!effectiveSelection?.providerId || !effectiveSelection.modelId || !hasAnyKeys) {
+      if (!effectiveSelection?.providerId || !effectiveSelection.modelId || !effectiveSelection.keyId || !hasAnyKeys) {
         setSkippedSetup(false);
         setBanner("Connect a provider and pick a model first.");
         return;

@@ -168,7 +168,7 @@ export class OpenAiChatAdapter implements ProviderAdapter {
     };
     if (req.tools.length) {
       body.tools = toOaiTools(req.tools);
-      body.tool_choice = "auto";
+      body.tool_choice = req.toolChoice ?? "auto";
     }
 
     const res = await fetchWithRetry(
