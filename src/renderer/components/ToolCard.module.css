@@ -517,3 +517,83 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+
+/* ── Cowork inline activity mode ───────────────────────────────────────────
+   The tool remains interactive, but its shell is no longer a floating card.
+   It inherits the timeline's marker/content split from Message.module.css. */
+.inline {
+  width: 100%;
+  overflow: visible;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  animation: none;
+}
+
+.inline.cardRunning,
+.inline.cardOk,
+.inline.cardError {
+  border: 0 !important;
+  box-shadow: none !important;
+  animation: none;
+}
+
+.inline .header {
+  min-height: 26px;
+  padding: 0;
+  gap: 9px;
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.inline .header:not(:disabled):hover {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.inline .iconWrap {
+  display: none;
+}
+
+.inline .summary {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-regular);
+  color: var(--text-secondary);
+}
+
+.inline .header:not(:disabled):hover .summary {
+  color: var(--text-primary);
+}
+
+.inline .note {
+  max-width: min(42ch, 52%);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.inline .status {
+  margin-inline-start: auto;
+}
+
+.inline .chevron {
+  color: var(--text-muted);
+}
+
+.inline .detail {
+  margin-top: 10px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border-subtle);
+  gap: 12px;
+}
+
+.inline .permissionStack {
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .inline .note {
+    display: none;
+  }
+}

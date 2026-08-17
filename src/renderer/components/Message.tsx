@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import type {
   Message as MessageType,
   ContentBlock,
+  Mode,
   TokenUsage,
   StopReason,
 } from "@shared/types.ts";
@@ -27,6 +28,7 @@ import { ToolCard } from "./ToolCard.tsx";
 import { QuestionFormView } from "./QuestionFormView.tsx";
 import { PermissionBanner } from "./PermissionBanner.tsx";
 import { Markdown } from "./Markdown.tsx";
+import { ToolGlyph } from "./ToolGlyph.tsx";
 import styles from "./Message.module.css";
 
 // ── ThinkingBlock ─────────────────────────────────────────────────────────
@@ -99,6 +101,7 @@ function ThinkingBlock({ text, isStreaming }: ThinkingBlockProps) {
 // ── Message ───────────────────────────────────────────────────────────────
 
 interface Props {
+  mode: Mode;
   message: MessageType;
   isStreaming: boolean;
   toolCards: Map<string, ToolCardType>;
@@ -121,6 +124,7 @@ function isToolResultOnly(content: ContentBlock[]): boolean {
 }
 
 export function Message({
+  mode,
   message,
   isStreaming,
   toolCards,
@@ -227,72 +231,158 @@ export function Message({
 
   // P1-1: show a subtle badge when the message was produced by a subagent.
   const isSubagentMessage = Boolean(message.runId);
+  const unreflectedToolCards = Array.from(toolCards.values()).filter(
+    (c) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === c.toolUseId),
+  );
+  const unmatchedPermissions = myPermissions.filter(
+    (p) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === p.toolUseId),
+  );
+  const hasActivity =
+    thinkingBlocks.length > 0 ||
+    toolUseBlocks.length > 0 ||
+    unreflectedToolCards.length > 0 ||
+    myQuestions.length > 0 ||
+    unmatchedPermissions.length > 0;
 
   return (
-    <div className={`${styles.assistantRow} kz-anim-rise`}>
+    <div className={`${styles.assistantRow} ${mode === "cowork" ? styles.coworkAssistantRow : ""} kz-anim-rise`}>
       {isSubagentMessage && (
         <span className={styles.subagentBadge}>{t("message.bySubagent")}</span>
       )}
-      {thinkingBlocks.map((b, i) =>
-        b.type === "thinking" ? (
-          <ThinkingBlock key={i} text={b.text} isStreaming={isStreaming} />
-        ) : null,
+
+      {mode === "cowork" && hasActivity && (
+        <div className={styles.activityTimeline} aria-label="Activity timeline">
+          {thinkingBlocks.map((b, i) =>
+            b.type === "thinking" ? (
+              <div className={styles.activityStep} key={`thinking-${i}`}>
+                <div
+                  className={`${styles.activityMarker} ${isStreaming ? styles.activityMarkerLive : styles.activityMarkerDone}`}
+                  aria-hidden="true"
+                >
+                  <span className={isStreaming ? styles.activityPulse : styles.activityCheck} />
+                </div>
+                <div className={styles.activityContent}>
+                  <ThinkingBlock text={b.text} isStreaming={isStreaming} />
+                </div>
+              </div>
+            ) : null,
+          )}
+
+          {/* Tool calls stay in the same vertical timeline as thinking. */}
+          {toolUseBlocks.map((b) => {
+            if (b.type !== "tool_use") return null;
+            const card = toolCards.get(b.id);
+            if (!card) return null;
+            return (
+              <div className={styles.activityStep} key={b.id}>
+                <div className={`${styles.activityMarker} ${styles.activityMarkerTool}`} aria-hidden="true">
+                  <ToolGlyph toolName={card.name} size={15} />
+                </div>
+                <div className={styles.activityContent}>
+                  <ToolCard
+                    card={card}
+                    inline
+                    onOpenFile={onOpenFile}
+                    onPreview={onPreview}
+                    pendingPermissions={myPermissions.filter((p) => p.toolUseId === b.id)}
+                    onReply={onReply}
+                  />
+                </div>
+              </div>
+            );
+          })}
+
+          {unreflectedToolCards.map((card) => (
+            <div className={styles.activityStep} key={card.toolUseId}>
+              <div className={styles.activityMarker} aria-hidden="true">
+                <ToolGlyph toolName={card.name} size={15} />
+              </div>
+              <div className={styles.activityContent}>
+                <ToolCard
+                  card={card}
+                  inline
+                  onOpenFile={onOpenFile}
+                  onPreview={onPreview}
+                  pendingPermissions={myPermissions.filter((p) => p.toolUseId === card.toolUseId)}
+                  onReply={onReply}
+                />
+              </div>
+            </div>
+          ))}
+
+          {myQuestions.map((q) => (
+            <div className={styles.activityStep} key={q.requestId}>
+              <div className={styles.activityMarker} aria-hidden="true"><span className={styles.activityQuestion}>?</span></div>
+              <div className={styles.activityContent}>
+                <QuestionFormView
+                  question={q}
+                  onAnswer={(values) => {
+                    onReply?.(q.requestId, values);
+                    onResolveQuestion?.(q.requestId);
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+
+          {unmatchedPermissions.map((p) => (
+            <div className={styles.activityStep} key={p.requestId}>
+              <div className={styles.activityMarker} aria-hidden="true"><span className={styles.activityQuestion}>!</span></div>
+              <div className={styles.activityContent}>
+                <PendingPermissionInline permission={p} onReply={onReply} />
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
-      {/* Tool cards — render before the final text so they appear in turn order */}
-      {toolUseBlocks.map((b) => {
-        if (b.type !== "tool_use") return null;
-        const card = toolCards.get(b.id);
-        if (!card) return null;
-        return (
-          <ToolCard
-            key={b.id}
-            card={card}
-            onOpenFile={onOpenFile}
-            onPreview={onPreview}
-            pendingPermissions={myPermissions.filter((p) => p.toolUseId === b.id)}
-            onReply={onReply}
-          />
-        );
-      })}
-
-      {/* Also render any cards that haven't yet been reflected back as tool_use blocks */}
-      {Array.from(toolCards.values())
-        .filter((c) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === c.toolUseId))
-        .map((c) => (
-          <ToolCard
-            key={c.toolUseId}
-            card={c}
-            onOpenFile={onOpenFile}
-            onPreview={onPreview}
-            pendingPermissions={myPermissions.filter((p) => p.toolUseId === c.toolUseId)}
-            onReply={onReply}
-          />
-        ))}
-
-      {/* Pending questions appear after the tool cards, before final text (§2.4) */}
-      {myQuestions.map((q) => (
-        <QuestionFormView
-          key={q.requestId}
-          question={q}
-          onAnswer={(values) => {
-            onReply?.(q.requestId, values);
-            onResolveQuestion?.(q.requestId);
-          }}
-        />
-      ))}
-
-      {/* Any permission prompts that did not match a tool card render inline at
-          the bottom of the message (degraded-but-safe fallback, §8 edge case). */}
-      {myPermissions
-        .filter((p) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === p.toolUseId))
-        .map((p) => (
-          <PendingPermissionInline
-            key={p.requestId}
-            permission={p}
-            onReply={onReply}
-          />
-        ))}
+      {mode !== "cowork" && (
+        <>
+          {thinkingBlocks.map((b, i) =>
+            b.type === "thinking" ? (
+              <ThinkingBlock key={i} text={b.text} isStreaming={isStreaming} />
+            ) : null,
+          )}
+          {toolUseBlocks.map((b) => {
+            if (b.type !== "tool_use") return null;
+            const card = toolCards.get(b.id);
+            if (!card) return null;
+            return (
+              <ToolCard
+                key={b.id}
+                card={card}
+                onOpenFile={onOpenFile}
+                onPreview={onPreview}
+                pendingPermissions={myPermissions.filter((p) => p.toolUseId === b.id)}
+                onReply={onReply}
+              />
+            );
+          })}
+          {unreflectedToolCards.map((card) => (
+            <ToolCard
+              key={card.toolUseId}
+              card={card}
+              onOpenFile={onOpenFile}
+              onPreview={onPreview}
+              pendingPermissions={myPermissions.filter((p) => p.toolUseId === card.toolUseId)}
+              onReply={onReply}
+            />
+          ))}
+          {myQuestions.map((q) => (
+            <QuestionFormView
+              key={q.requestId}
+              question={q}
+              onAnswer={(values) => {
+                onReply?.(q.requestId, values);
+                onResolveQuestion?.(q.requestId);
+              }}
+            />
+          ))}
+          {unmatchedPermissions.map((p) => (
+            <PendingPermissionInline key={p.requestId} permission={p} onReply={onReply} />
+          ))}
+        </>
+      )}
 
       {/* Image blocks (screenshots returned into context) render inline (§4.1) */}
       {imageBlocks.length > 0 && (

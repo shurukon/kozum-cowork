@@ -273,11 +273,13 @@ export interface ToolCardProps {
   onReply?: (requestId: string, answer: string[]) => void;
   /** Open the preview panel (used by thumbnail clicks). */
   onPreview?: (target: PreviewTarget) => void;
+  /** Render as an inline activity row inside the assistant timeline. */
+  inline?: boolean;
 }
 
 const MAX_THUMBNAILS = 12;
 
-export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPreview }: ToolCardProps) {
+export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPreview, inline = false }: ToolCardProps) {
   const { t } = useTranslation();
   // P1-4: running cards default expanded; error cards stay expanded; ok cards
   // collapse once the reducer marks `autoCollapse` at turn_end. The user can
@@ -318,6 +320,7 @@ export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPrev
 
   const cardClass = [
     styles.card,
+    inline ? styles.inline : "",
     "kz-glass",
     swept ? "kz-glass-sweep" : "",
     isRunning ? "kz-glass-busy" : "",

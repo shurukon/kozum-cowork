@@ -43,6 +43,90 @@
   /* kz-caret appended via global.css when streaming */
 }
 
+/* Cowork activity timeline: a quiet split view embedded in the transcript. */
+.activityTimeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: min(100%, 760px);
+  padding-block: 2px;
+}
+
+.activityStep {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  column-gap: 12px;
+  min-width: 0;
+  padding-bottom: 16px;
+}
+
+.activityStep:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 13px;
+  top: 25px;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--border-strong) 56%, transparent);
+}
+
+.activityMarker {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+}
+
+.activityMarkerLive {
+  border-color: color-mix(in srgb, var(--accent-primary) 74%, var(--border-strong));
+  color: var(--accent-bright);
+}
+
+.activityMarkerDone {
+  color: var(--text-secondary);
+}
+
+.activityContent {
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.activityPulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-primary) 14%, transparent);
+  animation: activityPulse 1.6s ease-in-out infinite;
+}
+
+.activityCheck {
+  width: 8px;
+  height: 13px;
+  border-right: 1.5px solid var(--text-secondary);
+  border-bottom: 1.5px solid var(--text-secondary);
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.activityQuestion {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  color: var(--accent-secondary);
+}
+
+@keyframes activityPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.84); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
 /* --------------------------------------------------------- thinking: settled --- */
 
 /* Settled thinking: compact inline disclosure inside the assistant turn. */
@@ -271,9 +355,9 @@
   font-size: var(--fs-2xs);
   color: var(--text-muted);
   background: var(--bg-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  font-family: var(--font-mono);
+}
+
+.thinkingToggle { font-family: var(--font-mono);
   line-height: var(--lh-snug);
 }
 
@@ -336,4 +420,92 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+
+/* ── Cowork-only visual treatment ─────────────────────────────────────────
+   Code mode deliberately keeps the original message treatment above. */
+.coworkAssistantRow {
+  gap: 14px;
+}
+
+.coworkAssistantRow .assistantText {
+  font-size: var(--fs-md);
+  letter-spacing: -0.004em;
+}
+
+.coworkAssistantRow .thinking {
+  width: 100%;
+  max-width: 680px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.coworkAssistantRow .thinkingToggle {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  padding: 0;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-regular);
+  color: var(--text-secondary);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.coworkAssistantRow .thinkingToggle:hover {
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.coworkAssistantRow .thinkingToggle:focus-visible {
+  box-shadow: 0 2px 0 var(--accent-primary);
+}
+
+.coworkAssistantRow .thinkingBody {
+  margin: 10px 0 0;
+  padding: 0 0 0 1px;
+  border: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: 1.7;
+}
+
+.coworkAssistantRow .thinkingLive {
+  width: 100%;
+  max-width: 680px;
+  padding: 0;
+  border: 0 !important;
+  border-inline-start: 0 !important;
+  border-radius: 0;
+  background: transparent;
+}
+
+.coworkAssistantRow .thinkingLiveLabel {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-regular);
+  color: var(--text-secondary);
+}
+
+.coworkAssistantRow .thinkingStream {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: 1.7;
+  color: var(--text-muted);
+  max-height: 160px;
+}
+
+
+.coworkAssistantRow .activityMarkerTool {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.coworkAssistantRow .activityMarkerTool svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.45;
 }

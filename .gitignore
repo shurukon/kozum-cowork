@@ -9,3 +9,6 @@ release/
 !.env.example
 agent-ctx/
 postcss.config.mjs
+
+# Local Electron visual QA captures
+artifacts/chat-ui/

@@ -170,6 +170,7 @@ const modeState = useSessionStore((s) => s[mode]);
           {messages.map((msg) => (
             <Message
               key={msg.id}
+              mode={mode}
               message={msg}
               isStreaming={streamingMessageId === msg.id}
               toolCards={toolCards}
