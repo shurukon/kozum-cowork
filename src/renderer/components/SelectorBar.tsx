@@ -87,7 +87,7 @@ export interface SelectorBarProps {
   keysByProvider: Record<string, ApiKeyEntry[]>;
   modelsByProvider: Record<string, ModelInfo[]>;
   onChange: (next: ModelSelection) => void;
-  onRefreshModels: (providerId: string) => Promise<void>;
+  onRefreshModels: (providerId: string) => Promise<ModelInfo[] | void>;
 }
 
 // ── Provider dropdown ──────────────────────────────────────────────────────
@@ -268,7 +268,7 @@ function KeyDropdown({ selection, keys, onChange }: KeyDropdownProps) {
 interface ModelDropdownProps {
   selection: ModelSelection;
   models: ModelInfo[];
-  onRefreshModels: (providerId: string) => Promise<void>;
+  onRefreshModels: (providerId: string) => Promise<ModelInfo[] | void>;
   onChange: (next: ModelSelection) => void;
 }
 
@@ -276,10 +276,13 @@ function ModelDropdown({ selection, models, onRefreshModels, onChange }: ModelDr
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [localModels, setLocalModels] = useState<ModelInfo[]>([]);
+
+  const effectiveModels = models.length > 0 ? models : localModels;
   const btnRef = useRef<HTMLButtonElement>(null);
   const filterRef = useRef<HTMLInputElement>(null);
 
-  const current = models.find((m) => m.id === selection.modelId);
+  const current = effectiveModels.find((m) => m.id === selection.modelId);
   const currentLabel = current?.displayName ?? selection.modelId;
 
   // Focus filter on open.
@@ -291,13 +294,17 @@ function ModelDropdown({ selection, models, onRefreshModels, onChange }: ModelDr
     }
   }, [open]);
 
+  useEffect(() => {
+    setLocalModels([]);
+  }, [selection.providerId]);
+
   const visible = filter
-    ? models.filter(
+    ? effectiveModels.filter(
         (m) =>
           m.id.toLowerCase().includes(filter.toLowerCase()) ||
           m.displayName.toLowerCase().includes(filter.toLowerCase()),
       )
-    : models;
+    : effectiveModels;
 
   function pick(m: ModelInfo) {
     onChange({ ...selection, modelId: m.id });
@@ -307,7 +314,8 @@ function ModelDropdown({ selection, models, onRefreshModels, onChange }: ModelDr
   async function refresh() {
     setRefreshing(true);
     try {
-      await onRefreshModels(selection.providerId);
+      const fetched = await onRefreshModels(selection.providerId);
+      if (Array.isArray(fetched)) setLocalModels(fetched);
     } finally {
       setRefreshing(false);
     }
@@ -350,7 +358,7 @@ function ModelDropdown({ selection, models, onRefreshModels, onChange }: ModelDr
             </button>
           </div>
 
-          {models.length > 8 && (
+          {effectiveModels.length > 8 && (
             <div className={styles.filterWrap}>
               <input
                 ref={filterRef}

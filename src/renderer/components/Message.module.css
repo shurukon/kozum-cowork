@@ -509,3 +509,132 @@
   height: 15px;
   stroke-width: 1.45;
 }
+
+
+/* Claude-inspired activity treatment, scoped to Cowork assistant turns. */
+.coworkAssistantRow {
+  gap: 20px;
+  padding-inline: 0;
+  color: #f5f4ed;
+  font-family: var(--font-sans);
+}
+
+.coworkAssistantRow .assistantText {
+  max-width: 72ch;
+  color: #f5f4ed;
+  font-size: 16px;
+  line-height: 1.6;
+  letter-spacing: 0;
+}
+
+.coworkAssistantRow .activityTimeline {
+  width: min(100%, 720px);
+  padding-block: 4px;
+}
+
+.coworkAssistantRow .activityStep {
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 12px;
+  padding-bottom: 18px;
+}
+
+.coworkAssistantRow .activityStep:not(:last-child)::before {
+  inset-inline-start: 11px;
+  top: 23px;
+  background: rgba(250, 249, 245, 0.16);
+}
+
+.coworkAssistantRow .activityMarker {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  background: transparent;
+  color: #87867f;
+}
+
+.coworkAssistantRow .activityMarkerLive {
+  color: #c96442;
+}
+
+.coworkAssistantRow .activityMarkerDone {
+  color: #b7b4ab;
+}
+
+.coworkAssistantRow .activityMarkerTool {
+  color: #b7b4ab;
+}
+
+.coworkAssistantRow .activityContent {
+  padding-top: 1px;
+}
+
+.coworkAssistantRow .activityPulse {
+  width: 9px;
+  height: 9px;
+  background: #c96442;
+  box-shadow: 0 0 0 5px rgba(201, 100, 66, 0.14);
+}
+
+.coworkAssistantRow .activityCheck {
+  width: 8px;
+  height: 13px;
+  border-color: #b7b4ab;
+}
+
+.coworkAssistantRow .thinkingLive,
+.coworkAssistantRow .thinking {
+  width: fit-content;
+  max-width: min(100%, 680px);
+  border: 0;
+  border-inline-start: 2px solid #c96442;
+  border-radius: 0;
+  background: transparent;
+  padding: 1px 0 1px 14px;
+}
+
+.coworkAssistantRow .thinkingLiveHeader {
+  gap: 10px;
+}
+
+.coworkAssistantRow .thinkingLiveLabel,
+.coworkAssistantRow .thinkingToggle {
+  color: #d0cdc3;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.coworkAssistantRow .thinkingToggle {
+  padding: 0;
+  width: auto;
+}
+
+.coworkAssistantRow .thinkingToggle:hover {
+  background: transparent;
+  color: #faf9f5;
+}
+
+.coworkAssistantRow .thinkingBody,
+.coworkAssistantRow .thinkingStream {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  color: #87867f;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.coworkAssistantRow .thinkingStream {
+  max-height: 160px;
+}
+
+.coworkAssistantRow .errorMsg {
+  max-width: 720px;
+  background: #211616;
+  border-color: rgba(181, 51, 51, 0.5);
+  color: #efb6a9;
+  box-shadow: none;
+}

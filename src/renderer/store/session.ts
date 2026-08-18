@@ -191,26 +191,44 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   setSessionMessages(mode: Mode, messages: Message[]) {
-    set((prev) => ({
-      [mode]: {
-        ...prev[mode],
-        messages,
-        streamingMessageId: null,
-        streamingText: "",
-        streamingThinking: "",
-        toolCards: reconstructToolCards(messages),
-        error: null,
-        // Pending question/permission arrays are UI-only state; once messages
-        // are replaced from the backend there is nothing live to answer, so
-        // drop them to avoid a stale dangling form.
-        pendingQuestions: [],
-        pendingPermissions: [],
-        // Preserve live event ids while the transcript is being reloaded. A
-        // replay can arrive after the live subscription during startup; clearing
-        // this set here would apply those events a second time. clearMode() is
-        // the explicit boundary that resets it for a genuinely new session.
-      },
-    }));
+    set((prev) => {
+      const reconstructed = reconstructToolCards(messages);
+      const liveCards = prev[mode].toolCards;
+      // Backend transcript hydration does not persist the rich `display`
+      // payload. Preserve it from the live event card when the same tool call
+      // is already known, while still taking the persisted final status.
+      for (const [toolUseId, persisted] of reconstructed) {
+        const live = liveCards.get(toolUseId);
+        if (!live) continue;
+        reconstructed.set(toolUseId, {
+          ...persisted,
+          ...live,
+          status: persisted.status,
+          result: live.result ?? persisted.result,
+        });
+      }
+      return {
+        [mode]: {
+          ...prev[mode],
+          messages,
+          streamingMessageId: null,
+          streamingText: "",
+          streamingThinking: "",
+          toolCards: reconstructed,
+          error: null,
+          // Pending question/permission arrays are UI-only state; once messages
+          // are replaced from the backend there is nothing live to answer, so
+          // drop them to avoid a stale dangling form.
+          pendingQuestions: [],
+          pendingPermissions: [],
+          // Preserve live event ids while the transcript is being reloaded. A
+          // replay can arrive after the live subscription during startup; clearing
+          // this set here would apply those events a second time. clearMode() is
+          // the explicit boundary that resets it for a genuinely new session.
+          seenEventIds: prev[mode].seenEventIds,
+        },
+      };
+    });
   },
 
   resolveQuestion(mode: Mode, requestId: string) {

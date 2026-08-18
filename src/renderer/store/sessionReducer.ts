@@ -10,6 +10,7 @@ import type {
   ContentBlock,
   TextBlock,
   ThinkingBlock,
+  ToolUseBlock,
   TokenUsage,
   StopReason,
 } from "@shared/types.ts";
@@ -33,13 +34,18 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
         createdAt: Date.now(),
         model: e.model,
       };
+      const sameSession = mode.sessionId === null || mode.sessionId === e.sessionId;
       return {
         ...mode,
+        sessionId: e.sessionId,
         status: "running",
         streamingMessageId: e.messageId,
         streamingText: "",
         streamingThinking: "",
-        toolCards: new Map(),
+        // Keep completed cards available to the transcript when the agent
+        // starts its post-tool follow-up turn, but never carry cards across
+        // an actual session boundary.
+        toolCards: sameSession ? mode.toolCards : new Map(),
         error: null,
         messages: [...mode.messages, shell],
       };
@@ -100,7 +106,31 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
       };
       const cards = new Map(mode.toolCards);
       cards.set(e.toolUseId, card);
-      return { ...mode, toolCards: cards };
+
+      // The provider emits tool_start separately from the assistant content
+      // block. Persist the block in the active assistant turn so the Cowork
+      // timeline remains visible after the loop continues with a follow-up.
+      // Providers commonly emit turn_end(stopReason=tool_use) before the
+      // separate tool_start event. turn_end clears streamingMessageId, so fall
+      // back to the latest assistant turn instead of dropping the tool block.
+      const messageId =
+        mode.streamingMessageId ??
+        [...mode.messages].reverse().find((msg) => msg.role === "assistant")?.id;
+      const messages = messageId
+        ? mode.messages.map((msg) => {
+            if (msg.id !== messageId || msg.role !== "assistant") return msg;
+            if (msg.content.some((b) => b.type === "tool_use" && b.id === e.toolUseId)) return msg;
+            const block: ToolUseBlock = {
+              type: "tool_use",
+              id: e.toolUseId,
+              name: e.name,
+              input: e.input,
+            };
+            return { ...msg, content: [...msg.content, block] };
+          })
+        : mode.messages;
+
+      return { ...mode, messages, toolCards: cards };
     }
 
     case "tool_progress": {
@@ -291,6 +321,7 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
 
 export function emptyModeState(): ModeState {
   return {
+    sessionId: null,
     status: "idle",
     messages: [],
     streamingMessageId: null,

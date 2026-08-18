@@ -1,17 +1,20 @@
 import { _electron as electron } from "playwright";
 import { join } from "node:path";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 
 const ROOT = join(import.meta.dirname, "..");
 const MAIN_BUNDLE = join(ROOT, "out", "main", "index.js");
 const USERDATA = join(ROOT, ".live-userdata");
 const OUT = join(ROOT, "artifacts", "chat-ui");
+const LIVE_WORKSPACE = join(OUT, "live-workspace");
 const apiBase = process.env.OPENAI_API_BASE;
 const apiKey = process.env.OPENAI_API_KEY;
 
 if (!existsSync(MAIN_BUNDLE)) throw new Error("Build missing: run npm run build first");
 if (!apiBase || !apiKey) throw new Error("OPENAI-compatible test environment is unavailable");
 rmSync(USERDATA, { recursive: true, force: true });
+rmSync(LIVE_WORKSPACE, { recursive: true, force: true });
+mkdirSync(LIVE_WORKSPACE, { recursive: true });
 
 const app = await electron.launch({
   args: [MAIN_BUNDLE, "--password-store=basic"],
@@ -31,6 +34,15 @@ page.on("console", (msg) => rendererDiagnostics.push(`console:${msg.type()}:${ms
 page.on("pageerror", (error) => rendererDiagnostics.push(`pageerror:${error.message}`));
 await page.waitForLoadState("domcontentloaded");
 await page.waitForSelector("[aria-label='Toggle sidebar']", { timeout: 15000 });
+await page.evaluate(async (folder) => {
+  const settings = await window.kozum.settings.get();
+  await window.kozum.settings.set({
+    general: {
+      ...settings.general,
+      defaultFolders: { ...settings.general.defaultFolders, cowork: folder },
+    },
+  });
+}, LIVE_WORKSPACE);
 
 async function visible(locator, timeout = 1500) {
   return locator.isVisible({ timeout }).catch(() => false);
@@ -80,6 +92,8 @@ async function selectProviderAndModel() {
   }
 
   const modelButton = page.getByRole("button", { name: /^Model:/ }).first();
+  const modelAria = await modelButton.getAttribute("aria-label").catch(() => null);
+  console.log(JSON.stringify({ modelControlFound: Boolean(modelAria), modelLooksLikeKnownModel: /gpt|claude|gemini|kilo|llama|qwen/i.test(modelAria ?? "") }));
   await modelButton.click();
   const refresh = page.getByRole("button", { name: /refresh models/i });
   if (await visible(refresh, 1500)) {
@@ -87,15 +101,41 @@ async function selectProviderAndModel() {
     await page.waitForTimeout(1800);
   }
 
-  const options = page.getByRole("option");
+  let options = page.getByRole("option");
+  for (let attempt = 0; attempt < 6 && (await options.count()) === 0; attempt += 1) {
+    // The catalogue is fetched asynchronously; close/reopen the real menu so
+    // the popover observes the refreshed React state rather than a stale mount.
+    if (await visible(modelButton, 800)) {
+      await modelButton.click().catch(() => undefined);
+      await page.waitForTimeout(180);
+      await modelButton.click().catch(() => undefined);
+    }
+    await page.waitForTimeout(500);
+  }
+  options = page.getByRole("option");
   const visibleOptions = await options.allInnerTexts().catch(() => []);
   // The proxy exposes stable display names while model IDs remain internal.
-  // Prefer the fast live model for UI capture, then fall back to GPT-5 mini or the first real model.
-  const preferred = page.getByRole("option", { name: /GPT-5 nano/i }).first();
-  const secondary = page.getByRole("option", { name: /GPT-5 mini/i }).first();
+  // Prefer GPT-5 mini for a stable live UI round, then fall back to nano or the first real model.
+  const preferred = page.getByRole("option", { name: /GPT-5 mini/i }).first();
+  const secondary = page.getByRole("option", { name: /GPT-5 nano/i }).first();
   const modelOption = (await visible(preferred, 3000)) ? preferred : (await visible(secondary, 1500)) ? secondary : options.first();
   if (!(await visible(modelOption, 3000))) {
     await page.screenshot({ path: join(OUT, "chat-live-model-selection-debug.png"), fullPage: false });
+    const refreshDiagnostics = await page.evaluate(async () => {
+      const presets = await window.kozum.providers.presets();
+      const provider = presets.find((p) => p.name === "Manus Live Test");
+      if (!provider) return { provider: null };
+      const keys = await window.kozum.providers.listKeys(provider.id);
+      const result = await window.kozum.providers.refreshModels(provider.id);
+      return {
+        provider: { id: provider.id, baseUrl: provider.baseUrl, modelsPath: provider.modelsPath },
+        keyCount: keys.length,
+        result: result.ok
+          ? { ok: true, count: result.value.length, ids: result.value.slice(0, 8).map((m) => m.id) }
+          : { ok: false, error: result.error },
+      };
+    }).catch((error) => ({ bridgeError: String(error) }));
+    console.log(JSON.stringify({ modelOptions: visibleOptions, refreshDiagnostics, rendererDiagnostics, mainDiagnostics }));
     throw new Error(`No live model was available after refresh; options=${JSON.stringify(visibleOptions)}`);
   }
   await modelOption.click();
@@ -105,16 +145,18 @@ await selectProviderAndModel();
 
 const composer = page.getByRole("textbox", { name: /message/i });
 await composer.waitFor({ state: "visible", timeout: 5000 });
-await composer.fill("Create a single file named live-ui-smoke.html containing a short landing page, then confirm that you created it.");
+await composer.fill("Do not create a task and do not use task_create. Use the file_write tool directly to create an actual file named live-ui-smoke.html in the current working folder, containing a short landing page. After the file_write tool succeeds, reply with a concise confirmation.");
 await composer.press("Enter");
 
 const permissionPath = join(OUT, "chat-live-permission.png");
 const runningPath = join(OUT, "chat-live-tool-running.png");
 const completePath = join(OUT, "chat-live-done.png");
+const previewPath = join(OUT, "chat-live-preview.png");
 const noToolPath = join(OUT, "chat-live-no-tool.png");
 let sawPermission = false;
 let sawRunning = false;
 let sawDone = false;
+let sawPreview = false;
 const deadline = Date.now() + 60000;
 while (Date.now() < deadline) {
   const permission = page.getByRole("alert").filter({ hasText: /needs your approval/i }).first();
@@ -140,7 +182,17 @@ while (Date.now() < deadline) {
     }
     const composerValue = await composer.inputValue().catch(() => "");
     const body = await page.locator("body").innerText().catch(() => "");
-    if (composerValue === "" && /live-ui-smoke\.html/i.test(body)) break;
+    if (!sawPreview && /live-ui-smoke\.html/i.test(body)) {
+      const fileChip = page.getByRole("button", { name: /live-ui-smoke\.html/i }).first();
+      if (await visible(fileChip, 1200)) {
+        await fileChip.click();
+        await page.waitForTimeout(900);
+        await page.screenshot({ path: previewPath, fullPage: false });
+        sawPreview = true;
+        console.log("captured=preview");
+      }
+    }
+    if (composerValue === "" && /live-ui-smoke\.html/i.test(body) && sawPreview) break;
   }
   await page.waitForTimeout(250);
 }
@@ -154,10 +206,23 @@ if (!sawDone) {
     const messages = await window.kozum.sessions.messages(latest.id);
     return {
       sessions: sessions.slice(0, 3).map((s) => ({ id: s.id, status: s.status, title: s.title, mode: s.mode })),
-      latestMessages: messages.map((m) => ({ role: m.role, content: String(m.content ?? "").slice(0, 240), toolCalls: m.toolCalls?.length ?? 0, stopReason: m.stopReason ?? null })),
+      latestMessages: messages.map((m) => ({
+        role: m.role,
+        blocks: Array.isArray(m.content)
+          ? m.content.map((b) => ({ type: b?.type ?? null, id: b?.id ?? null, toolUseId: b?.toolUseId ?? null, name: b?.name ?? null }))
+          : [],
+        toolCalls: m.toolCalls?.length ?? 0,
+        stopReason: m.stopReason ?? null,
+      })),
     };
   }).catch((error) => ({ bridgeError: String(error) }));
-  console.log(JSON.stringify({ captured: sawRunning ? "running-without-done" : "no-tool-state", bodyText, sessionDiagnostics, rendererDiagnostics, mainDiagnostics }));
+  const domDiagnostics = await page.evaluate(() => ({
+    activityTimelines: document.querySelectorAll('[aria-label="Activity timeline"]').length,
+    coworkRows: document.querySelectorAll('[class*="coworkAssistantRow"]').length,
+    toolCards: document.querySelectorAll('[data-tool-state]').length,
+    toolStates: Array.from(document.querySelectorAll('[data-tool-state]')).map((node) => node.getAttribute('data-tool-state')),
+  })).catch((error) => ({ error: String(error) }));
+  console.log(JSON.stringify({ captured: sawRunning ? "running-without-done" : "no-tool-state", bodyText, sessionDiagnostics, domDiagnostics, rendererDiagnostics, mainDiagnostics }));
 }
-console.log(JSON.stringify({ sawPermission, sawRunning, sawDone, output: OUT }));
+console.log(JSON.stringify({ sawPermission, sawRunning, sawDone, sawPreview, output: OUT }));
 await app.close();

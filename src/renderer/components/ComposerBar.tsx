@@ -48,7 +48,7 @@ export interface ComposerBarProps {
   keysByProvider: Record<string, ApiKeyEntry[]>;
   modelsByProvider: Record<string, ModelInfo[]>;
   onSelectionChange: (next: ModelSelection) => void;
-  onRefreshModels: (providerId: string) => Promise<void>;
+  onRefreshModels: (providerId: string) => Promise<ModelInfo[] | void>;
 
   /** Optional slot — Code mode injects <PermissionPicker />; Cowork omits. */
   permissionSlot?: ReactNode;

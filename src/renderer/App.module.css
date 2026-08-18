@@ -105,20 +105,25 @@
   z-index: var(--z-dropdown);
 }
 
-/* Cowork reference shell. Code mode continues to use the base layout above. */
+/* Claude-inspired Cowork shell. Code mode continues to use the base layout. */
 .coworkBody {
   gap: 0;
   padding: 0;
-  background: #0b0e15;
+  background: #0d0d0d;
 }
 
 .coworkBody .content {
   border-radius: 0;
-  background: #0b0e15;
+  background: #0d0d0d;
 }
 
+:global(.kz-cowork-shell) .app,
 :global(.kz-cowork-shell) .sessionWrap {
-  background: #0b0e15;
+  background: #0d0d0d;
+}
+
+:global(.kz-cowork-shell) .app::before {
+  display: none;
 }
 
 @media (max-width: 980px) {

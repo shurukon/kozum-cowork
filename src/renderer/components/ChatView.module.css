@@ -87,3 +87,34 @@
 @media (prefers-reduced-motion: reduce) {
   .transcript { scroll-behavior: auto; }
 }
+
+/* Cowork transcript proportions from the reference recording. */
+:global(.kz-cowork-shell) .wrap {
+  background: #0d0d0d;
+}
+
+:global(.kz-cowork-shell) .transcript {
+  padding: clamp(28px, 5vh, 58px) 0 32px;
+}
+
+:global(.kz-cowork-shell) .messages {
+  width: min(100%, 820px);
+  padding-inline: 42px;
+  gap: 28px;
+}
+
+:global(.kz-cowork-shell) .jumpPill {
+  background: #242422;
+  border-color: rgba(240, 238, 230, 0.16);
+  color: #b7b4ab;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+}
+
+:global(.kz-cowork-shell) .jumpPill:hover {
+  background: #343431;
+  color: #faf9f5;
+}
+
+@media (max-width: 720px) {
+  :global(.kz-cowork-shell) .messages { padding-inline: 18px; gap: 22px; }
+}

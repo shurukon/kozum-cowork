@@ -25,7 +25,8 @@ const COWORK_DEFAULTS: ModeSettings = {
   maxTokens: 8192,
   temperature: 1,
   maxIterations: 60,
-  permissionMode: "manual",
+  // Claude Cowork applies file edits inline; shell/process actions can still ask.
+  permissionMode: "accept_edits",
   enabledToolNames: null,
 };
 

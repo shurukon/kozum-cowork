@@ -5,8 +5,6 @@
  * TaskList.module.css and ContextPanel.module.css.
  */
 
-/* ── Panel shell ──────────────────────────────────────────────────────── */
-
 .panel {
   width: var(--rightpanel-w);
   flex: 0 0 var(--rightpanel-w);
@@ -19,21 +17,12 @@
   scrollbar-width: thin;
 }
 
-/* ── Collapsible section (glass-trimmed) ─────────────────────────────── */
-
-/*
- * Each section is a glass card. The `.kz-glass` class from glass.css provides
- * the translucent surface + hairline highlight. We add radius and overflow here
- * rather than in kz-glass itself since not all glass uses the same radius.
- */
 .section {
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-card);
   overflow: hidden;
 }
-
-/* ── Section header (toggle button) ───────────────────────────────────── */
 
 .sectionHeader {
   display: flex;
@@ -100,8 +89,6 @@
   flex: 1;
 }
 
-/* ── Section body ─────────────────────────────────────────────────────── */
-
 .sectionBody {
   padding: var(--sp-3) var(--sp-5) var(--sp-5);
   border-top: 1px solid var(--border-subtle);
@@ -119,122 +106,128 @@
   padding: var(--sp-2) 0;
 }
 
-/* Cowork reference right rail. Code mode uses the base panel rules above. */
-:global(.kz-cowork-shell) .panel {
-  width: 260px;
-  flex-basis: 260px;
-  padding: 18px 14px 18px;
+/* Claude-inspired Cowork right rail. Code mode uses the base panel rules. */
+.coworkPanel {
+  width: 292px;
+  flex-basis: 292px;
   gap: 10px;
-  background: #11131b;
-  border-inline-start: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 14px 12px 18px;
+  background: #101010;
+  border: 0;
+  border-inline-start: 1px solid rgba(240, 238, 230, 0.1);
+  color: #f5f4ed;
 }
 
-:global(.kz-cowork-shell) .section {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  background: #1d1f27;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
-}
-
-:global(.kz-cowork-shell) .sectionHeader {
-  min-height: 40px;
-  padding: 0 12px;
-  color: #8c90a0;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-}
-
-:global(.kz-cowork-shell) .sectionHeader:hover {
-  background: rgba(255, 255, 255, 0.035);
-  color: #e1e2ed;
-}
-
-:global(.kz-cowork-shell) .sectionBody {
-  padding: 10px 12px 13px;
-  border-top-color: rgba(255, 255, 255, 0.07);
-}
-
-:global(.kz-cowork-shell) .panelIntro {
+.coworkPanel .panelIntro {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 2px 3px 6px;
+  min-height: 32px;
+  padding: 0 8px 4px;
 }
 
-:global(.kz-cowork-shell) .panelEyebrow {
-  color: #e1e2ed;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.13em;
+.coworkPanel .panelEyebrow {
+  color: #b7b4ab;
+  font-size: 11px;
+  letter-spacing: 0.08em;
 }
 
-:global(.kz-cowork-shell) .panelHint {
-  color: #424654;
-  font-size: 10px;
+.coworkPanel .panelHint {
+  color: #87867f;
+  font-size: 12px;
 }
 
-:global(.kz-cowork-shell) .artifactList,
-:global(.kz-cowork-shell) .connectorList {
+.coworkPanel .section {
+  overflow: hidden;
+  border: 1px solid rgba(240, 238, 230, 0.1);
+  border-radius: 10px;
+  background: #181817;
+  box-shadow: none;
+}
+
+.coworkPanel .sectionHeader {
+  min-height: 42px;
+  padding: 0 12px;
+  color: #d0cdc3;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  transition: background-color 150ms cubic-bezier(0.2, 0, 0, 1), color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.coworkPanel .sectionHeader::before {
+  display: none;
+}
+
+.coworkPanel .sectionHeader:hover {
+  background: #242422;
+  color: #faf9f5;
+}
+
+.coworkPanel .sectionBody {
+  padding: 0 12px 12px;
+  border-top: 1px solid rgba(240, 238, 230, 0.08);
+}
+
+.coworkPanel .artifactList,
+.coworkPanel .connectorList {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-:global(.kz-cowork-shell) .artifactRow,
-:global(.kz-cowork-shell) .connectorRow {
+.coworkPanel .artifactRow,
+.coworkPanel .connectorRow {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 30px;
-  padding: 0 7px;
-  border-radius: 7px;
-  color: #8c90a0;
-  font-size: 11px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: #b7b4ab;
+  font-size: 13px;
   text-align: start;
 }
 
-:global(.kz-cowork-shell) .artifactRow:hover {
-  background: rgba(255, 255, 255, 0.045);
-  color: #e1e2ed;
+.coworkPanel .artifactRow:hover,
+.coworkPanel .connectorRow:hover {
+  background: #242422;
+  color: #faf9f5;
 }
 
-:global(.kz-cowork-shell) .artifactRow svg {
+.coworkPanel .artifactRow svg {
   flex: 0 0 auto;
-  color: #00c8ff;
+  color: #c96442;
 }
 
-:global(.kz-cowork-shell) .connectorRow {
-  min-height: 28px;
-  padding-inline: 7px;
-}
-
-:global(.kz-cowork-shell) .connectorDot {
+.coworkPanel .connectorDot {
   width: 6px;
   height: 6px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
+  background: #c96442;
+  box-shadow: 0 0 0 4px rgba(201, 100, 66, 0.12);
 }
 
-:global(.kz-cowork-shell) .connectorState {
+.coworkPanel .connectorState {
   margin-inline-start: auto;
-  color: #22c55e;
-  font-family: var(--font-mono);
-  font-size: 9px;
+  color: #87867f;
+  font-size: 10px;
   letter-spacing: 0.08em;
 }
 
+.coworkPanel .empty {
+  color: #87867f;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 @media (max-width: 1080px) {
-  :global(.kz-cowork-shell) .panel {
-    width: 232px;
-    flex-basis: 232px;
-  }
+  .coworkPanel { width: 260px; flex-basis: 260px; }
 }
 
 @media (max-width: 860px) {
-  :global(.kz-cowork-shell) .panel {
-    display: none;
-  }
+  .coworkPanel { display: none; }
 }

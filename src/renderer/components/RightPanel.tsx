@@ -112,7 +112,7 @@ export function RightPanel({
 
   if (mode === "cowork") {
     return (
-      <aside className={styles.panel} aria-label="Cowork context panel">
+      <aside className={`${styles.panel} ${styles.coworkPanel}`} aria-label="Cowork context panel">
         <div className={styles.panelIntro}>
           <span className={styles.panelEyebrow}>WORKSPACE</span>
           <span className={styles.panelHint}>Live context</span>

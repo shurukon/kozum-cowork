@@ -231,9 +231,12 @@ export function Message({
 
   // P1-1: show a subtle badge when the message was produced by a subagent.
   const isSubagentMessage = Boolean(message.runId);
-  const unreflectedToolCards = Array.from(toolCards.values()).filter(
-    (c) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === c.toolUseId),
-  );
+  const unreflectedToolCards =
+    mode === "cowork"
+      ? []
+      : Array.from(toolCards.values()).filter(
+          (c) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === c.toolUseId),
+        );
   const unmatchedPermissions = myPermissions.filter(
     (p) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === p.toolUseId),
   );

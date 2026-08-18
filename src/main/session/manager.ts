@@ -96,7 +96,6 @@ export class SessionManager {
     attachments: string[] = [],
     clientTurnId?: string,
   ): Promise<Result<void>> {
-    console.error(`[live-debug] send accepted session=${sessionId} clientTurn=${clientTurnId ? "yes" : "no"}`);
     const session = await this.sessions.get(sessionId);
     if (!session) return err(`Session "${sessionId}" not found`);
 
@@ -172,7 +171,6 @@ export class SessionManager {
   ): Promise<void> {
     const sessionId = session.id;
 
-    console.error(`[live-debug] runLoop started session=${sessionId} mode=${session.mode}`);
     try {
       await this.sessions.updateStatus(sessionId, "running");
       this.emitEvent(sessionId, { type: "session_status", mode: session.mode, sessionId, status: "running" });

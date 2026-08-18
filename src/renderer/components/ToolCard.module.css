@@ -704,3 +704,86 @@
   0%, 100% { opacity: 0.35; transform: scale(0.82); }
   50% { opacity: 0.9; transform: scale(1); }
 }
+
+
+/* Claude-inspired inline tool rows. The card remains interactive, but the
+   visible surface reads like a calm transcript event. */
+.inline .header {
+  min-height: 30px;
+  gap: 10px;
+  color: #d0cdc3;
+  font-family: var(--font-sans);
+  transition: color 150ms cubic-bezier(0.2, 0, 0, 1), background-color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.inline .header:not(:disabled):hover {
+  color: #faf9f5;
+}
+
+.inline .iconWrap {
+  width: 20px;
+  height: 20px;
+  color: #a7a49b;
+}
+
+.inline .summary {
+  color: #d0cdc3;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.inline .header:not(:disabled):hover .summary {
+  color: #faf9f5;
+}
+
+.inline .note {
+  max-width: min(44ch, 52%);
+  color: #87867f;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.inline .status {
+  margin-inline-start: auto;
+  color: #87867f;
+}
+
+.inline .status svg {
+  color: #b7b4ab;
+}
+
+.inline.cardRunning .status,
+.inline.cardRunning .spinner {
+  color: #c96442;
+}
+
+.inline .spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 1.5px;
+  border-color: rgba(201, 100, 66, 0.26);
+  border-top-color: #c96442;
+}
+
+.inline .headerProgress {
+  inset-inline-start: 30px;
+  height: 1px;
+  background: rgba(201, 100, 66, 0.7);
+}
+
+.inline .chevron {
+  color: #87867f;
+  opacity: 0.9;
+}
+
+.inline .detail {
+  margin-inline-start: 30px;
+  padding: 10px 0 2px;
+  border-top: 1px solid rgba(240, 238, 230, 0.12);
+  color: #b7b4ab;
+}
+
+.inline .permissionStack {
+  margin-inline-start: 30px;
+}

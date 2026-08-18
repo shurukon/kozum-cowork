@@ -68,6 +68,8 @@ export interface PendingPermission {
 }
 
 export interface ModeState {
+  /** Session identity used to separate a new transcript from an in-session follow-up. */
+  sessionId: string | null;
   status: SessionStatus;
   messages: Message[];
   streamingMessageId: string | null;

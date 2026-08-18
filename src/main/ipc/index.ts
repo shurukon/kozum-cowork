@@ -252,8 +252,15 @@ export function registerIpc(deps: IpcDeps): void {
 
   handle(ipcMain, "sessions:create", async (_e, mode, selection) => {
     const session = await deps.sessions.create(mode as Mode, selection as ModelSelection);
+    const modeSettings = await deps.settings.get();
+    const requestedMode = mode as Mode;
+    const permissionMode = modeSettings[requestedMode]?.permissionMode;
+    if (permissionMode && permissionMode !== session.permissionMode) {
+      await deps.sessions.setPermissionMode(session.id, permissionMode);
+    }
+    const created = await deps.sessions.get(session.id);
     deps.sessionModes?.set(session.id, session.mode);
-    return ok(session);
+    return ok(created ?? session);
   });
 
   handle(ipcMain, "sessions:archive", async (_e, sessionId) => {

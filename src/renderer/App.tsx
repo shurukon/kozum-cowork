@@ -654,13 +654,14 @@ export function App() {
   /**
    * Refresh models for a provider, update local cache, and return.
    */
-  async function handleRefreshModels(providerId: string): Promise<void> {
+  async function handleRefreshModels(providerId: string): Promise<ModelInfo[]> {
     const res = await bridge().providers.refreshModels(providerId);
     if (!res.ok) {
       setBanner(res.error);
-      return;
+      return [];
     }
     setModelsByProvider((prev) => ({ ...prev, [providerId]: res.value }));
+    return res.value;
   }
 
   /**
@@ -678,8 +679,13 @@ export function App() {
       return;
     }
     await reloadKeys(presets);
+    // Hydrate the exact provider immediately; the presets closure may still be
+    // one render behind when a custom provider was just created.
+    const models = await bridge().providers.refreshModels(providerId);
+    if (models.ok) {
+      setModelsByProvider((prev) => ({ ...prev, [providerId]: models.value }));
+    }
   }
-
   async function handleRemoveKey(keyId: string) {
     const res = await bridge().providers.removeKey(keyId);
     if (!res.ok) setBanner(res.error);
@@ -698,9 +704,12 @@ export function App() {
     const res = await bridge().providers.addKey(providerId, label, raw);
     if (!res.ok) return res.error;
     await reloadKeys(presets);
+    const models = await bridge().providers.refreshModels(providerId);
+    if (models.ok) {
+      setModelsByProvider((prev) => ({ ...prev, [providerId]: models.value }));
+    }
     return null;
   }
-
   async function handleAddCustomProvider(name: string, baseUrl: string): Promise<void> {
     const res = await bridge().providers.addCustom({ name, baseUrl });
     if (!res.ok) throw new Error(res.error);

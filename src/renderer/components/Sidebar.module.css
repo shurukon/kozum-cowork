@@ -513,3 +513,191 @@
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
 }
+
+
+/* Claude-inspired Cowork workbench skin. These overrides are intentionally
+   scoped to .coworkSidebar; Code mode keeps the existing visual system. */
+.coworkSidebar {
+  width: 276px;
+  flex-basis: 276px;
+  padding: 14px 10px 12px;
+  gap: 16px;
+  background: #101010;
+  border: 0;
+  border-inline-end: 1px solid rgba(240, 238, 230, 0.1);
+  color: #f5f4ed;
+}
+
+.coworkBrand {
+  min-height: 34px;
+  padding: 0 10px 2px;
+  gap: 10px;
+}
+
+.coworkBrandMark {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: #c96442;
+  box-shadow: none;
+  color: #faf9f5;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.coworkBrandName {
+  color: #faf9f5;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.coworkPro {
+  padding: 3px 7px;
+  border: 1px solid rgba(201, 100, 66, 0.5);
+  border-radius: 9999px;
+  color: #d98a6d;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+.coworkSidebar .modeSwitch {
+  padding: 3px;
+  background: #1b1b1a;
+  border: 1px solid rgba(240, 238, 230, 0.12);
+  border-radius: 10px;
+}
+
+.coworkSidebar .modeBtn {
+  height: 32px;
+  color: #9b9991;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+.coworkSidebar .modeBtn:hover {
+  color: #faf9f5;
+  background: rgba(250, 249, 245, 0.06);
+}
+
+.coworkSidebar .modeOn {
+  background: #f5f4ed;
+  box-shadow: none;
+  color: #141413;
+}
+
+.coworkSidebar .modeOn:hover {
+  background: #faf9f5;
+  color: #141413;
+}
+
+.coworkSidebar .nav {
+  gap: 2px;
+}
+
+.coworkSidebar .navItem {
+  height: 36px;
+  padding: 0 11px;
+  gap: 11px;
+  border-radius: 8px;
+  color: #b4b1a8;
+  font-size: 13px;
+}
+
+.coworkSidebar .navItem:hover {
+  background: rgba(250, 249, 245, 0.07);
+  color: #faf9f5;
+}
+
+.coworkSidebar .navOn,
+.coworkSidebar .nav > li:first-child .navItem,
+.coworkSidebar .nav > li:first-child .navItem:hover {
+  background: #272725;
+  box-shadow: none;
+  color: #faf9f5;
+}
+
+.coworkSidebar .nav > li:first-child .navItem {
+  margin-top: 2px;
+}
+
+.coworkSidebar .recents {
+  margin: 0 -2px;
+  padding: 0 2px;
+  gap: 14px;
+}
+
+.coworkSidebar .filterRow {
+  height: 32px;
+  padding: 0 10px;
+  background: #181817;
+  border-color: rgba(240, 238, 230, 0.12);
+  border-radius: 9px;
+}
+
+.coworkSidebar .filterInput,
+.coworkSidebar .filterInput::placeholder {
+  color: #9b9991;
+}
+
+.coworkSidebar .groupHead {
+  height: 28px;
+  padding: 0 10px;
+  color: #87867f;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.coworkSidebar .recent {
+  height: 34px;
+  padding: 0 10px;
+  gap: 10px;
+  border-radius: 8px;
+  color: #bdbab1;
+  font-size: 13px;
+}
+
+.coworkSidebar .recent:hover,
+.coworkSidebar .recentRow:hover .recent {
+  background: rgba(250, 249, 245, 0.06);
+  color: #faf9f5;
+}
+
+.coworkSidebar .recentRowActive .recent,
+.coworkSidebar .recentRowActive:hover .recent {
+  background: #242422;
+  color: #faf9f5;
+}
+
+.coworkSidebar .account {
+  height: 46px;
+  padding: 0 10px;
+  background: #181817;
+  border-color: rgba(240, 238, 230, 0.1);
+  border-radius: 10px;
+  color: #bdbab1;
+  font-size: 12px;
+}
+
+.coworkSidebar .account:hover {
+  background: #242422;
+  border-color: rgba(240, 238, 230, 0.18);
+  color: #faf9f5;
+}
+
+.coworkSidebar .accountProvider,
+.coworkSidebar .accountSep,
+.coworkSidebar .accountChevron {
+  color: #87867f;
+}
+
+.coworkSidebar .runningDot {
+  background: #c96442;
+  box-shadow: 0 0 0 4px rgba(201, 100, 66, 0.16);
+}
+
+@media (max-width: 900px) {
+  .coworkSidebar { width: 240px; flex-basis: 240px; }
+}

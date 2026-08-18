@@ -29,7 +29,7 @@ import type {
   ApiKeyEntry,
   ModelInfo,
 } from "@shared/types.ts";
-import { useSessionStore } from "../store/session.ts";
+import { reconstructToolCards, useSessionStore } from "../store/session.ts";
 import { Message } from "./Message.tsx";
 import { ComposerBar } from "./ComposerBar.tsx";
 import { PinnedTodoSlot } from "./PinnedTodoSlot.tsx";
@@ -56,7 +56,7 @@ export interface ChatViewProps {
   keysByProvider: Record<string, ApiKeyEntry[]>;
   modelsByProvider: Record<string, ModelInfo[]>;
   onSelectionChange: (next: ModelSelection) => void;
-  onRefreshModels: (providerId: string) => Promise<void>;
+  onRefreshModels: (providerId: string) => Promise<ModelInfo[] | void>;
 
   /** Code mode passes a <PermissionPicker />; Cowork omits. */
   permissionSlot?: ReactNode;
@@ -103,8 +103,11 @@ export function ChatView({
   onReply,
   onResolveQuestion,
 }: ChatViewProps) {
-const modeState = useSessionStore((s) => s[mode]);
+  const modeState = useSessionStore((s) => s[mode]);
   const { messages, streamingMessageId, toolCards, pendingQuestions, pendingPermissions } = modeState;
+  const transcriptToolCards = reconstructToolCards(messages);
+  const visibleToolCards = new Map(transcriptToolCards);
+  for (const [toolUseId, card] of toolCards) visibleToolCards.set(toolUseId, card);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -137,7 +140,7 @@ const modeState = useSessionStore((s) => s[mode]);
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages, atBottom, toolCards]);
+  }, [messages, atBottom, visibleToolCards]);
 
   function jumpToBottom() {
     const el = scrollRef.current;
@@ -173,7 +176,7 @@ const modeState = useSessionStore((s) => s[mode]);
               mode={mode}
               message={msg}
               isStreaming={streamingMessageId === msg.id}
-              toolCards={toolCards}
+              toolCards={visibleToolCards}
               onOpenFile={onOpenFile}
               onPreview={onPreview}
               onReply={onReply}
