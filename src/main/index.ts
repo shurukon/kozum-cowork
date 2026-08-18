@@ -359,6 +359,7 @@ if (!app.requestSingleInstanceLock()) {
       browserSurface,
       subagents,
       getBrowserView: () => browserBackend.getWebContentsView(),
+      getBrowserScreenshot: (opts) => browser.screenshot(opts),
     });
 
     // ── window chrome IPC ────────────────────────────────────────────────────

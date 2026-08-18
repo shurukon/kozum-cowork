@@ -374,10 +374,11 @@ export function App() {
           settings?.general.autoOpenBrowserPreview &&
           shouldOpenBrowserPreview(e.name)
         ) {
-          setPreviewTarget((current) => {
-            if (current && current.kind !== "browser") return current;
-            return { kind: "browser", sessionId: e.sessionId };
-          });
+          // A live browser interaction must take precedence over an earlier
+          // static file preview opened by file_write. Otherwise the file card
+          // captures the panel before browser_navigate starts and the user
+          // never sees the internal browser surface.
+          setPreviewTarget({ kind: "browser", sessionId: e.sessionId });
         }
 
         // P0-3c: auto-open the preview panel when a deliverable-producing
@@ -466,7 +467,7 @@ export function App() {
         current.modelId !== resolved.modelId)
     ) {
       void patchSettings({
-        [mode]: { ...settings[mode], selection: resolved },
+        [mode]: { selection: resolved },
       } as Partial<AppSettings>);
     }
   }, [settings, mode, keys, hasAnyKeys, modelsByProvider, presets]);
@@ -506,7 +507,7 @@ export function App() {
         storedSelection.modelId !== resolvedSelection.modelId)
     ) {
       void patchSettings({
-        [mode]: { ...settings[mode], selection: resolvedSelection },
+        [mode]: { selection: resolvedSelection },
       } as Partial<AppSettings>);
     }
     setActiveSessionId(res.value.id);
@@ -528,7 +529,7 @@ export function App() {
         effectiveSelection = resolveSavedSelection(settings[mode].selection, keys, modelsByProvider, presets);
         if (effectiveSelection) {
           await patchSettings({
-            [mode]: { ...settings[mode], selection: effectiveSelection },
+            [mode]: { selection: effectiveSelection },
           } as Partial<AppSettings>);
         }
       }
@@ -647,7 +648,7 @@ export function App() {
   async function handleSelectionChange(next: ModelSelection) {
     if (!settings) return;
     await patchSettings({
-      [mode]: { ...settings[mode], selection: next },
+      [mode]: { selection: next },
     } as Partial<AppSettings>);
   }
 
@@ -731,7 +732,7 @@ export function App() {
     if (!settings) return;
     const keyId = keys[providerId]?.[0]?.id ?? null;
     await patchSettings({
-      [mode]: { ...settings[mode], selection: { providerId, keyId, modelId } },
+      [mode]: { selection: { providerId, keyId, modelId } },
     } as Partial<AppSettings>);
     setSkippedSetup(true);
   }

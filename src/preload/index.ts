@@ -268,6 +268,14 @@ const api = {
       attached: boolean;
     }> => ipcRenderer.invoke("browser:state"),
 
+    /** Capture the actual agent-controlled Chromium view. */
+    screenshot: (opts?: { fullPage?: boolean; quality?: number }): Promise<Result<{
+      data: string;
+      mimeType: "image/jpeg";
+      width: number;
+      height: number;
+    }>> => ipcRenderer.invoke("browser:screenshot", opts),
+
     /** Update only the rect of the already-attached view (on resize). */
     updateBounds: (
       rect: { x: number; y: number; width: number; height: number },

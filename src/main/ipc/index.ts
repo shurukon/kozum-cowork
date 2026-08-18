@@ -81,6 +81,13 @@ export interface IpcDeps {
         setAutoResize?(opts: { width: boolean; height: boolean }): void;
       }
     | null;
+  /** Captures the actual agent-controlled Chromium view for live verification/export. */
+  getBrowserScreenshot?: (opts?: { fullPage?: boolean; quality?: number }) => Promise<{
+    data: string;
+    mimeType: "image/jpeg";
+    width: number;
+    height: number;
+  }>;
 }
 
 /** Wrap an async handler so a thrown error becomes {ok:false, error}. */
@@ -707,6 +714,17 @@ export function registerIpc(deps: IpcDeps): void {
   handle(ipcMain, "browser:state", async () => {
     if (!deps.browserSurface) return ok({ currentUrl: "", title: "", isLoading: false, attached: false });
     return ok(deps.browserSurface.getState());
+  });
+
+  /** browser:screenshot — capture the actual agent-controlled Chromium view. */
+  handle(ipcMain, "browser:screenshot", async (_e, optsRaw) => {
+    if (!deps.getBrowserScreenshot) return err("browser screenshot is not available in this build.");
+    try {
+      return ok(await deps.getBrowserScreenshot(optsRaw as { fullPage?: boolean; quality?: number } | undefined));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return err(msg);
+    }
   });
 
   /** browser:updateBounds — update only the rect of the attached view (resize). */

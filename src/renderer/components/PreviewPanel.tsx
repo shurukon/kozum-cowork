@@ -439,9 +439,14 @@ async function safeBrowserUpdateBounds(
 
 async function safeBrowserState(): Promise<BrowserState | null> {
   try {
-    const b = bridge() as unknown as { browser?: { state: () => Promise<BrowserState> } };
+    const b = bridge() as unknown as {
+      browser?: {
+        state: () => Promise<{ ok: boolean; error?: string; value?: BrowserState }>;
+      };
+    };
     if (typeof b.browser?.state !== "function") return null;
-    return b.browser.state();
+    const result = await b.browser.state();
+    return result.ok && result.value ? result.value : null;
   } catch {
     return null;
   }

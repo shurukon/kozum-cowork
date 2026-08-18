@@ -13,6 +13,7 @@
  */
 
 import type { Mode, ModeSettings, ToolDefinition } from "../../shared/types.ts";
+import { blockedResult } from "./permissions.ts";
 import { ToolRegistry, type Tool, type ToolContext } from "./registry.ts";
 
 import { fsTools } from "./fs.ts";
@@ -124,6 +125,14 @@ export function makeExecutor(
       opts: { sessionId: string; signal: AbortSignal; onProgress: (n: string) => void },
     ) {
       const base = getContext(opts.sessionId);
+      const enabled = getModeSettings(base.mode).enabledToolNames;
+      if (enabled !== null && !enabled.includes(name)) {
+        return Promise.resolve(
+          blockedResult(
+            `The tool "${name}" is disabled for ${base.mode} mode and was not executed.`,
+          ),
+        );
+      }
       return registry.execute(name, input, {
         ...base,
         signal: opts.signal,

@@ -78,12 +78,20 @@ export class BrowserSurface {
     this._view = view;
 
     try {
-      // addChildView / removeChildView are on BaseWindow; BrowserWindow adds
-      // its own members on top. The types from this Electron version don't
-      // expose addChildView on BrowserWindow directly, so cast through unknown.
-      (win as unknown as {
-        addChildView: (v: AttachableWebContentsView) => void;
-      }).addChildView(view);
+      // Electron's BrowserWindow exposes the View tree through contentView.
+      // addChildView is not a BrowserWindow method in current Electron builds;
+      // calling win.addChildView silently leaves the native browser invisible.
+      const host = win as unknown as {
+        contentView?: {
+          addChildView?: (v: AttachableWebContentsView) => void;
+        };
+        addChildView?: (v: AttachableWebContentsView) => void;
+      };
+      if (typeof host.contentView?.addChildView === "function") {
+        host.contentView.addChildView(view);
+      } else {
+        host.addChildView?.(view);
+      }
     } catch {
       // addChildView may fail if the view is already a child — ignore.
     }
@@ -150,9 +158,17 @@ export class BrowserSurface {
   detachFrom(win: BrowserWindow | null): void {
     if (this._view && win) {
       try {
-        (win as unknown as {
+        const host = win as unknown as {
+          contentView?: {
+            removeChildView?: (v: AttachableWebContentsView) => void;
+          };
           removeChildView?: (v: AttachableWebContentsView) => void;
-        }).removeChildView?.(this._view);
+        };
+        if (typeof host.contentView?.removeChildView === "function") {
+          host.contentView.removeChildView(this._view);
+        } else {
+          host.removeChildView?.(this._view);
+        }
       } catch {
         // Best-effort removal.
       }

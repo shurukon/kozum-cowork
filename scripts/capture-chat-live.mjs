@@ -1,6 +1,7 @@
 import { _electron as electron } from "playwright";
-import { join } from "node:path";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { createServer } from "node:http";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 const ROOT = join(import.meta.dirname, "..");
 const MAIN_BUNDLE = join(ROOT, "out", "main", "index.js");
@@ -15,6 +16,33 @@ if (!apiBase || !apiKey) throw new Error("OPENAI-compatible test environment is 
 rmSync(USERDATA, { recursive: true, force: true });
 rmSync(LIVE_WORKSPACE, { recursive: true, force: true });
 mkdirSync(LIVE_WORKSPACE, { recursive: true });
+
+// BrowserEngine intentionally blocks file:// navigation to prevent arbitrary
+// local-file reads. Serve the real live workspace over localhost instead; the
+// agent still writes the file on disk and the embedded Chromium loads it via
+// a genuine HTTP request.
+const workspaceRoot = resolve(LIVE_WORKSPACE);
+const liveServer = createServer((req, res) => {
+  try {
+    const pathname = decodeURIComponent(new URL(req.url ?? "/", "http://127.0.0.1").pathname);
+    const filePath = resolve(join(workspaceRoot, pathname.replace(/^\/+/, "")));
+    if (!filePath.startsWith(`${workspaceRoot}/`) || !existsSync(filePath)) {
+      res.statusCode = 404;
+      res.end("Not found");
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader("Content-Type", filePath.endsWith(".html") ? "text/html; charset=utf-8" : "text/plain; charset=utf-8");
+    res.end(readFileSync(filePath));
+  } catch {
+    res.statusCode = 400;
+    res.end("Bad request");
+  }
+});
+await new Promise((resolveReady) => liveServer.listen(0, "127.0.0.1", resolveReady));
+const liveAddress = liveServer.address();
+if (!liveAddress || typeof liveAddress === "string") throw new Error("Live HTTP server did not expose a port");
+const liveUrl = `http://127.0.0.1:${liveAddress.port}/long-live-demo.html`;
 
 const app = await electron.launch({
   args: [MAIN_BUNDLE, "--password-store=basic"],
@@ -40,6 +68,22 @@ await page.evaluate(async (folder) => {
     general: {
       ...settings.general,
       defaultFolders: { ...settings.general.defaultFolders, cowork: folder },
+      autoOpenPreviews: true,
+      autoOpenBrowserPreview: true,
+    },
+    cowork: {
+      ...settings.cowork,
+      permissionMode: "accept_edits",
+      enabledToolNames: [
+        "web_search",
+        "web_fetch",
+        "file_write",
+        "file_edit",
+        "browser_navigate",
+        "browser_get_content",
+        "browser_scroll",
+        "browser_screenshot",
+      ],
     },
   });
 }, LIVE_WORKSPACE);
@@ -116,8 +160,8 @@ async function selectProviderAndModel() {
   const visibleOptions = await options.allInnerTexts().catch(() => []);
   // The proxy exposes stable display names while model IDs remain internal.
   // Prefer GPT-5 mini for a stable live UI round, then fall back to nano or the first real model.
-  const preferred = page.getByRole("option", { name: /GPT-5 mini/i }).first();
-  const secondary = page.getByRole("option", { name: /GPT-5 nano/i }).first();
+  const preferred = page.getByRole("option", { name: /GPT[- ]5[- ]mini/i }).first();
+  const secondary = page.getByRole("option", { name: /GPT[- ]5[- ]nano/i }).first();
   const modelOption = (await visible(preferred, 3000)) ? preferred : (await visible(secondary, 1500)) ? secondary : options.first();
   if (!(await visible(modelOption, 3000))) {
     await page.screenshot({ path: join(OUT, "chat-live-model-selection-debug.png"), fullPage: false });
@@ -143,21 +187,45 @@ async function selectProviderAndModel() {
 
 await selectProviderAndModel();
 
+const liveToolSettings = await page.evaluate(async () => {
+  const current = await window.kozum.settings.get();
+  return {
+    enabledToolNames: current.cowork.enabledToolNames,
+    autoOpenBrowserPreview: current.general.autoOpenBrowserPreview,
+  };
+});
+console.log(JSON.stringify({ liveToolSettings }));
+if (
+  !Array.isArray(liveToolSettings.enabledToolNames) ||
+  !liveToolSettings.enabledToolNames.includes("browser_navigate") ||
+  liveToolSettings.enabledToolNames.includes("task_create") ||
+  liveToolSettings.autoOpenBrowserPreview !== true
+) {
+  throw new Error(`Live settings did not persist the browser allowlist: ${JSON.stringify(liveToolSettings)}`);
+}
+
 const composer = page.getByRole("textbox", { name: /message/i });
 await composer.waitFor({ state: "visible", timeout: 5000 });
-await composer.fill("Do not create a task and do not use task_create. Use the file_write tool directly to create an actual file named live-ui-smoke.html in the current working folder, containing a short landing page. After the file_write tool succeeds, reply with a concise confirmation.");
+await composer.fill("Run this real multi-step task in the exact order below and do not use task_create. First use file_write directly to create an actual file named long-live-demo.html in the current working folder with a polished single-file landing page. Immediately use browser_navigate to open " + liveUrl + " in the internal browser. Then use browser_get_content, browser_scroll, and browser_screenshot to inspect the real rendered page. Next use web_search with the simple query Anthropic and continue even if one search result fails; then use web_fetch on https://github.com/nexu-io/open-design. After that use file_edit once to improve long-live-demo.html, and use browser_navigate again to reload " + liveUrl + ". Keep progress updates concise, do not skip tools, and continue after every tool result until the final page is loaded. Do not merely describe the work: execute it for real and finish with a concise completion summary.");
 await composer.press("Enter");
 
 const permissionPath = join(OUT, "chat-live-permission.png");
 const runningPath = join(OUT, "chat-live-tool-running.png");
 const completePath = join(OUT, "chat-live-done.png");
 const previewPath = join(OUT, "chat-live-preview.png");
+const longRunningPath = join(OUT, "chat-live-long-running.png");
+const browserPreviewPath = join(OUT, "chat-live-browser-preview.png");
+const browserNativePath = join(OUT, "chat-live-browser-native.jpg");
+const longDonePath = join(OUT, "chat-live-long-done.png");
 const noToolPath = join(OUT, "chat-live-no-tool.png");
 let sawPermission = false;
 let sawRunning = false;
+let sawLongRunning = false;
 let sawDone = false;
 let sawPreview = false;
-const deadline = Date.now() + 60000;
+let sawBrowserPreview = false;
+let sawBrowserNativeScreenshot = false;
+const deadline = Date.now() + 120000;
 while (Date.now() < deadline) {
   const permission = page.getByRole("alert").filter({ hasText: /needs your approval/i }).first();
   if (!sawPermission && (await permission.count()) > 0 && await permission.isVisible().catch(() => false)) {
@@ -169,21 +237,51 @@ while (Date.now() < deadline) {
   }
   const running = page.locator("[data-tool-state='running']");
   const ok = page.locator("[data-tool-state='ok']");
+  const toolCount = await page.locator("[data-tool-state]").count();
+  const browserArea = page.locator("[aria-label='Live browser area']").first();
   if (!sawRunning && (await running.count()) > 0) {
     await page.screenshot({ path: runningPath, fullPage: false });
     sawRunning = true;
     console.log("captured=running");
   }
+  if (!sawLongRunning && toolCount >= 2) {
+    await page.screenshot({ path: longRunningPath, fullPage: false });
+    sawLongRunning = true;
+    console.log(`captured=long-running tools=${toolCount}`);
+  }
+  const browserPanel = page.locator("[class*='browserPreview']").first();
+  const browserPanelText = await browserPanel.innerText().catch(() => "");
+  const browserReady = browserPanelText.includes("127.0.0.1:") && browserPanelText.includes("/long-live-demo.html") && !browserPanelText.includes("Waiting for the agent");
+  if (!sawBrowserPreview && await visible(browserArea, 1200) && browserReady) {
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: browserPreviewPath, fullPage: false });
+    const nativeCapture = await page.evaluate(async () => {
+      const result = await window.kozum.browser.screenshot({ quality: 90 });
+      return result.ok && result.value
+        ? { ok: true, data: result.value.data, mimeType: result.value.mimeType, width: result.value.width, height: result.value.height, dataLength: typeof result.value.data === "string" ? result.value.data.length : null, resultKeys: Object.keys(result), valueKeys: Object.keys(result.value) }
+        : { ok: false, error: result.error ?? "browser screenshot failed", resultKeys: Object.keys(result), valueType: typeof result.value, valueKeys: result.value && typeof result.value === "object" ? Object.keys(result.value) : null };
+    }).catch((error) => ({ ok: false, error: String(error) }));
+    if (nativeCapture.ok && nativeCapture.data) {
+      writeFileSync(browserNativePath, Buffer.from(nativeCapture.data, "base64"));
+      sawBrowserNativeScreenshot = true;
+      console.log(`captured=browser-native dimensions=${nativeCapture.width}x${nativeCapture.height}`);
+    } else {
+      console.log(JSON.stringify({ browserNativeCaptureError: nativeCapture.error ?? "unknown", browserNativeCaptureKeys: Object.keys(nativeCapture), browserNativeCaptureResultKeys: nativeCapture.resultKeys ?? null, browserNativeCaptureValueKeys: nativeCapture.valueKeys ?? null, browserNativeCaptureValueType: nativeCapture.valueType ?? null, browserNativeCaptureDataLength: nativeCapture.dataLength ?? null }));
+    }
+    sawBrowserPreview = true;
+    console.log("captured=browser-preview");
+  }
   if ((await ok.count()) > 0) {
     if (!sawDone) {
       await page.screenshot({ path: completePath, fullPage: false });
+      await page.screenshot({ path: longDonePath, fullPage: false });
       sawDone = true;
       console.log("captured=done");
     }
     const composerValue = await composer.inputValue().catch(() => "");
     const body = await page.locator("body").innerText().catch(() => "");
-    if (!sawPreview && /live-ui-smoke\.html/i.test(body)) {
-      const fileChip = page.getByRole("button", { name: /live-ui-smoke\.html/i }).first();
+    if (!sawPreview && /long-live-demo\.html/i.test(body)) {
+      const fileChip = page.getByRole("button", { name: /long-live-demo\.html/i }).first();
       if (await visible(fileChip, 1200)) {
         await fileChip.click();
         await page.waitForTimeout(900);
@@ -192,7 +290,7 @@ while (Date.now() < deadline) {
         console.log("captured=preview");
       }
     }
-    if (composerValue === "" && /live-ui-smoke\.html/i.test(body) && sawPreview) break;
+    if (composerValue === "" && /long-live-demo\.html/i.test(body) && sawBrowserPreview) break;
   }
   await page.waitForTimeout(250);
 }
@@ -224,5 +322,33 @@ if (!sawDone) {
   })).catch((error) => ({ error: String(error) }));
   console.log(JSON.stringify({ captured: sawRunning ? "running-without-done" : "no-tool-state", bodyText, sessionDiagnostics, domDiagnostics, rendererDiagnostics, mainDiagnostics }));
 }
-console.log(JSON.stringify({ sawPermission, sawRunning, sawDone, sawPreview, output: OUT }));
+const finalDiagnostics = await page.evaluate(async () => {
+  const sessions = await window.kozum.sessions.list("cowork");
+  const latest = sessions[0];
+  if (!latest) return { toolNames: [] };
+  const messages = await window.kozum.sessions.messages(latest.id);
+  const toolNames = messages.flatMap((message) =>
+    Array.isArray(message.content)
+      ? message.content
+          .filter((block) => block?.type === "tool_use")
+          .map((block) => block?.name)
+          .filter((name) => typeof name === "string")
+      : [],
+  );
+  return { toolNames };
+}).catch((error) => ({ error: String(error), toolNames: [] }));
+const disallowedToolNames = finalDiagnostics.toolNames?.filter((name) => name === "task_create") ?? [];
+const browserUiDiagnostics = await page.evaluate(async () => {
+  const panel = document.querySelector("[class*='browserPreview']");
+  const area = document.querySelector("[aria-label='Live browser area']");
+  const state = await window.kozum.browser?.state?.().catch(() => null);
+  return {
+    panelText: panel?.textContent ?? null,
+    areaText: area?.textContent ?? null,
+    state: state ?? null,
+  };
+}).catch((error) => ({ error: String(error) }));
+console.log(JSON.stringify({ sawPermission, sawRunning, sawLongRunning, sawDone, sawPreview, sawBrowserPreview, sawBrowserNativeScreenshot, finalDiagnostics, browserUiDiagnostics, disallowedToolNames, output: OUT }));
 await app.close();
+liveServer.close();
+if (!sawDone || !sawBrowserPreview || !sawBrowserNativeScreenshot || disallowedToolNames.length > 0) process.exitCode = 2;
