@@ -1042,7 +1042,9 @@ export function App() {
 
       <ToastRegion toasts={toasts} onDismiss={dismissToast} />
 
-      <div className={`${styles.body} ${mode === "cowork" ? styles.coworkBody : styles.codeBody}`}>
+      <div
+        className={`${styles.body} ${mode === "cowork" ? styles.coworkBody : styles.codeBody} ${previewTarget ? styles.previewFocused : ""}`}
+      >
         {sidebarOpen && (
           <Sidebar
             mode={mode}
@@ -1207,7 +1209,7 @@ export function App() {
           )}
         </main>
 
-        {(inSession || (mode === "cowork" && !needsSetup)) && (
+        {!previewTarget && (inSession || (mode === "cowork" && !needsSetup)) && (
           <RightPanel
             mode={mode}
             tasks={modeState.tasks}

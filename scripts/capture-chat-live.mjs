@@ -1,7 +1,7 @@
 import { _electron as electron } from "playwright";
 import { join, resolve } from "node:path";
 import { createServer } from "node:http";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 
 const ROOT = join(import.meta.dirname, "..");
 const MAIN_BUNDLE = join(ROOT, "out", "main", "index.js");
@@ -83,6 +83,10 @@ await page.evaluate(async (folder) => {
         "browser_get_content",
         "browser_scroll",
         "browser_screenshot",
+        "task_create",
+        "task_get",
+        "task_list",
+        "task_update",
       ],
     },
   });
@@ -198,7 +202,7 @@ console.log(JSON.stringify({ liveToolSettings }));
 if (
   !Array.isArray(liveToolSettings.enabledToolNames) ||
   !liveToolSettings.enabledToolNames.includes("browser_navigate") ||
-  liveToolSettings.enabledToolNames.includes("task_create") ||
+  !liveToolSettings.enabledToolNames.includes("task_create") ||
   liveToolSettings.autoOpenBrowserPreview !== true
 ) {
   throw new Error(`Live settings did not persist the browser allowlist: ${JSON.stringify(liveToolSettings)}`);
@@ -206,7 +210,7 @@ if (
 
 const composer = page.getByRole("textbox", { name: /message/i });
 await composer.waitFor({ state: "visible", timeout: 5000 });
-await composer.fill("Run this real multi-step task in the exact order below and do not use task_create. First use file_write directly to create an actual file named long-live-demo.html in the current working folder with a polished single-file landing page. Immediately use browser_navigate to open " + liveUrl + " in the internal browser. Then use browser_get_content, browser_scroll, and browser_screenshot to inspect the real rendered page. Next use web_search with the simple query Anthropic and continue even if one search result fails; then use web_fetch on https://github.com/nexu-io/open-design. After that use file_edit once to improve long-live-demo.html, and use browser_navigate again to reload " + liveUrl + ". Keep progress updates concise, do not skip tools, and continue after every tool result until the final page is loaded. Do not merely describe the work: execute it for real and finish with a concise completion summary.");
+await composer.fill("Run this genuinely long autonomous task and execute it for real. First use task_create to split the work into exactly six concrete subtasks: research, content plan, visual implementation, browser verification, accessibility review, and final polish. Keep the task list visible. Immediately use file_write to create an actual file named long-live-demo.html in the current working folder with a polished single-file landing page for an open-source AI coworking app, including responsive layout, hero, feature cards, workflow section, testimonials, and footer. Then immediately use browser_navigate to open " + liveUrl + " in the internal browser, followed by browser_get_content, browser_scroll, and browser_screenshot so the rendered landing page is visible early in the run. After that, use web_search with the simple query Anthropic and continue even if one result fails; use web_fetch on https://github.com/nexu-io/open-design to inspect the real design reference. Use task_update after each subtask changes state and mark each completed only after doing the work; use task_list or task_get when useful. Apply the accessibility review and final polish with file_edit, then use browser_navigate again to reload " + liveUrl + " and verify the final page. Keep progress updates concise, do not skip the task split, and finish with a concise summary only after all six tasks are completed or explicitly failed.");
 await composer.press("Enter");
 
 const permissionPath = join(OUT, "chat-live-permission.png");
@@ -221,11 +225,12 @@ const noToolPath = join(OUT, "chat-live-no-tool.png");
 let sawPermission = false;
 let sawRunning = false;
 let sawLongRunning = false;
+let sawTaskProgress = false;
 let sawDone = false;
 let sawPreview = false;
 let sawBrowserPreview = false;
 let sawBrowserNativeScreenshot = false;
-const deadline = Date.now() + 120000;
+const deadline = Date.now() + 240000;
 while (Date.now() < deadline) {
   const permission = page.getByRole("alert").filter({ hasText: /needs your approval/i }).first();
   if (!sawPermission && (await permission.count()) > 0 && await permission.isVisible().catch(() => false)) {
@@ -238,6 +243,9 @@ while (Date.now() < deadline) {
   const running = page.locator("[data-tool-state='running']");
   const ok = page.locator("[data-tool-state='ok']");
   const toolCount = await page.locator("[data-tool-state]").count();
+  const taskItems = page.locator("[data-status]");
+  const taskProgressText = await page.locator("body").innerText().catch(() => "");
+  const hasTaskProgress = (await taskItems.count()) > 0 && /Tasks|of .* done|research|visual|accessibility/i.test(taskProgressText);
   const browserArea = page.locator("[aria-label='Live browser area']").first();
   if (!sawRunning && (await running.count()) > 0) {
     await page.screenshot({ path: runningPath, fullPage: false });
@@ -248,6 +256,11 @@ while (Date.now() < deadline) {
     await page.screenshot({ path: longRunningPath, fullPage: false });
     sawLongRunning = true;
     console.log(`captured=long-running tools=${toolCount}`);
+  }
+  if (!sawTaskProgress && hasTaskProgress) {
+    await page.screenshot({ path: longRunningPath, fullPage: false });
+    sawTaskProgress = true;
+    console.log(`captured=task-progress tasks=${await taskItems.count()}`);
   }
   const browserPanel = page.locator("[class*='browserPreview']").first();
   const browserPanelText = await browserPanel.innerText().catch(() => "");
@@ -324,9 +337,10 @@ if (!sawDone) {
 }
 const finalDiagnostics = await page.evaluate(async () => {
   const sessions = await window.kozum.sessions.list("cowork");
-  const latest = sessions[0];
-  if (!latest) return { toolNames: [] };
-  const messages = await window.kozum.sessions.messages(latest.id);
+  const messageGroups = await Promise.all(sessions.slice(0, 8).map(async (session) => {
+    try { return await window.kozum.sessions.messages(session.id); } catch { return []; }
+  }));
+  const messages = messageGroups.flat();
   const toolNames = messages.flatMap((message) =>
     Array.isArray(message.content)
       ? message.content
@@ -335,9 +349,10 @@ const finalDiagnostics = await page.evaluate(async () => {
           .filter((name) => typeof name === "string")
       : [],
   );
-  return { toolNames };
-}).catch((error) => ({ error: String(error), toolNames: [] }));
-const disallowedToolNames = finalDiagnostics.toolNames?.filter((name) => name === "task_create") ?? [];
+  const taskToolNames = toolNames.filter((name) => /^task_(create|update|get|list)$/.test(name));
+  return { sessionCount: sessions.length, toolNames, taskToolNames, taskCreateCount: toolNames.filter((name) => name === "task_create").length, taskUpdateCount: toolNames.filter((name) => name === "task_update").length };
+}).catch((error) => ({ error: String(error), toolNames: [], taskToolNames: [], taskCreateCount: 0, taskUpdateCount: 0 }));
+const disallowedToolNames = [];
 const browserUiDiagnostics = await page.evaluate(async () => {
   const panel = document.querySelector("[class*='browserPreview']");
   const area = document.querySelector("[aria-label='Live browser area']");
@@ -348,7 +363,39 @@ const browserUiDiagnostics = await page.evaluate(async () => {
     state: state ?? null,
   };
 }).catch((error) => ({ error: String(error) }));
-console.log(JSON.stringify({ sawPermission, sawRunning, sawLongRunning, sawDone, sawPreview, sawBrowserPreview, sawBrowserNativeScreenshot, finalDiagnostics, browserUiDiagnostics, disallowedToolNames, output: OUT }));
 await app.close();
 liveServer.close();
-if (!sawDone || !sawBrowserPreview || !sawBrowserNativeScreenshot || disallowedToolNames.length > 0) process.exitCode = 2;
+
+function collectEventToolNames(root) {
+  const names = [];
+  const visit = (dir) => {
+    let entries = [];
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.name.endsWith(".events.jsonl")) {
+        let lines = [];
+        try { lines = readFileSync(path, "utf8").split(/\n/); } catch { continue; }
+        for (const line of lines) {
+          try {
+            const record = JSON.parse(line);
+            const event = record.event ?? record;
+            if (event?.type === "tool_start" && typeof event.name === "string") names.push(event.name);
+          } catch { /* ignore malformed/incomplete trailing lines */ }
+        }
+      }
+    }
+  };
+  visit(root);
+  return names;
+}
+const eventToolNames = collectEventToolNames(USERDATA);
+const allToolNames = [...(finalDiagnostics.toolNames ?? []), ...eventToolNames];
+const eventDiagnostics = {
+  eventToolNames,
+  taskCreateCount: allToolNames.filter((name) => name === "task_create").length,
+  taskUpdateCount: allToolNames.filter((name) => name === "task_update").length,
+};
+console.log(JSON.stringify({ sawPermission, sawRunning, sawLongRunning, sawTaskProgress, sawDone, sawPreview, sawBrowserPreview, sawBrowserNativeScreenshot, finalDiagnostics, eventDiagnostics, browserUiDiagnostics, disallowedToolNames, output: OUT }));
+if (!sawDone || !sawTaskProgress || !sawBrowserPreview || !sawBrowserNativeScreenshot || eventDiagnostics.taskCreateCount < 6 || eventDiagnostics.taskUpdateCount < 1) process.exitCode = 2;

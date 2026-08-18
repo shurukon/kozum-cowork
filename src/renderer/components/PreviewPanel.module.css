@@ -154,6 +154,24 @@
   overflow: hidden;
 }
 
+/* Visual HTML artifacts are rendered as a design canvas, not a code listing. */
+.htmlVisualWrap {
+  height: 100%;
+  min-height: 0;
+  margin: calc(var(--sp-4) * -1);
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.htmlVisualFrame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 560px;
+  border: 0;
+  background: #ffffff;
+}
+
 .truncNote {
   font-size: var(--fs-xs);
   color: var(--warning);
@@ -425,6 +443,12 @@
   min-height: 320px;
 }
 
+/* In preview-focused mode the panel body is a full render canvas. */
+.panel:has(.htmlVisualWrap) .body {
+  padding: var(--sp-4);
+  overflow: hidden;
+}
+
 .browserBar {
   display: flex;
   align-items: center;
@@ -494,6 +518,28 @@
   }
 }
 
+.browserScreenshot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: top center;
+  border: 0;
+  background: #fff;
+  z-index: 1;
+}
+
+.browserFallbackFrame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+  z-index: 0;
+}
+
 .browserOverlay {
   flex: 1;
   position: relative;
@@ -506,6 +552,7 @@
   align-items: center;
   justify-content: center;
   min-height: 280px;
+  overflow: hidden;
 }
 
 .browserWait {

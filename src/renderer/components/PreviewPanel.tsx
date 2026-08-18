@@ -95,7 +95,7 @@ function targetTitle(target: PreviewTarget): string {
   switch (target.kind) {
     case "file": {
       const base = target.path.split("/").pop() ?? target.path.split("\\").pop() ?? target.path;
-      return base;
+      return /\.(?:html?|xhtml)$/i.test(base) ? `Rendered design · ${base}` : base;
     }
     case "url": return target.url;
     case "project": {
@@ -241,6 +241,22 @@ function FilePreview({ path }: { path: string }) {
           <Download size={13} aria-hidden="true" />
           Open externally
         </button>
+      </div>
+    );
+  }
+
+  // HTML landing pages render as a visual artifact, not source code. The
+  // sandbox prevents the generated page from reaching the Electron host while
+  // still allowing ordinary client-side UI scripts to run inside the frame.
+  if (kind === "text" && /\.(?:html?|xhtml)$/i.test(path)) {
+    return (
+      <div className={styles.htmlVisualWrap} aria-label="Rendered HTML preview">
+        <iframe
+          className={styles.htmlVisualFrame}
+          title={`Rendered preview of ${path.split("/").pop() ?? path}`}
+          srcDoc={data.content}
+          sandbox="allow-scripts"
+        />
       </div>
     );
   }
@@ -452,6 +468,26 @@ async function safeBrowserState(): Promise<BrowserState | null> {
   }
 }
 
+async function safeBrowserScreenshot(): Promise<string | null> {
+  try {
+    const b = bridge() as unknown as {
+      browser?: {
+        screenshot?: (opts?: { fullPage?: boolean; quality?: number }) => Promise<{
+          ok: boolean;
+          error?: string;
+          value?: { data: string; mimeType: string };
+        }>;
+      };
+    };
+    if (typeof b.browser?.screenshot !== "function") return null;
+    const result = await b.browser.screenshot({ fullPage: false, quality: 90 });
+    if (!result.ok || !result.value?.data) return null;
+    return `data:${result.value.mimeType || "image/jpeg"};base64,${result.value.data}`;
+  } catch {
+    return null;
+  }
+}
+
 async function safeBrowserDetach(): Promise<void> {
   try {
     const b = bridge() as unknown as { browser?: { detach: () => Promise<unknown> } };
@@ -465,6 +501,7 @@ async function safeBrowserDetach(): Promise<void> {
 function BrowserPreview({ sessionId }: { sessionId?: string }) {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<BrowserState | null>(null);
+  const [screenshotData, setScreenshotData] = useState<string | null>(null);
   const [attachFailed, setAttachFailed] = useState(false);
 
   useEffect(() => {
@@ -523,7 +560,13 @@ function BrowserPreview({ sessionId }: { sessionId?: string }) {
         }
         const s = await safeBrowserState();
         if (cancelled) return;
-        if (s) setState(s);
+        if (s) {
+          setState(s);
+          if (s.currentUrl && !s.isLoading) {
+            const screenshot = await safeBrowserScreenshot();
+            if (!cancelled && screenshot) setScreenshotData(screenshot);
+          }
+        }
       }, 800);
     })();
 
@@ -582,6 +625,22 @@ function BrowserPreview({ sessionId }: { sessionId?: string }) {
         window; this div only reserves the space and provides the rect.
        */}
       <div ref={overlayRef} className={styles.browserOverlay} aria-label="Live browser area">
+        {screenshotData ? (
+          <img
+            className={styles.browserScreenshot}
+            src={screenshotData}
+            alt={title ? `Rendered preview: ${title}` : "Rendered browser preview"}
+          />
+        ) : /^https?:\/\//i.test(url) ? (
+          <iframe
+            className={styles.browserFallbackFrame}
+            src={url}
+            title="Rendered browser preview"
+            sandbox="allow-scripts allow-forms allow-same-origin"
+            referrerPolicy="no-referrer"
+            tabIndex={-1}
+          />
+        ) : null}
         {attachFailed && (
           <p className={styles.browserWait}>
             Waiting for the agent to open a page…
