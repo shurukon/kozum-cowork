@@ -32,7 +32,6 @@ import type {
 import { reconstructToolCards, useSessionStore } from "../store/session.ts";
 import { Message } from "./Message.tsx";
 import { ComposerBar } from "./ComposerBar.tsx";
-import { PinnedTodoSlot } from "./PinnedTodoSlot.tsx";
 import type { AddMenuKind } from "./AddMenu.tsx";
 import type { PreviewTarget } from "./PreviewPanel.tsx";
 import styles from "./ChatView.module.css";
@@ -199,9 +198,6 @@ export function ChatView({
           <span>Latest</span>
         </button>
       )}
-
-      {/* Pinned task slot above composer (P1-3 / §5.2) */}
-      <PinnedTodoSlot tasks={modeState.tasks} />
 
       {/* Composer */}
       <ComposerBar

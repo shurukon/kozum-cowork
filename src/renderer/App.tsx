@@ -910,8 +910,11 @@ export function App() {
 
   /* ------------------------------------------------------------- render -- */
 
-  // Derive the tools used from active modeState toolCards
-  const toolsUsed = Array.from(modeState.toolCards.values()).map((tc) => tc.name);
+  // Context metadata is derived from the current run, preserving first-use order.
+  // Tool cards are keyed by event id, so deduplicate repeated calls by tool name.
+  const toolsUsed = Array.from(
+    new Set(Array.from(modeState.toolCards.values()).map((toolCard) => toolCard.name)),
+  );
 
   // Build the set of currently-running session ids for the sidebar's running
   // indicator. We only know about the active mode's loop directly; the other
@@ -926,6 +929,30 @@ export function App() {
 
   // Current session's working folder (or mode default)
   const sessionWorkingFolder = settings?.general.defaultFolders[mode] ?? null;
+
+  // Only surface skills enabled for the active mode. The skills subsystem may
+  // auto-invoke them, so the renderer does not invent per-skill events.
+  const skillsUsed = skills
+    .filter((skill) => skill.enabled && skill.modes.includes(mode))
+    .map((skill) => skill.name);
+
+  // MCP usage is observable from the namespaced tool names emitted by the
+  // registry: mcp__<serverName>__<toolName>.
+  const usedMcpServers = connectors.filter(
+    (server) =>
+      server.enabled &&
+      toolsUsed.some((toolName) => toolName.startsWith(`mcp__${server.name}__`)),
+  );
+
+  // A project is shown only when its real folder matches this session's
+  // working folder; a default folder alone is not presented as a project.
+  const activeProject = projects.find(
+    (project) =>
+      !project.archived &&
+      project.mode === mode &&
+      project.folder !== null &&
+      project.folder === sessionWorkingFolder,
+  );
 
   // Per-mode selection (with fallback to avoid null)
   const currentSelection: ModelSelection = selection ?? {
@@ -1214,12 +1241,11 @@ export function App() {
             mode={mode}
             tasks={modeState.tasks}
             subagents={modeState.subagents}
-            mcpServers={connectors.filter((c) => c.enabled)}
-            plugins={plugins.filter((p) => p.enabled).map((p) => ({ name: p.name }))}
+            mcpServers={usedMcpServers}
             toolsUsed={toolsUsed}
-            workingFolder={sessionWorkingFolder}
-            sharedFiles={sharedFiles}
-            onOpenPath={(path) => setPreviewTarget({ kind: "file", path })}
+            skillsUsed={skillsUsed}
+            projectName={activeProject?.name ?? null}
+            workingFolder={activeProject?.folder ?? null}
           />
         )}
 
