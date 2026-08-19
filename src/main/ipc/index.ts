@@ -389,18 +389,21 @@ export function registerIpc(deps: IpcDeps): void {
       workingFolder: t.workingFolder ?? null,
       selection: t.selection ?? null,
     });
+    await deps.scheduler.flush();
     return ok(created);
   });
 
   handle(ipcMain, "schedule:update", async (_e, id, patch) => {
     const updated = deps.scheduler.update(String(id), patch as TaskPatch);
     if (!updated) return err(`Scheduled task "${String(id)}" not found`);
+    await deps.scheduler.flush();
     return ok(updated);
   });
 
   handle(ipcMain, "schedule:remove", async (_e, id) => {
     const removed = deps.scheduler.remove(String(id));
     if (!removed) return err(`Scheduled task "${String(id)}" not found`);
+    await deps.scheduler.flush();
     return ok(undefined);
   });
 

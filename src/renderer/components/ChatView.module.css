@@ -29,6 +29,25 @@
   gap: 24px;
 }
 
+.inlineError {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: min(100%, 720px);
+  padding: 12px 14px;
+  border-inline-start: 3px solid var(--error);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--error) 9%, var(--bg-card));
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+}
+
+.inlineError strong {
+  color: var(--error);
+  font-weight: var(--fw-semibold);
+}
+
 .emptyHint {
   width: min(100%, 560px);
   margin: clamp(80px, 16vh, 170px) auto 0;
@@ -101,6 +120,11 @@
   width: min(100%, 820px);
   padding-inline: 42px;
   gap: 28px;
+}
+
+:global(.kz-cowork-shell) .inlineError {
+  background: rgba(145, 31, 31, 0.16);
+  color: #d7b5b0;
 }
 
 :global(.kz-cowork-shell) .jumpPill {

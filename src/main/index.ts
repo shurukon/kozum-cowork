@@ -250,27 +250,19 @@ if (!app.requestSingleInstanceLock()) {
     // tool registry. Build a placeholder runner first, then wire the real one.
     let sessionManagerRef: SessionManager | null = null;
 
-    let scheduler: Scheduler;
-    try {
-      scheduler = new Scheduler({
-        rootDir: userDataPath,
-        runner: async (scheduledTask) => {
-          if (!sessionManagerRef) return;
-          const appSets = await settings.get();
-          const modeSettings = appSets[scheduledTask.mode];
-          const selection = scheduledTask.selection ?? modeSettings.selection;
-          const session = await sessionStore.create(scheduledTask.mode, selection);
-          await sessionManagerRef.send(session.id, scheduledTask.prompt);
-        },
-      });
-      await scheduler.start();
-    } catch (e) {
-      console.error("[boot] Scheduler start failed:", e);
-      scheduler = new Scheduler({
-        rootDir: userDataPath,
-        runner: async () => undefined,
-      });
-    }
+    const scheduler = new Scheduler({
+      rootDir: userDataPath,
+      runner: async (scheduledTask) => {
+        if (!sessionManagerRef) {
+          throw new Error("Scheduler session manager is not ready");
+        }
+        const appSets = await settings.get();
+        const modeSettings = appSets[scheduledTask.mode];
+        const selection = scheduledTask.selection ?? modeSettings.selection;
+        const session = await sessionStore.create(scheduledTask.mode, selection);
+        await sessionManagerRef.send(session.id, scheduledTask.prompt);
+      },
+    });
 
     // ── tool registry ────────────────────────────────────────────────────────
     const toolRegistry = buildToolRegistry({
@@ -300,8 +292,15 @@ if (!app.requestSingleInstanceLock()) {
       emitEvent,
     });
 
-    // Patch the circular reference so the scheduler can create sessions
+    // Patch the circular reference so the scheduler can create sessions.
+    // Start only after this assignment: startup catch-up runs must never be
+    // silently discarded because the session manager is not ready yet.
     sessionManagerRef = sessionManager;
+    try {
+      await scheduler.start();
+    } catch (e) {
+      console.error("[boot] Scheduler start failed:", e);
+    }
 
     // Bridge subagent lifecycle events back to the parent session's renderer so
     // the UI can show a live "Active subagents" card (P1-1 / D1).

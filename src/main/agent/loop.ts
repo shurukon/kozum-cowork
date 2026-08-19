@@ -93,6 +93,8 @@ function newId(prefix: string): string {
 
 const EMPTY_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 const DEFAULT_TOOL_TIMEOUT_MS = 120_000;
+const MAX_TOOL_RETRIES = 1;
+const TOOL_RETRY_DELAY_MS = 500;
 
 function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -492,64 +494,174 @@ async function runOne(
     };
   }
 
-  const toolController = new AbortController();
-  const forwardAbort = () => toolController.abort();
-  opts.signal.addEventListener("abort", forwardAbort, { once: true });
-  let timedOut = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let attempt = 0;
+  const retrySafe = isRetrySafeTool(call.name, input);
 
-  try {
-    const execution = opts.tools.execute(call.name, input, {
-      sessionId: opts.sessionId,
-      signal: toolController.signal,
-      onProgress: (note) =>
-        emit({
-          type: "tool_progress",
-          mode: opts.mode,
-          sessionId: opts.sessionId,
-          toolUseId: call.id,
-          note,
-        }),
-    });
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        timedOut = true;
-        toolController.abort();
-        reject(new Error(`Tool timed out after ${Math.ceil(timeoutMs / 1000)}s.`));
-      }, timeoutMs);
-    });
-    return await Promise.race([execution, timeout]);
-  } catch (e) {
-    if (opts.signal.aborted) {
-      return {
+  while (true) {
+    const toolController = new AbortController();
+    const forwardAbort = () => toolController.abort();
+    opts.signal.addEventListener("abort", forwardAbort, { once: true });
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let result: ToolResult | undefined;
+
+    try {
+      const execution = opts.tools.execute(call.name, input, {
+        sessionId: opts.sessionId,
+        signal: toolController.signal,
+        onProgress: (note) =>
+          emit({
+            type: "tool_progress",
+            mode: opts.mode,
+            sessionId: opts.sessionId,
+            toolUseId: call.id,
+            note,
+          }),
+      });
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          toolController.abort();
+          reject(new Error(`Tool timed out after ${Math.ceil(timeoutMs / 1000)}s.`));
+        }, timeoutMs);
+      });
+      result = await Promise.race([execution, timeout]);
+    } catch (e) {
+      if (opts.signal.aborted) {
+        return {
+          ok: false,
+          content: "",
+          error: `${call.name} cancelled before completion.`,
+          display: { summary: `${call.name} — cancelled` },
+        };
+      }
+      if (timedOut) {
+        return {
+          ok: false,
+          content: "",
+          error:
+            `${call.name} exceeded the ${Math.ceil(timeoutMs / 1000)}s tool timeout. ` +
+            "The tool was aborted; retry with a smaller scope or a more specific path.",
+          display: { summary: `${call.name} — timed out` },
+        };
+      }
+      // A throwing executor is a bug, but the loop must survive it. A retry is
+      // allowed only for read-only tools and transient transport failures.
+      const message = e instanceof Error ? e.message : String(e);
+      result = {
         ok: false,
         content: "",
-        error: `${call.name} cancelled before completion.`,
-        display: { summary: `${call.name} — cancelled` },
+        error: `${call.name} failed: ${message}`,
+        display: { summary: `${call.name} — ${message}` },
       };
+    } finally {
+      if (timer) clearTimeout(timer);
+      opts.signal.removeEventListener("abort", forwardAbort);
     }
-    if (timedOut) {
-      return {
-        ok: false,
-        content: "",
-        error:
-          `${call.name} exceeded the ${Math.ceil(timeoutMs / 1000)}s tool timeout. ` +
-          "The tool was aborted; retry with a smaller scope or a more specific path.",
-        display: { summary: `${call.name} — timed out` },
-      };
+
+    if (
+      result &&
+      shouldRetryTool(result, call.name, input, retrySafe, attempt, timedOut, opts.signal)
+    ) {
+      attempt += 1;
+      emit({
+        type: "tool_progress",
+        mode: opts.mode,
+        sessionId: opts.sessionId,
+        toolUseId: call.id,
+        note: `${call.name} encountered a temporary failure. Retrying once (${attempt}/${MAX_TOOL_RETRIES})…`,
+      });
+      try {
+        await sleepWithAbort(TOOL_RETRY_DELAY_MS, opts.signal);
+      } catch {
+        return {
+          ok: false,
+          content: "",
+          error: `${call.name} cancelled before retry.`,
+          display: { summary: `${call.name} — cancelled` },
+        };
+      }
+      continue;
     }
-    // A throwing executor is a bug, but the loop must survive it.
-    const message = e instanceof Error ? e.message : String(e);
-    return {
-      ok: false,
-      content: "",
-      error: `${call.name} failed: ${message}`,
-      display: { summary: `${call.name} — ${message}` },
-    };
-  } finally {
-    if (timer) clearTimeout(timer);
-    opts.signal.removeEventListener("abort", forwardAbort);
+
+    return result!;
   }
+}
+
+function shouldRetryTool(
+  result: ToolResult,
+  name: string,
+  input: unknown,
+  retrySafe: boolean,
+  attempt: number,
+  timedOut: boolean,
+  signal: AbortSignal,
+): boolean {
+  if (result.ok || !retrySafe || attempt >= MAX_TOOL_RETRIES || timedOut || signal.aborted) {
+    return false;
+  }
+  const error = result.error ?? result.content;
+  return isTransientToolFailure(error) && isRetrySafeTool(name, input);
+}
+
+/**
+ * Retry only transport/resource transients. Input, permission, missing-file,
+ * authentication, and provider errors are returned immediately for correction.
+ */
+function isTransientToolFailure(error: string): boolean {
+  return /(?:\b(?:eagain|etimedout|econnreset|econnrefused|enetunreach|temporarily unavailable|temporary failure|try again|connection (?:reset|closed|refused)|network error|fetch failed|socket hang up|service unavailable|bad gateway|gateway timeout|rate limit|too many requests|resource busy)\b|\b(?:429|502|503|504)\b)/i.test(
+    error,
+  );
+}
+
+/**
+ * Retry is allow-listed. Mutations, shell commands, writes, deletes, sends and
+ * schedule changes never retry because repeating them could create side effects.
+ */
+function isRetrySafeTool(name: string, input: unknown): boolean {
+  const safe = new Set([
+    "browser_back",
+    "browser_forward",
+    "browser_get_content",
+    "browser_navigate",
+    "browser_screenshot",
+    "browser_wait",
+    "computer_list_windows",
+    "computer_screen_size",
+    "computer_screenshot",
+    "computer_self_test",
+    "directory_list",
+    "env_get",
+    "file_read",
+    "file_read_image",
+    "file_read_pdf",
+    "file_search",
+    "glob_match",
+    "marketplace_list",
+    "mcp_list",
+    "memory_list",
+    "memory_read",
+    "memory_search",
+    "plugin_list",
+    "process_list",
+    "schedule_list",
+    "shell_job_list",
+    "shell_job_result",
+    "shell_job_status",
+    "screenshot",
+    "system_info",
+    "task_get",
+    "task_list",
+    "web_search",
+    "web_fetch",
+  ]);
+  if (!safe.has(name)) return false;
+  if (name !== "web_fetch") return true;
+  const method =
+    typeof input === "object" && input !== null
+      ? String((input as Record<string, unknown>).method ?? "GET").toUpperCase()
+      : "GET";
+  return method === "GET" || method === "HEAD";
 }
 
 function cancellationResults(calls: PendingCall[]): Message {

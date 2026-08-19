@@ -64,12 +64,18 @@ function ThinkingBlock({ text, isStreaming }: ThinkingBlockProps) {
         aria-label="Thinking"
       >
         <div className={styles.thinkingLiveHeader}>
-          {/* kz-think-orb from glass.css: gradient breathing dot.
-             Wrap in positioned span so kz-orb-pulse can halo it. */}
           <span className={styles.thinkingOrbWrap}>
-            <span className="kz-orb-pulse" aria-hidden={true} />
-            <span className="kz-think-orb" aria-hidden={true} />
-         </span>
+            <video
+              className={styles.thinkingHalo}
+              src="/assets/thinking-halo.mp4"
+              autoPlay
+              loop
+              muted
+              playsInline
+              aria-hidden="true"
+            />
+            <span className={`${styles.thinkingFallbackOrb} kz-orb-pulse`} aria-hidden={true} />
+          </span>
           <span className={styles.thinkingLiveLabel}>{t("message.thinking")}</span>
         </div>
         {text.length > 0 && (
@@ -231,12 +237,9 @@ export function Message({
 
   // P1-1: show a subtle badge when the message was produced by a subagent.
   const isSubagentMessage = Boolean(message.runId);
-  const unreflectedToolCards =
-    mode === "cowork"
-      ? []
-      : Array.from(toolCards.values()).filter(
-          (c) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === c.toolUseId),
-        );
+  const unreflectedToolCards = Array.from(toolCards.values()).filter(
+    (c) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === c.toolUseId),
+  );
   const unmatchedPermissions = myPermissions.filter(
     (p) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === p.toolUseId),
   );
@@ -253,7 +256,7 @@ export function Message({
         <span className={styles.subagentBadge}>{t("message.bySubagent")}</span>
       )}
 
-      {mode === "cowork" && hasActivity && (
+      {hasActivity && (
         <div className={styles.activityTimeline} aria-label="Activity timeline">
           {thinkingBlocks.map((b, i) =>
             b.type === "thinking" ? (
@@ -339,54 +342,6 @@ export function Message({
         </div>
       )}
 
-      {mode !== "cowork" && (
-        <>
-          {thinkingBlocks.map((b, i) =>
-            b.type === "thinking" ? (
-              <ThinkingBlock key={i} text={b.text} isStreaming={isStreaming} />
-            ) : null,
-          )}
-          {toolUseBlocks.map((b) => {
-            if (b.type !== "tool_use") return null;
-            const card = toolCards.get(b.id);
-            if (!card) return null;
-            return (
-              <ToolCard
-                key={b.id}
-                card={card}
-                onOpenFile={onOpenFile}
-                onPreview={onPreview}
-                pendingPermissions={myPermissions.filter((p) => p.toolUseId === b.id)}
-                onReply={onReply}
-              />
-            );
-          })}
-          {unreflectedToolCards.map((card) => (
-            <ToolCard
-              key={card.toolUseId}
-              card={card}
-              onOpenFile={onOpenFile}
-              onPreview={onPreview}
-              pendingPermissions={myPermissions.filter((p) => p.toolUseId === card.toolUseId)}
-              onReply={onReply}
-            />
-          ))}
-          {myQuestions.map((q) => (
-            <QuestionFormView
-              key={q.requestId}
-              question={q}
-              onAnswer={(values) => {
-                onReply?.(q.requestId, values);
-                onResolveQuestion?.(q.requestId);
-              }}
-            />
-          ))}
-          {unmatchedPermissions.map((p) => (
-            <PendingPermissionInline key={p.requestId} permission={p} onReply={onReply} />
-          ))}
-        </>
-      )}
-
       {/* Image blocks (screenshots returned into context) render inline (§4.1) */}
       {imageBlocks.length > 0 && (
         <div className={styles.imageRow}>
@@ -404,10 +359,19 @@ export function Message({
       )}
 
       {fullText.length > 0 && (
-        <div
-          className={`${styles.assistantText} ${isStreaming ? "kz-caret" : ""}`}
-        >
-          <Markdown content={fullText} />
+        <div className={styles.assistantBubbleLine}>
+          {hasActivity && (
+            <span
+              className={styles.contextDot}
+              title="Context used"
+              aria-label="Context used"
+            />
+          )}
+          <div
+            className={`${styles.assistantText} ${isStreaming ? "kz-caret" : ""}`}
+          >
+            <Markdown content={fullText} />
+          </div>
         </div>
       )}
 

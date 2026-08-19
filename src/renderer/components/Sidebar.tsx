@@ -202,7 +202,11 @@ export function Sidebar({
     >
       {mode === "cowork" && (
         <div className={styles.coworkBrand}>
-          <span className={styles.coworkBrandMark} aria-hidden="true">K</span>
+          <img
+            className={styles.coworkBrandMark}
+            src="/assets/kozum-logo.png"
+            alt="Kozum AI"
+          />
           <span className={styles.coworkBrandName}>Kozum AI</span>
           <span className={styles.coworkPro}>PRO</span>
         </div>

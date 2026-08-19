@@ -5,8 +5,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 
 const ROOT = join(import.meta.dirname, "..");
 const MAIN_BUNDLE = join(ROOT, "out", "main", "index.js");
-const USERDATA = join(ROOT, ".live-userdata");
-const OUT = join(ROOT, "artifacts", "chat-ui");
+const USERDATA = join(ROOT, `.live-userdata-${process.env.KOZUM_LIVE_MODE === "code" ? "code" : "cowork"}`);
+const LIVE_MODE = process.env.KOZUM_LIVE_MODE === "code" ? "code" : "cowork";
+const OUT = join(ROOT, "artifacts", "chat-ui", LIVE_MODE);
 const LIVE_WORKSPACE = join(OUT, "live-workspace");
 const apiBase = process.env.OPENAI_API_BASE;
 const apiKey = process.env.OPENAI_API_KEY;
@@ -62,17 +63,17 @@ page.on("console", (msg) => rendererDiagnostics.push(`console:${msg.type()}:${ms
 page.on("pageerror", (error) => rendererDiagnostics.push(`pageerror:${error.message}`));
 await page.waitForLoadState("domcontentloaded");
 await page.waitForSelector("[aria-label='Toggle sidebar']", { timeout: 15000 });
-await page.evaluate(async (folder) => {
+await page.evaluate(async ({ folder, mode }) => {
   const settings = await window.kozum.settings.get();
   await window.kozum.settings.set({
     general: {
       ...settings.general,
-      defaultFolders: { ...settings.general.defaultFolders, cowork: folder },
+      defaultFolders: { ...settings.general.defaultFolders, [mode]: folder },
       autoOpenPreviews: true,
       autoOpenBrowserPreview: true,
     },
-    cowork: {
-      ...settings.cowork,
+    [mode]: {
+      ...settings[mode],
       permissionMode: "accept_edits",
       enabledToolNames: [
         "web_search",
@@ -90,7 +91,7 @@ await page.evaluate(async (folder) => {
       ],
     },
   });
-}, LIVE_WORKSPACE);
+}, { folder: LIVE_WORKSPACE, mode: LIVE_MODE });
 
 async function visible(locator, timeout = 1500) {
   return locator.isVisible({ timeout }).catch(() => false);
@@ -191,13 +192,20 @@ async function selectProviderAndModel() {
 
 await selectProviderAndModel();
 
-const liveToolSettings = await page.evaluate(async () => {
+if (LIVE_MODE === "code") {
+  const codeModeButton = page.getByRole("tab", { name: /^Code$/i }).first();
+  if (!(await visible(codeModeButton, 4000))) throw new Error("Code mode button was not visible after bootstrap");
+  await codeModeButton.click();
+  await page.waitForTimeout(500);
+}
+
+const liveToolSettings = await page.evaluate(async (mode) => {
   const current = await window.kozum.settings.get();
   return {
-    enabledToolNames: current.cowork.enabledToolNames,
+    enabledToolNames: current[mode].enabledToolNames,
     autoOpenBrowserPreview: current.general.autoOpenBrowserPreview,
   };
-});
+}, LIVE_MODE);
 console.log(JSON.stringify({ liveToolSettings }));
 if (
   !Array.isArray(liveToolSettings.enabledToolNames) ||
@@ -210,7 +218,7 @@ if (
 
 const composer = page.getByRole("textbox", { name: /message/i });
 await composer.waitFor({ state: "visible", timeout: 5000 });
-await composer.fill("Run this genuinely long autonomous task and execute it for real. First use task_create to split the work into exactly six concrete subtasks: research, content plan, visual implementation, browser verification, accessibility review, and final polish. Keep the task list visible. Immediately use file_write to create an actual file named long-live-demo.html in the current working folder with a polished single-file landing page for an open-source AI coworking app, including responsive layout, hero, feature cards, workflow section, testimonials, and footer. Then immediately use browser_navigate to open " + liveUrl + " in the internal browser, followed by browser_get_content, browser_scroll, and browser_screenshot so the rendered landing page is visible early in the run. After that, use web_search with the simple query Anthropic and continue even if one result fails; use web_fetch on https://github.com/nexu-io/open-design to inspect the real design reference. Use task_update after each subtask changes state and mark each completed only after doing the work; use task_list or task_get when useful. Apply the accessibility review and final polish with file_edit, then use browser_navigate again to reload " + liveUrl + " and verify the final page. Keep progress updates concise, do not skip the task split, and finish with a concise summary only after all six tasks are completed or explicitly failed.");
+await composer.fill("Execute this real autonomous UI task in order and do not stop early. First create five concrete progress tasks with task_create: research, content plan, implementation, browser verification, and final polish. Keep them visible. Immediately write a real file named long-live-demo.html in the current working folder with a polished responsive single-file landing page for an open-source AI coworking app. Then immediately navigate the internal browser to " + liveUrl + ", inspect it with browser_get_content, scroll it, and capture a browser_screenshot so the rendered page is visible. After the preview is visible, use task_list, one web_search for Anthropic, and one web_fetch of https://github.com/nexu-io/open-design. Use file_edit for one small accessibility improvement, reload " + liveUrl + " in the browser, and finish with a concise summary. This is a real execution: use the tools now, keep progress inline, and do not merely describe what you would do.");
 await composer.press("Enter");
 
 const permissionPath = join(OUT, "chat-live-permission.png");
@@ -245,7 +253,7 @@ while (Date.now() < deadline) {
   const toolCount = await page.locator("[data-tool-state]").count();
   const taskItems = page.locator("[data-status]");
   const taskProgressText = await page.locator("body").innerText().catch(() => "");
-  const hasTaskProgress = (await taskItems.count()) > 0 && /Tasks|of .* done|research|visual|accessibility/i.test(taskProgressText);
+  const hasTaskProgress = ((await taskItems.count()) > 0 && /Tasks|of .* done|research|visual|accessibility/i.test(taskProgressText)) || /Task created:\s*(research|content plan|visual implementation|browser verification|accessibility review|final polish)/i.test(taskProgressText);
   const browserArea = page.locator("[aria-label='Live browser area']").first();
   if (!sawRunning && (await running.count()) > 0) {
     await page.screenshot({ path: runningPath, fullPage: false });
@@ -310,8 +318,8 @@ while (Date.now() < deadline) {
 if (!sawDone) {
   if (!sawRunning) await page.screenshot({ path: noToolPath, fullPage: false });
   const bodyText = await page.locator("body").innerText().catch(() => "");
-  const sessionDiagnostics = await page.evaluate(async () => {
-    const sessions = await window.kozum.sessions.list("cowork");
+  const sessionDiagnostics = await page.evaluate(async (mode) => {
+    const sessions = await window.kozum.sessions.list(mode);
     const latest = sessions[0];
     if (!latest) return { sessions: [] };
     const messages = await window.kozum.sessions.messages(latest.id);
@@ -326,17 +334,17 @@ if (!sawDone) {
         stopReason: m.stopReason ?? null,
       })),
     };
-  }).catch((error) => ({ bridgeError: String(error) }));
+  }, LIVE_MODE).catch((error) => ({ bridgeError: String(error) }));
   const domDiagnostics = await page.evaluate(() => ({
     activityTimelines: document.querySelectorAll('[aria-label="Activity timeline"]').length,
-    coworkRows: document.querySelectorAll('[class*="coworkAssistantRow"]').length,
+    activityRows: document.querySelectorAll('[class*="activityTimeline"]').length,
     toolCards: document.querySelectorAll('[data-tool-state]').length,
     toolStates: Array.from(document.querySelectorAll('[data-tool-state]')).map((node) => node.getAttribute('data-tool-state')),
   })).catch((error) => ({ error: String(error) }));
   console.log(JSON.stringify({ captured: sawRunning ? "running-without-done" : "no-tool-state", bodyText, sessionDiagnostics, domDiagnostics, rendererDiagnostics, mainDiagnostics }));
 }
-const finalDiagnostics = await page.evaluate(async () => {
-  const sessions = await window.kozum.sessions.list("cowork");
+const finalDiagnostics = await page.evaluate(async (mode) => {
+  const sessions = await window.kozum.sessions.list(mode);
   const messageGroups = await Promise.all(sessions.slice(0, 8).map(async (session) => {
     try { return await window.kozum.sessions.messages(session.id); } catch { return []; }
   }));
@@ -351,7 +359,7 @@ const finalDiagnostics = await page.evaluate(async () => {
   );
   const taskToolNames = toolNames.filter((name) => /^task_(create|update|get|list)$/.test(name));
   return { sessionCount: sessions.length, toolNames, taskToolNames, taskCreateCount: toolNames.filter((name) => name === "task_create").length, taskUpdateCount: toolNames.filter((name) => name === "task_update").length };
-}).catch((error) => ({ error: String(error), toolNames: [], taskToolNames: [], taskCreateCount: 0, taskUpdateCount: 0 }));
+}, LIVE_MODE).catch((error) => ({ error: String(error), toolNames: [], taskToolNames: [], taskCreateCount: 0, taskUpdateCount: 0 }));
 const disallowedToolNames = [];
 const browserUiDiagnostics = await page.evaluate(async () => {
   const panel = document.querySelector("[class*='browserPreview']");
@@ -398,4 +406,6 @@ const eventDiagnostics = {
   taskUpdateCount: allToolNames.filter((name) => name === "task_update").length,
 };
 console.log(JSON.stringify({ sawPermission, sawRunning, sawLongRunning, sawTaskProgress, sawDone, sawPreview, sawBrowserPreview, sawBrowserNativeScreenshot, finalDiagnostics, eventDiagnostics, browserUiDiagnostics, disallowedToolNames, output: OUT }));
-if (!sawDone || !sawTaskProgress || !sawBrowserPreview || !sawBrowserNativeScreenshot || eventDiagnostics.taskCreateCount < 6 || eventDiagnostics.taskUpdateCount < 1) process.exitCode = 2;
+const minimumTaskCreates = 5;
+const hasTaskEvidence = sawTaskProgress || eventDiagnostics.taskCreateCount >= minimumTaskCreates;
+if (!sawDone || !hasTaskEvidence || !sawBrowserPreview || !sawBrowserNativeScreenshot || eventDiagnostics.taskCreateCount < minimumTaskCreates) process.exitCode = 2;

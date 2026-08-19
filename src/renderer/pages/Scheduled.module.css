@@ -70,6 +70,17 @@
   box-shadow: 0 0 20px var(--glow-blue);
 }
 
+.inlineError {
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid rgba(239, 68, 68, 0.32);
+  border-inline-start: 3px solid var(--error);
+  border-radius: var(--r-md);
+  background: var(--error-soft);
+  color: var(--error);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+
 /* ---------------------------------------------------------- search --- */
 
 .searchRow {

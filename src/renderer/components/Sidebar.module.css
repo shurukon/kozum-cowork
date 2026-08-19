@@ -379,16 +379,12 @@
 }
 
 .coworkBrandMark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 25px;
   height: 25px;
+  object-fit: contain;
   border-radius: 8px;
-  background: linear-gradient(135deg, #3d7fff, #00c8ff);
-  box-shadow: 0 0 18px rgba(61, 127, 255, 0.28);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
+  filter: drop-shadow(0 0 8px rgba(61, 127, 255, 0.28));
 }
 
 .coworkBrandName {
@@ -538,12 +534,8 @@
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  background: #c96442;
-  box-shadow: none;
-  color: #faf9f5;
-  font-family: Georgia, serif;
-  font-size: 14px;
-  font-weight: 500;
+  object-fit: contain;
+  filter: drop-shadow(0 0 7px rgba(91, 141, 239, 0.22));
 }
 
 .coworkBrandName {

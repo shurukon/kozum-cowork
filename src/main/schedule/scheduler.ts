@@ -70,6 +70,8 @@ export class Scheduler {
   private readonly now: () => Date;
   private readonly runner: (task: ScheduledTask) => Promise<void>;
   private readonly graceMs: number;
+  /** Serialize persistence writes so rapid CRUD operations cannot race. */
+  private persistQueue: Promise<void> = Promise.resolve();
 
   constructor(opts: {
     rootDir: string;
@@ -210,6 +212,11 @@ export class Scheduler {
 
   list(): ScheduledTask[] {
     return [...this.states.values()].map((s) => ({ ...s.task }));
+  }
+
+  /** Wait until all mutations issued so far are durably written. */
+  async flush(): Promise<void> {
+    await this.persistQueue;
   }
 
   get(id: string): ScheduledTask | undefined {
@@ -364,18 +371,26 @@ export class Scheduler {
 
   /* ----------------------------------------------- persistence ------- */
 
-  private async persist(): Promise<void> {
-    try {
-      await mkdir(this.rootDir, { recursive: true });
-      const tasks = [...this.states.values()].map((s) => s.task);
-      await writeFile(
-        join(this.rootDir, TASKS_FILE),
-        JSON.stringify(tasks, null, 2),
-        "utf8",
-      );
-    } catch {
-      // Persist errors must not crash the scheduler.
-    }
+  private persist(): Promise<void> {
+    // Capture an immutable snapshot at the call site. The queue preserves the
+    // order of mutations, so a delete that follows an add cannot be overwritten
+    // by the add's slower filesystem write.
+    const snapshot = [...this.states.values()].map((s) => ({ ...s.task }));
+    this.persistQueue = this.persistQueue
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          await mkdir(this.rootDir, { recursive: true });
+          await writeFile(
+            join(this.rootDir, TASKS_FILE),
+            JSON.stringify(snapshot, null, 2),
+            "utf8",
+          );
+        } catch {
+          // Persist errors must not crash the scheduler or stop later writes.
+        }
+      });
+    return this.persistQueue;
   }
 
   private async load(): Promise<void> {

@@ -125,6 +125,7 @@ export function makeScheduleTools(scheduler: Scheduler): Tool[] {
             mode,
             workingFolder: folder,
           });
+          await scheduler.flush();
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           return fail(msg);
@@ -247,6 +248,7 @@ export function makeScheduleTools(scheduler: Scheduler): Tool[] {
         });
 
         if (!updated) return fail(`Task not found: ${id}`);
+        await scheduler.flush();
 
         let desc = "";
         try {
@@ -287,6 +289,7 @@ export function makeScheduleTools(scheduler: Scheduler): Tool[] {
         const id = input["id"] as string;
         const removed = scheduler.remove(id);
         if (!removed) return fail(`Task not found: ${id}`);
+        await scheduler.flush();
         return ok(`Deleted task ${id}`, { summary: `Deleted task ${id}` });
       },
     },

@@ -58,6 +58,7 @@ export class SecretStore {
   private readonly storage: SafeStorageFacade;
   private records: PersistedKeyRecord[] = [];
   private loaded = false;
+  private loading: Promise<void> | null = null;
 
   constructor(filePath: string, storage: SafeStorageFacade) {
     this.filePath = filePath;
@@ -66,9 +67,22 @@ export class SecretStore {
 
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
-    this.loaded = true;
-    const data = await readJson<KeysFile>(this.filePath, { keys: [] });
-    this.records = Array.isArray(data.keys) ? data.keys : [];
+    if (this.loading) return this.loading;
+
+    // listKeys is called concurrently for every provider during bootstrap. Do
+    // not mark the store loaded until the disk read has completed, otherwise
+    // the second caller can observe the initial empty array and incorrectly
+    // trigger FirstRun.
+    this.loading = (async () => {
+      const data = await readJson<KeysFile>(this.filePath, { keys: [] });
+      this.records = Array.isArray(data.keys) ? data.keys : [];
+      this.loaded = true;
+    })();
+    try {
+      await this.loading;
+    } finally {
+      this.loading = null;
+    }
   }
 
   private async persist(): Promise<void> {

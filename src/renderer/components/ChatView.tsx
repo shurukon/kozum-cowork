@@ -41,6 +41,8 @@ import styles from "./ChatView.module.css";
 export interface ChatViewProps {
   mode: Mode;
   sessionId: string;
+  /** Renderer/action error shown inside the transcript instead of a popup. */
+  inlineError?: string | null;
 
   // Messaging
   onSend: (text: string) => void;
@@ -86,6 +88,7 @@ const TAKING_LONGER_MS = 15_000;
 export function ChatView({
   mode,
   sessionId,
+  inlineError,
   onSend,
   onCancel,
   onAttach,
@@ -184,6 +187,12 @@ export function ChatView({
               pendingPermissions={pendingPermissions}
             />
           ))}
+          {(modeState.error || inlineError) && (
+            <div className={styles.inlineError} role="alert" aria-live="assertive">
+              <strong>Something went wrong</strong>
+              <span>{modeState.error || inlineError}</span>
+            </div>
+          )}
         </div>
       </div>
 

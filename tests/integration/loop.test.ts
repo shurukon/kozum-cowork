@@ -19,7 +19,9 @@ import type { AddressInfo } from "node:net";
 
 import { runAgentLoop, type ToolExecutor } from "../../src/main/agent/loop.ts";
 import { OpenAiChatAdapter } from "../../src/main/providers/adapters/openai-chat.ts";
-import type { AgentEvent, Message, ToolDefinition, ToolResult } from "../../src/shared/types.ts";
+import { ToolRegistry } from "../../src/main/tools/registry.ts";
+import { webTools } from "../../src/main/tools/web.ts";
+import type { AgentEvent, Message, ModelCapabilities, ToolDefinition, ToolResult } from "../../src/shared/types.ts";
 
 /* ----------------------------------------------------------- test rig --- */
 
@@ -28,7 +30,10 @@ let script: string[] = [];
 let statusScript: number[] = [];
 let requests: any[] = [];
 let server: http.Server;
+let transientServer: http.Server;
 let base = "";
+let transientBase = "";
+let transientHits = 0;
 let workDir = "";
 
 const sse = (o: unknown) => `data: ${JSON.stringify(o)}\n\n`;
@@ -71,12 +76,27 @@ before(async () => {
       res.end(body);
     });
   });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  transientServer = http.createServer((_req, res) => {
+    transientHits += 1;
+    if (transientHits === 1) {
+      res.writeHead(503, { "Content-Type": "text/plain" });
+      res.end("temporary service unavailable");
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("real fetch recovered");
+  });
+  await new Promise<void>((r) => transientServer.listen(0, "127.0.0.1", r));
+  transientBase = `http://127.0.0.1:${(transientServer.address() as AddressInfo).port}`;
 });
 
 after(async () => {
+
   await new Promise<void>((r) => server.close(() => r()));
+  await new Promise<void>((r) => transientServer.close(() => r()));
   if (workDir) await rm(workDir, { recursive: true, force: true });
 });
 
@@ -84,6 +104,7 @@ beforeEach(async () => {
   script = [];
   statusScript = [];
   requests = [];
+  transientHits = 0;
   if (workDir) await rm(workDir, { recursive: true, force: true });
   workDir = await mkdtemp(join(tmpdir(), "kozum-loop-"));
 });
@@ -167,7 +188,12 @@ function userTurn(text: string): Message[] {
 
 async function run(
   history: Message[],
-  opts: { maxIterations?: number; signal?: AbortSignal; toolTimeoutMs?: number } = {},
+  opts: {
+    maxIterations?: number;
+    signal?: AbortSignal;
+    toolTimeoutMs?: number;
+    executor?: ToolExecutor;
+  } = {},
 ) {
   const events: AgentEvent[] = [];
   const result = await runAgentLoop({
@@ -178,7 +204,7 @@ async function run(
     model: "test-model",
     system: "sys",
     history,
-    tools: executor,
+    tools: opts.executor ?? executor,
     maxTokens: 256,
     temperature: 0,
     maxIterations: opts.maxIterations ?? 8,
@@ -263,6 +289,44 @@ describe("resilience", () => {
     assert.equal(result.stopReason, "end_turn");
     assert.equal(requests.length, 4);
     assert.ok(events.some((e) => e.type === "thinking_delta" && /Retrying/.test(e.delta)));
+  });
+
+  it("retries a transient failure from the real web_fetch tool", async () => {
+    const realRegistry = new ToolRegistry().registerAll(webTools);
+    const capabilities: ModelCapabilities = {
+      vision: "yes",
+      tools: true,
+      streaming: true,
+      reasoning: false,
+    };
+    const realExecutor: ToolExecutor = {
+      list: (mode) => realRegistry.list(mode),
+      execute: (name, input, options) =>
+        realRegistry.execute(name, input, {
+          sessionId: options.sessionId,
+          mode: "cowork",
+          workingFolder: workDir,
+          outputsDir: join(workDir, "outputs"),
+          capabilities,
+          modelId: "integration-test-model",
+          providerId: "integration-test-provider",
+          signal: options.signal,
+          onProgress: options.onProgress,
+        }),
+    };
+
+    script = [
+      callTool("c1", "web_fetch", { url: transientBase, allowLocal: true, timeout: 2_000 }),
+      sayText("The fetch recovered.") ,
+    ];
+    const { result, events } = await run(userTurn("fetch the local page"), { executor: realExecutor });
+
+    assert.equal(transientHits, 2, "the real web server should be requested once, then retried once");
+    const end = events.find((e) => e.type === "tool_end") as any;
+    assert.equal(end.result.ok, true);
+    assert.match(end.result.content, /real fetch recovered/);
+    assert.ok(events.some((e) => e.type === "tool_progress" && /Retrying once/.test(e.note)));
+    assert.equal(result.stopReason, "end_turn");
   });
 
   it("survives a tool that throws and reports it to the model", async () => {

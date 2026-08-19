@@ -306,15 +306,23 @@
   box-shadow: none;
 }
 
-:global(.kz-cowork-shell) .send:not(:disabled),
-:global(.kz-cowork-shell) .stop {
-  background: #c96442;
+:global(.kz-cowork-shell) .send:not(:disabled) {
+  background: #5b8def;
   color: #faf9f5;
 }
 
-:global(.kz-cowork-shell) .send:not(:disabled):hover,
+:global(.kz-cowork-shell) .stop {
+  background: #d84b4b;
+  border-color: #ef6a6a;
+  color: #fff;
+}
+
+:global(.kz-cowork-shell) .send:not(:disabled):hover {
+  background: #4d7fdc;
+}
+
 :global(.kz-cowork-shell) .stop:hover {
-  background: #b85839;
+  background: #b83232;
 }
 
 @media (max-width: 760px) {

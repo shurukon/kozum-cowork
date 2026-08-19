@@ -35,6 +35,23 @@
   animation: kz-rise var(--dur-normal) var(--ease-out) both;
 }
 
+.assistantBubbleLine {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.contextDot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-top: 0.72em;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 14%, transparent);
+}
+
 .assistantText {
   font-size: var(--fs-base);
   line-height: 1.72;
@@ -210,9 +227,28 @@
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: 14px;
-  height: 14px;
+  width: 30px;
+  height: 20px;
   flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.thinkingHalo {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 34px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  object-fit: cover;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.thinkingFallbackOrb {
+  display: none;
+  width: 9px;
+  height: 9px;
 }
 
 .thinkingLiveLabel {
@@ -232,6 +268,16 @@
   word-break: break-word;
   max-height: 120px;
   overflow-y: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinkingHalo {
+    display: none;
+  }
+
+  .thinkingFallbackOrb {
+    display: block;
+  }
 }
 
 /* ----------------------------------------------------------- error --- */
@@ -519,6 +565,11 @@
   font-family: var(--font-sans);
 }
 
+.coworkAssistantRow .contextDot {
+  background: #5b8def;
+  box-shadow: 0 0 0 3px rgba(91, 141, 239, 0.16);
+}
+
 .coworkAssistantRow .assistantText {
   max-width: 72ch;
   color: #f5f4ed;
@@ -553,7 +604,7 @@
 }
 
 .coworkAssistantRow .activityMarkerLive {
-  color: #c96442;
+  color: #5b8def;
 }
 
 .coworkAssistantRow .activityMarkerDone {
@@ -571,8 +622,8 @@
 .coworkAssistantRow .activityPulse {
   width: 9px;
   height: 9px;
-  background: #c96442;
-  box-shadow: 0 0 0 5px rgba(201, 100, 66, 0.14);
+  background: #5b8def;
+  box-shadow: 0 0 0 5px rgba(91, 141, 239, 0.16);
 }
 
 .coworkAssistantRow .activityCheck {
@@ -586,7 +637,7 @@
   width: fit-content;
   max-width: min(100%, 680px);
   border: 0;
-  border-inline-start: 2px solid #c96442;
+  border-inline-start: 2px solid #5b8def;
   border-radius: 0;
   background: transparent;
   padding: 1px 0 1px 14px;

@@ -139,6 +139,17 @@ async function fetchUrl(
 
       const rawText = new TextDecoder("utf-8", { fatal: false }).decode(combined);
 
+      // A response with an HTTP error status is a failed tool invocation, not
+      // successful page content. Surface the status so the agent loop can apply
+      // its narrow transient retry policy (GET/HEAD only).
+      if (resp.status >= 400) {
+        const statusText = resp.statusText ? ` ${resp.statusText}` : "";
+        const detail = rawText.trim().slice(0, 500);
+        throw new Error(
+          `HTTP ${resp.status}${statusText}${detail ? `: ${detail}` : ""}`,
+        );
+      }
+
       let content: string;
       const ct = contentType.toLowerCase();
 

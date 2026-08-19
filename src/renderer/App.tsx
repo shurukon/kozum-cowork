@@ -133,6 +133,14 @@ export function App() {
   // TranscriptSkeleton shows while the active session's history is loading.
   const [loadingSession, setLoadingSession] = useState(false);
 
+  // Errors from bootstrap/settings/actions belong in the active transcript, not
+  // in a blocking toast or popup. Agent errors are also rendered from
+  // modeState.error by ChatView.
+  const [inlineErrors, setInlineErrors] = useState<Record<Mode, string | null>>({
+    cowork: null,
+    code: null,
+  });
+
   // Command palette open state (Cmd+K).
   const [paletteOpen, setPaletteOpen] = useState(false);
 
@@ -146,12 +154,11 @@ export function App() {
   const [connectorDialogOpen, setConnectorDialogOpen] = useState(false);
   const [pluginDialogOpen, setPluginDialogOpen] = useState(false);
 
-  // Compatibility shim: setBanner is called throughout this file to surface
-  // errors and info notices. Route it through the toast system so all existing
-  // call-sites keep working without being individually rewritten.
+  // Compatibility shim: existing action handlers call setBanner. Keep that
+  // API, but render errors inline in the current chat instead of opening a
+  // toast/popup that interrupts the task.
   function setBanner(msg: string | null) {
-    if (!msg) return; // clearing is a no-op — toasts auto-dismiss
-    pushToast("error", msg);
+    setInlineErrors((prev) => ({ ...prev, [mode]: msg }));
   }
 
   const modeState = useSessionStore((s) => s[mode]);
@@ -575,14 +582,10 @@ export function App() {
       if (attachedFiles) setSharedFiles([]);
     } else {
       inFlightSend.current[mode] = null;
-      // Send-failure toast with a Retry action so the user can resend the
-      // exact same text without retyping it.
-      pushToast("error", res.error, {
-        label: "Retry",
-        onRun: () => {
-          void handleSubmit(text);
-        },
-      });
+      // Keep send failures in the transcript flow; no popup interrupts the
+      // conversation. The user can submit the same text again from the
+      // composer after inspecting the inline error.
+      setBanner(res.error);
     }
   }
 
@@ -1099,6 +1102,11 @@ export function App() {
         )}
 
         <main className={styles.content}>
+          {!inSession && inlineErrors[mode] && (
+            <div className={styles.banner} role="alert" aria-live="assertive">
+              <span>{inlineErrors[mode]}</span>
+            </div>
+          )}
           {nav === "new" &&
             (needsSetup ? (
               <FirstRun
@@ -1121,6 +1129,7 @@ export function App() {
                     <ChatView
                       mode={mode}
                       sessionId={activeSessionId!}
+                      inlineError={inlineErrors[mode]}
                       onSend={(t) => void handleSubmit(t)}
                       onCancel={() => void handleCancel()}
                       onAttach={(kind) => void handleAttach(kind)}
@@ -1160,6 +1169,7 @@ export function App() {
           {nav === "scheduled" && (
             <Scheduled
               tasks={scheduled}
+              inlineError={inlineErrors[mode]}
               keepAwake={settings?.scheduler.keepAwake ?? true}
               onToggleKeepAwake={() => {
                 if (!settings) return;
@@ -1200,15 +1210,19 @@ export function App() {
               onRunNow={async (id) => {
                 const res = await bridge().schedule.runNow(id);
                 if (!res.ok) setBanner(res.error);
-                else pushToast("info", "Task triggered.");
+                else setBanner(null);
                 setScheduled(await bridge().schedule.list());
               }}
               onPause={async (id) => {
-                await bridge().schedule.update(id, { enabled: false });
+                const res = await bridge().schedule.update(id, { enabled: false });
+                if (!res.ok) setBanner(res.error);
+                else setBanner(null);
                 setScheduled(await bridge().schedule.list());
               }}
               onResume={async (id) => {
-                await bridge().schedule.update(id, { enabled: true });
+                const res = await bridge().schedule.update(id, { enabled: true });
+                if (!res.ok) setBanner(res.error);
+                else setBanner(null);
                 setScheduled(await bridge().schedule.list());
               }}
             />

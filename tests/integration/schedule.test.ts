@@ -804,6 +804,35 @@ describe("Scheduler — persistence", () => {
 
     scheduler2.stop();
   });
+
+  it("ordered persistence keeps a task deleted immediately after creation", async () => {
+    const dir = join(tmpDir, "sched-delete-race");
+    const scheduler = new Scheduler({
+      rootDir: dir,
+      now: () => utc(2024, 1, 1, 8, 0),
+      runner: async () => undefined,
+    });
+    await scheduler.start();
+
+    const task = scheduler.add({
+      name: "delete-race",
+      prompt: "must not survive",
+      cron: "* * * * *",
+      timezone: "UTC",
+    });
+    assert.ok(scheduler.remove(task.id));
+    await scheduler.flush();
+    scheduler.stop();
+
+    const reloaded = new Scheduler({
+      rootDir: dir,
+      now: () => utc(2024, 1, 1, 8, 0),
+      runner: async () => undefined,
+    });
+    await reloaded.start();
+    assert.equal(reloaded.get(task.id), undefined);
+    reloaded.stop();
+  });
 });
 
 /* ================================================================ Tools */

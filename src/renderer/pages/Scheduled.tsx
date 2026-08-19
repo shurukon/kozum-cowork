@@ -45,6 +45,8 @@ interface Props {
   onPause?: (id: string) => void;
   /** Resume (enable) a task. */
   onResume?: (id: string) => void;
+  /** Error from a schedule action, rendered inline instead of a popup. */
+  inlineError?: string | null;
 }
 
 type SortKey = "next_run" | "name";
@@ -70,6 +72,7 @@ export function Scheduled({
   onRunNow,
   onPause,
   onResume,
+  inlineError,
 }: Props) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
@@ -112,6 +115,12 @@ export function Scheduled({
           </button>
         </div>
       </div>
+
+      {inlineError && (
+        <div className={styles.inlineError} role="alert" aria-live="polite">
+          {inlineError}
+        </div>
+      )}
 
       {/* Search */}
       <div className={styles.searchRow}>
@@ -266,9 +275,7 @@ export function Scheduled({
                   {onDelete && (
                     <button
                       className={`${styles.actionBtn} ${styles.actionDanger}`}
-                      onClick={() => {
-                        if (confirm(t("scheduled.deleteConfirm"))) onDelete(task.id);
-                      }}
+                      onClick={() => onDelete(task.id)}
                       title={t("scheduled.delete")}
                       aria-label={t("scheduled.delete")}
                     >
