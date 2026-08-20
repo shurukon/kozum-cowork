@@ -13,14 +13,11 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, FileText, Zap, AlertTriangle, CircleStop, Copy, Pencil, RotateCcw } from "lucide-react";
-import type { ReactNode } from "react";
+import { ChevronDown, ChevronRight, FileText, Copy, Pencil, RotateCcw } from "lucide-react";
 import type {
   Message as MessageType,
   ContentBlock,
   Mode,
-  TokenUsage,
-  StopReason,
 } from "@shared/types.ts";
 import { useTranslation } from "react-i18next";
 import type { ToolCard as ToolCardType, PendingQuestion, PendingPermission } from "../store/session.ts";
@@ -410,10 +407,6 @@ export function Message({
         </div>
       )}
 
-      {!isStreaming && (message.usage || message.stopReason) && (
-        <TurnFooter usage={message.usage} stopReason={message.stopReason} model={message.model} />
-      )}
-
       {message.error && (
         <p className={styles.errorMsg}>{message.error}</p>
       )}
@@ -442,73 +435,5 @@ function PendingPermissionInline({
       onAllow={() => onReply?.(permission.requestId, ["yes"])}
       onDeny={() => onReply?.(permission.requestId, ["no"])}
     />
-  );
-}
-
-// ── TurnFooter ───────────────────────────────────────────────────────────────
-//
-// F-3: compact muted footer appended to a settled assistant turn. Shows the
-// input/output/cache token counts, the stop reason, and the model name.
-
-function formatTokens(n: number): string {
-  if (n >= 1000) {
-    const k = n / 1000;
-    return Number.isInteger(k) ? `${k}k` : `${k.toFixed(1)}k`;
-  }
-  return String(n);
-}
-
-const STOP_REASON_KEY: Record<StopReason, string> = {
-  end_turn: "message.stopCompleted",
-  tool_use: "message.stopToolCall",
-  max_tokens: "message.stopMaxTokens",
-  stop_sequence: "message.stopCompleted",
-  cancelled: "message.stopCancelled",
-  error: "message.stopErrored",
-};
-
-interface TurnFooterProps {
-  usage?: TokenUsage;
-  stopReason?: StopReason;
-  model?: string;
-}
-
-function TurnFooter({ usage, stopReason, model }: TurnFooterProps): ReactNode {
-  const { t } = useTranslation();
-  return (
-    <div className={styles.turnFooter} aria-label="Turn metadata">
-      <Zap size={11} className={styles.footerIcon} aria-hidden={true} />
-      <span className={styles.footerTokens}>
-        {usage ? (
-          <>
-            <span className={styles.footerTokenIn}>
-              {t("message.tokensIn")} {formatTokens(usage.inputTokens)}
-            </span>
-            <span className={styles.footerTokenArrow} aria-hidden={true}>→</span>
-            <span className={styles.footerTokenOut}>
-              {t("message.tokensOut")} {formatTokens(usage.outputTokens)}
-            </span>
-            {usage.cacheReadTokens !== undefined && usage.cacheReadTokens > 0 && (
-              <span className={styles.footerTokenCache}>
-                · {t("message.cached")} {formatTokens(usage.cacheReadTokens)}
-              </span>
-            )}
-          </>
-        ) : null}
-      </span>
-      {stopReason && (
-        <span className={`${styles.footerStop} ${stopReason === "error" || stopReason === "cancelled" ? styles.footerStopWarn : ""}`}>
-          {stopReason === "error" || stopReason === "cancelled" ? (
-            <AlertTriangle size={10} aria-hidden={true} />
-          ) : (
-            <CircleStop size={10} aria-hidden={true} />
-          )}
-          {t(STOP_REASON_KEY[stopReason])}
-        </span>
-      )}
-      {model && (
-        <span className={styles.footerModel} title={model}>{model}</span>
-      )}
-    </div>
   );
 }
