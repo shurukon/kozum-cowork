@@ -50,6 +50,7 @@ export function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings 
     network: { alwaysAllowHosts: [], proxyUrl: null, githubFirewallRule: false },
     scheduler: { enabled: true, keepAwake: true },
     privacy: { telemetry: false },
+    customize: { accentColor: "#68c8ed", surfaceColor: "#101923", fontFamily: "sans" },
     customProviders: [],
     ...overrides,
   };

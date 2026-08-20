@@ -59,6 +59,25 @@ export function RightPanel({
   const hasRunningSubagents = subagentEntries.some((subagent) => subagent.status === "running");
   const hasProgress = tasks.length > 0 || toolsUsed.length > 0 || skillsUsed.length > 0 || Boolean(projectName) || mcpServers.length > 0;
 
+  const subagentProgress = (
+    <div className={styles.subagentProgress} aria-label="Subagent progress">
+      <div className={styles.subagentProgressHeader}>
+        <Bot size={12} aria-hidden="true" />
+        <span>Subagents</span>
+        {hasRunningSubagents && <span className={styles.subagentLive}>LIVE</span>}
+      </div>
+      {subagentEntries.length === 0 ? (
+        <p className={styles.empty}>No subagent runs yet.</p>
+      ) : (
+        <div className={styles.subagentList}>
+          {subagentEntries.map((view) => (
+            <SubagentCard key={view.id} view={view} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   if (mode === "cowork") {
     return (
       <aside className={`${styles.panel} ${styles.coworkPanel}`} aria-label="Cowork progress panel">
@@ -67,8 +86,9 @@ export function RightPanel({
           <span className={styles.panelHint}>Live progress</span>
         </div>
 
-        <Section title="Progress" icon={ListTodo} defaultOpen={tasks.length > 0}>
+        <Section title="Progress" icon={ListTodo} defaultOpen={tasks.length > 0 || subagentEntries.length > 0}>
           <TaskList tasks={tasks} />
+          {subagentProgress}
         </Section>
 
         <Section title="Context" icon={Plug} defaultOpen={hasProgress}>
@@ -85,8 +105,9 @@ export function RightPanel({
 
   return (
     <aside className={styles.panel} aria-label="Side panel">
-      <Section title="Progress" icon={ListTodo} defaultOpen={tasks.length > 0}>
+      <Section title="Progress" icon={ListTodo} defaultOpen={tasks.length > 0 || subagentEntries.length > 0}>
         <TaskList tasks={tasks} />
+        {subagentProgress}
       </Section>
 
       <Section title="Context" icon={Plug} defaultOpen={hasProgress}>
@@ -96,22 +117,6 @@ export function RightPanel({
           skills={skillsUsed}
           mcpServers={mcpServers}
         />
-      </Section>
-
-      <Section
-        title="Subagents"
-        icon={Bot}
-        defaultOpen={subagentEntries.length > 0 || hasRunningSubagents}
-      >
-        {subagentEntries.length === 0 ? (
-          <p className={styles.empty}>No subagent runs yet.</p>
-        ) : (
-          <div className={styles.subagentList}>
-            {subagentEntries.map((view) => (
-              <SubagentCard key={view.id} view={view} />
-            ))}
-          </div>
-        )}
       </Section>
     </aside>
   );

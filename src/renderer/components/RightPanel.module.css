@@ -94,6 +94,33 @@
   border-top: 1px solid var(--border-subtle);
 }
 
+.subagentProgress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.subagentProgressHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.subagentLive {
+  margin-inline-start: auto;
+  color: var(--accent-primary);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
 .subagentList {
   display: flex;
   flex-direction: column;
@@ -216,6 +243,18 @@
   color: #87867f;
   font-size: 10px;
   letter-spacing: 0.08em;
+}
+
+.coworkPanel .subagentProgress {
+  border-top-color: rgba(240, 238, 230, 0.08);
+}
+
+.coworkPanel .subagentProgressHeader {
+  color: #b7b4ab;
+}
+
+.coworkPanel .subagentLive {
+  color: #76a9d8;
 }
 
 .coworkPanel .empty {

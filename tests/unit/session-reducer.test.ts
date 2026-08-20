@@ -22,13 +22,14 @@ beforeEach(() => {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function startStreaming(state: ModeState): ModeState {
+function startStreaming(state: ModeState, runId?: string): ModeState {
   return applyEventToMode(state, {
     type: "turn_start",
     mode: "cowork",
     sessionId: "s1",
     messageId: "msg_assistant",
     model: "m1",
+    ...(runId ? { runId } : {}),
   });
 }
 
@@ -121,6 +122,53 @@ describe("applyEventToMode — pending questions/permissions", () => {
 });
 
 // ── Store methods ───────────────────────────────────────────────────────────
+
+describe("applyEventToMode — stale run isolation", () => {
+  it("records the active run id at turn_start", () => {
+    const state = startStreaming(emptyModeState(), "run-new");
+    assert.equal(state.currentRunId, "run-new");
+  });
+
+  it("ignores late text events from an older run", () => {
+    let state = startStreaming(emptyModeState(), "run-old");
+    state = applyEventToMode(state, {
+      type: "text_delta",
+      mode: "cowork",
+      sessionId: "s1",
+      runId: "run-old",
+      messageId: "msg_assistant",
+      delta: "old",
+    });
+    state = startStreaming(state, "run-new");
+    state = applyEventToMode(state, {
+      type: "text_delta",
+      mode: "cowork",
+      sessionId: "s1",
+      runId: "run-old",
+      messageId: "msg_assistant",
+      delta: "late-old",
+    });
+
+    assert.equal(state.currentRunId, "run-new");
+    assert.equal(state.streamingText, "");
+  });
+
+  it("ignores late tool events from an older run", () => {
+    let state = startStreaming(emptyModeState(), "run-old");
+    state = startStreaming(state, "run-new");
+    state = applyEventToMode(state, {
+      type: "tool_start",
+      mode: "cowork",
+      sessionId: "s1",
+      runId: "run-old",
+      toolUseId: "tool-old",
+      name: "file_read",
+      input: {},
+    });
+
+    assert.equal(state.toolCards.has("tool-old"), false);
+  });
+});
 
 describe("useSessionStore — resolveQuestion / resolvePermission", () => {
   it("resolveQuestion removes only the matching requestId", () => {

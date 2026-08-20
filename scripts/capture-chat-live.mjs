@@ -113,24 +113,22 @@ async function selectProviderAndModel() {
   if (!(await clickIfVisible(settingsAccount, 4000))) {
     throw new Error("Settings account row was not visible");
   }
-  const settings = page.getByRole("dialog", { name: "Settings" });
-  await settings.waitFor({ state: "visible", timeout: 5000 });
-  await settings.getByRole("button", { name: /^providers$/i }).click();
+  await page.getByRole("button", { name: /^AI providers$/i }).click();
 
-  await settings.getByRole("button", { name: /add custom/i }).click();
-  const customDialog = page.getByRole("dialog", { name: "Add custom provider" });
-  await customDialog.getByLabel("Provider name").fill("Manus Live Test");
-  await customDialog.getByLabel("Base URL").fill(apiBase);
-  await customDialog.getByRole("button", { name: /add provider/i }).click();
-  await customDialog.waitFor({ state: "detached", timeout: 5000 });
+  const addProviderButton = page.getByRole("button", { name: /^Add provider$/i }).first();
+  await addProviderButton.click();
+  await page.getByPlaceholder("Provider name").fill("Manus Live Test");
+  await page.getByPlaceholder("https://api.example.com/v1").fill(apiBase);
+  await page.getByRole("button", { name: /^Add provider$/i }).last().click();
+  await page.waitForTimeout(500);
 
-  const providerSection = settings.locator("div").filter({ hasText: "Manus Live Test" }).last();
-  await providerSection.getByRole("button", { name: /add key/i }).click();
-  await settings.locator("input[type='password']").last().fill(apiKey);
-  await settings.getByRole("button", { name: /^save$/i }).last().click();
+  const providerCard = page.locator("article").filter({ hasText: "Manus Live Test" }).last();
+  await providerCard.getByRole("button", { name: /add api key/i }).click();
+  await providerCard.getByPlaceholder("Paste API key").fill(apiKey);
+  await providerCard.getByRole("button", { name: /^Save key$/i }).click();
   await page.waitForTimeout(700);
 
-  await settings.getByRole("button", { name: /close/i }).click();
+  await page.getByRole("button", { name: "Close settings" }).click();
   await page.waitForTimeout(500);
 
   const providerButton = page.getByRole("button", { name: /^Provider:/ }).first();

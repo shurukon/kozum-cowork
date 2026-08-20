@@ -170,10 +170,17 @@ export class SessionManager {
     clientTurnId?: string,
   ): Promise<void> {
     const sessionId = session.id;
+    let currentRunId: string | undefined;
 
     try {
       await this.sessions.updateStatus(sessionId, "running");
-      this.emitEvent(sessionId, { type: "session_status", mode: session.mode, sessionId, status: "running" });
+      this.emitEvent(sessionId, {
+        type: "session_status",
+        mode: session.mode,
+        sessionId,
+        status: "running",
+        ...(currentRunId ? { runId: currentRunId } : {}),
+      });
 
       const appSettings = await this.settings.get();
       const modeSettings = appSettings[session.mode];
@@ -347,6 +354,7 @@ export class SessionManager {
                 toolName: name,
                 input,
                 reason,
+                ...(currentRunId ? { runId: currentRunId } : {}),
               });
               // Wait for the user to reply via AskBroker
               return new Promise<string[]>((resolve, reject) => {
@@ -363,12 +371,18 @@ export class SessionManager {
                 });
                 void promise.then(resolve).catch(reject);
 
-                // Abort support
-                if (opts.signal.aborted) {
+                // Abort support: reject through the broker as well as the local
+                // promise, otherwise the request would remain in the broker map
+                // and a late renderer reply could resolve stale work.
+                const onAbort = () => {
+                  askBroker.reject(requestId, "Cancelled");
                   reject(new Error("Cancelled"));
+                };
+                if (opts.signal.aborted) {
+                  onAbort();
                   return;
                 }
-                opts.signal.addEventListener("abort", () => reject(new Error("Cancelled")), { once: true });
+                opts.signal.addEventListener("abort", onAbort, { once: true });
               });
             },
           });
@@ -397,6 +411,7 @@ export class SessionManager {
         signal: controller.signal,
         // Forward events to the renderer and persist a sidecar for reattachment.
         emit: (e: AgentEvent) => {
+          if (e.runId) currentRunId = e.runId;
           this.emitEvent(sessionId, e);
           void this.sessions.appendRunEvent(sessionId, e);
         },
@@ -406,9 +421,16 @@ export class SessionManager {
       const produced = [userMsg, ...result.messages];
       await this.sessions.appendMessages(sessionId, produced);
 
+      currentRunId = result.runId;
       const finalStatus = result.stopReason === "cancelled" ? "cancelled" : "idle";
       await this.sessions.updateStatus(sessionId, finalStatus);
-      this.emitEvent(sessionId, { type: "session_status", mode: session.mode, sessionId, status: finalStatus });
+      this.emitEvent(sessionId, {
+        type: "session_status",
+        mode: session.mode,
+        sessionId,
+        status: finalStatus,
+        runId: currentRunId,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       // Mirror to stdout so failures are visible in dev logs even if the
@@ -421,8 +443,15 @@ export class SessionManager {
         sessionId,
         message: msg,
         recoverable: false,
+        ...(currentRunId ? { runId: currentRunId } : {}),
       });
-      this.emitEvent(sessionId, { type: "session_status", mode: session.mode, sessionId, status: "error" });
+      this.emitEvent(sessionId, {
+        type: "session_status",
+        mode: session.mode,
+        sessionId,
+        status: "error",
+        ...(currentRunId ? { runId: currentRunId } : {}),
+      });
     }
   }
 }

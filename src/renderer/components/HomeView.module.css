@@ -59,15 +59,6 @@
   color: #e1e2ed;
 }
 
-.proBadge {
-  padding: 3px 7px;
-  border: 1px solid rgba(0, 200, 255, 0.36);
-  border-radius: 999px;
-  color: #00c8ff;
-  font-size: 9px;
-  letter-spacing: 0.12em;
-}
-
 .heading {
   margin: 0;
   color: #e1e2ed;

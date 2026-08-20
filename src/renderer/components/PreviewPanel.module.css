@@ -566,3 +566,73 @@
 [data-motion="reduced"] .browserLoadingBar {
   animation: none;
 }
+
+
+/* ── Safe artifact canvas ─────────────────────────────────────────────────── */
+
+.artifactCanvas {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 320px;
+  margin: calc(var(--sp-4) * -1);
+  overflow: hidden;
+  background: #fff;
+}
+
+.artifactSafetyNote {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 28px;
+  padding: 0 var(--sp-4);
+  color: #4b5563;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.01em;
+}
+
+.artifactSafetyNote svg {
+  color: #2563eb;
+  flex: 0 0 auto;
+}
+
+.artifactCanvas .htmlVisualFrame {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.artifactImage {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 220px);
+  margin: auto;
+  object-fit: contain;
+}
+
+.artifactTextCanvas {
+  min-height: 100%;
+  margin: calc(var(--sp-4) * -1);
+  padding-bottom: var(--sp-4);
+  background: var(--bg-sunken);
+}
+
+.artifactTextCanvas .textPre {
+  margin: 0;
+  padding: var(--sp-5);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .artifactCanvas,
+  .artifactTextCanvas {
+    margin: calc(var(--sp-3) * -1);
+  }
+}
+
+[data-motion="reduced"] .artifactCanvas {
+  animation: none;
+}

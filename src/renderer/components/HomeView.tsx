@@ -29,7 +29,6 @@ export function HomeView({ composerSlot }: Props) {
               K
             </span>
             <span className={styles.brandName}>Kozum AI</span>
-            <span className={styles.proBadge}>PRO</span>
           </div>
           <h1 className={styles.heading}>Kozum AI</h1>
           <p className={styles.sub}>Where knowledge meets intelligence.</p>

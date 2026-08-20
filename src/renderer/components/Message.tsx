@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, FileText, Zap, AlertTriangle, CircleStop } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, Zap, AlertTriangle, CircleStop, Copy, Pencil, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 import type {
   Message as MessageType,
@@ -123,6 +123,12 @@ interface Props {
   onReply?: (requestId: string, answer: string[]) => void;
   /** Resolve a pending question in the local store (collapses the form). */
   onResolveQuestion?: (requestId: string) => void;
+  /** Copy a user message's text without opening a popup. */
+  onCopyMessage?: (text: string) => void;
+  /** Replace a user turn by branching before it and pre-filling the composer. */
+  onEditMessage?: (messageId: string, text: string) => void;
+  /** Retry a user turn through the existing send path. */
+  onRetryMessage?: (text: string) => void;
 }
 
 function isToolResultOnly(content: ContentBlock[]): boolean {
@@ -140,6 +146,9 @@ export function Message({
   onPreview,
   onReply,
   onResolveQuestion,
+  onCopyMessage,
+  onEditMessage,
+  onRetryMessage,
 }: Props) {
   const { t } = useTranslation();
   // Track whether this is the very first mount so we can add kz-send-ack once.
@@ -192,10 +201,16 @@ export function Message({
       );
     }
 
-    const hasText = message.content.some((b) => b.type === "text");
+    const userText = message.content
+      .filter((block): block is Extract<ContentBlock, { type: "text" }> => block.type === "text")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+    const hasText = userText.length > 0;
     return (
       <div className={styles.userRow}>
-        <div className={`${styles.userBubble} ${sendAck ? "kz-send-ack" : ""}`}>
+        <div className={styles.userMessageGroup}>
+          <div className={`${styles.userBubble} ${sendAck ? "kz-send-ack" : ""}`}>
           {message.content.map((block, i) => {
             if (block.type === "text") {
               return <p key={i} className={styles.userText}>{block.text}</p>;
@@ -212,6 +227,26 @@ export function Message({
             }
             return null;
           })}
+          </div>
+          {hasText && (onCopyMessage || onEditMessage || onRetryMessage) && (
+            <div className={styles.userMessageActions} aria-label="Message actions">
+              {onCopyMessage && (
+                <button type="button" className={styles.messageAction} onClick={() => onCopyMessage(userText)} aria-label="Copy message" title="Copy message">
+                  <Copy size={13} aria-hidden="true" />
+                </button>
+              )}
+              {onEditMessage && (
+                <button type="button" className={styles.messageAction} onClick={() => onEditMessage(message.id, userText)} aria-label="Edit message" title="Edit message">
+                  <Pencil size={13} aria-hidden="true" />
+                </button>
+              )}
+              {onRetryMessage && (
+                <button type="button" className={styles.messageAction} onClick={() => onRetryMessage(userText)} aria-label="Retry message" title="Retry message">
+                  <RotateCcw size={13} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );

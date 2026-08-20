@@ -105,6 +105,19 @@ describe("SessionStore.branch", () => {
     assert.equal(branchMsgs[1]!.id, "m2");
   });
 
+  it("creates an empty-prefix branch when uptoMessageId is null", async () => {
+    const src = await store.create("code", SELECTION);
+    await store.appendMessages(src.id, [
+      { id: "first-user", role: "user" as const, content: [{ type: "text" as const, text: "old first" }], createdAt: 1 },
+      { id: "first-assistant", role: "assistant" as const, content: [{ type: "text" as const, text: "old answer" }], createdAt: 2 },
+    ]);
+
+    const branch = await store.branch(src.id, null);
+    assert.ok(branch);
+    assert.deepEqual(await store.messages(branch.id), []);
+    assert.equal((await store.messages(src.id)).length, 2, "the original session must remain unchanged");
+  });
+
   it("copies only messages up to uptoMessageId (inclusive)", async () => {
     const src = await store.create("cowork", SELECTION);
     const messages = [
@@ -185,23 +198,23 @@ describe("SessionStore.rename", () => {
 
 describe("SessionStore.setPermissionMode", () => {
   it("returns false for a non-existent session", async () => {
-    const result = await store.setPermissionMode("nonexistent", "plan");
+    const result = await store.setPermissionMode("nonexistent", "ask");
     assert.equal(result, false);
   });
 
   it("updates permissionMode on disk", async () => {
     const session = await store.create("code", SELECTION);
-    assert.equal(session.permissionMode, "manual"); // default
+    assert.equal(session.permissionMode, "ask"); // default
 
-    const result = await store.setPermissionMode(session.id, "bypass_permissions");
+    const result = await store.setPermissionMode(session.id, "reject");
     assert.equal(result, true);
 
     const updated = await store.get(session.id);
     assert.ok(updated);
-    assert.equal(updated.permissionMode, "bypass_permissions");
+    assert.equal(updated.permissionMode, "reject");
   });
 
-  for (const mode of ["manual", "accept_edits", "plan", "bypass_permissions"] as const) {
+  for (const mode of ["accept_all", "accept_edits", "ask", "reject"] as const) {
     it(`persists mode: ${mode}`, async () => {
       const session = await store.create("cowork", SELECTION);
       await store.setPermissionMode(session.id, mode);

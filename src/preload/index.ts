@@ -102,7 +102,7 @@ const api = {
       ipcRenderer.invoke("sessions:archive", sessionId),
     delete: (sessionId: string): Promise<Result<void>> =>
       ipcRenderer.invoke("sessions:delete", sessionId),
-    branch: (sessionId: string, uptoMessageId?: string): Promise<Result<Session>> =>
+    branch: (sessionId: string, uptoMessageId?: string | null): Promise<Result<Session>> =>
       ipcRenderer.invoke("sessions:branch", sessionId, uptoMessageId),
     rename: (sessionId: string, title: string): Promise<Result<void>> =>
       ipcRenderer.invoke("sessions:rename", sessionId, title),

@@ -180,14 +180,14 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     // ── task / ask stores ────────────────────────────────────────────────────
-    // In-memory map of sessionId → mode so task_update events can be tagged with
-    // the correct mode for the renderer's event router (the TaskStore itself is
-    // mode-agnostic).
+    // IPC keeps this map updated for session lifecycle calls; TaskStore also
+    // records the mode before every task mutation for supervisor-created tasks.
     const sessionModes = new Map<string, Mode>();
-    const tasks = new TaskStore((sessionId, taskList) => {
+    let tasks: TaskStore;
+    tasks = new TaskStore((sessionId, taskList) => {
       emitEvent(sessionId, {
         type: "task_update",
-        mode: sessionModes.get(sessionId) ?? "cowork",
+        mode: tasks.modeFor(sessionId) ?? "cowork",
         sessionId,
         tasks: taskList,
       });
@@ -200,9 +200,11 @@ if (!app.requestSingleInstanceLock()) {
     // those are not all constructed yet at this point. After SessionManager is
     // built (see below) we call subagents.setRunner(makeRealRunner({...})) —
     // the deferred-construction pattern used by the scheduler too.
-    const subagents = new SubagentManager(async (_spec) => {
-      return { text: "(subagent not yet wired)" };
-    });
+    const subagents = new SubagentManager(
+      async (_spec) => ({ text: "(subagent not yet wired)" }),
+      4,
+      tasks,
+    );
 
     // ── mcp ─────────────────────────────────────────────────────────────────
     const mcp = new McpManager();

@@ -49,7 +49,7 @@
       maxTokens: 16384,
       temperature: 0,
       maxIterations: 50,
-      permissionMode: "manual",
+      permissionMode: "ask",
       enabledToolNames: [],
       subagentsEnabled: false,
     },
@@ -87,7 +87,7 @@
     sessions: {
       list: async () => [],
       get: async () => null,
-      create: async (mode, selection) => ok({ id: "session-preview", mode, title: "Preview Session", selection, permissionMode: "accept_edits", workingFolder: null, projectId: null, createdAt: Date.now(), updatedAt: Date.now(), archived: false }),
+      create: async (mode, selection) => ok({ id: "session-preview", mode, title: "Preview Session", selection, permissionMode: mode === "code" ? "ask" : "accept_edits", workingFolder: null, projectId: null, createdAt: Date.now(), updatedAt: Date.now(), archived: false }),
       archive: async () => ok(undefined),
       delete: async () => ok(undefined),
       branch: async () => ok({ id: "session-branched", mode: "cowork", title: "Branched", selection: null, permissionMode: "accept_edits", workingFolder: null, projectId: null, createdAt: Date.now(), updatedAt: Date.now(), archived: false }),

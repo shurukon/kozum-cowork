@@ -295,7 +295,7 @@ describe("subagent tools", () => {
     const start = Date.now();
     const result = await registry.execute(
       "agent_run",
-      { description: "quick test task", prompt: "do something" },
+      { description: "quick test task", prompt: "do something", acceptance_criteria: ["Runner returns evidence"] },
       ctx,
     );
     const elapsed = Date.now() - start;
@@ -310,7 +310,7 @@ describe("subagent tools", () => {
 
     const runResult = await registry.execute(
       "agent_run",
-      { description: "transitions test", prompt: "run me" },
+      { description: "transitions test", prompt: "run me", acceptance_criteria: ["Runner returns the prompt evidence"] },
       ctx,
     );
     assert.ok(runResult.ok);
@@ -343,7 +343,7 @@ describe("subagent tools", () => {
     const ctx = makeCtx("sub-fail");
     const run = await reg.execute(
       "agent_run",
-      { description: "failing task", prompt: "break it" },
+      { description: "failing task", prompt: "break it", acceptance_criteria: ["Runner reports the failure"] },
       ctx,
     );
     assert.ok(run.ok);
@@ -365,8 +365,8 @@ describe("subagent tools", () => {
     reg.registerAll(makeSubagentTools(m));
     const ctx = makeCtx("sub-list");
 
-    await reg.execute("agent_run", { description: "task one", prompt: "one" }, ctx);
-    await reg.execute("agent_run", { description: "task two", prompt: "two" }, ctx);
+    await reg.execute("agent_run", { description: "task one", prompt: "one", acceptance_criteria: ["one completes"] }, ctx);
+    await reg.execute("agent_run", { description: "task two", prompt: "two", acceptance_criteria: ["two completes"] }, ctx);
 
     const list = await reg.execute("agent_list", {}, ctx);
     assert.ok(list.ok);

@@ -183,7 +183,7 @@ export class SessionStore {
       messageCount: 0,
       totalUsage: emptyUsage(),
       archived: false,
-      permissionMode: "manual",
+      permissionMode: "ask",
     };
 
     await mkdir(this.sessionDir(session.id), { recursive: true });
@@ -217,17 +217,21 @@ export class SessionStore {
   /**
    * Branch (fork) a session. Creates a new session copying the source session's
    * mode, selection, and permissionMode, along with messages up to and
-   * including `uptoMessageId` (or all messages when omitted). Returns the new Session.
+   * including `uptoMessageId` (or all messages when omitted). Passing `null`
+   * creates an empty-prefix branch for replacing the first turn. Returns the new Session.
    */
-  async branch(sessionId: string, uptoMessageId?: string): Promise<Session | null> {
+  async branch(sessionId: string, uptoMessageId?: string | null): Promise<Session | null> {
     const source = await this.get(sessionId);
     if (!source) return null;
 
     const allMessages = await this.messages(sessionId);
 
-    // Determine which messages to copy
+    // Determine which messages to copy. `null` is an explicit request for
+    // an empty prefix and is used by edit-back when replacing the first turn.
     let messagesToCopy: Message[];
-    if (uptoMessageId) {
+    if (uptoMessageId === null) {
+      messagesToCopy = [];
+    } else if (typeof uptoMessageId === "string") {
       const idx = allMessages.findIndex((m) => m.id === uptoMessageId);
       messagesToCopy = idx === -1 ? allMessages : allMessages.slice(0, idx + 1);
     } else {

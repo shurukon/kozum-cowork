@@ -333,10 +333,10 @@ export interface Session {
 }
 
 export type PermissionMode =
-  | "manual"
+  | "accept_all"
   | "accept_edits"
-  | "plan"
-  | "bypass_permissions";
+  | "ask"
+  | "reject";
 
 export interface Project {
   id: string;
@@ -548,6 +548,8 @@ export interface SubagentRun {
   parentSessionId: string;
   /** The assistant message id in which the parent agent called `agent_run` (P1-1). */
   parentMessageId?: string;
+  /** The AgentTask tracked by the parent session for this delegated outcome. */
+  taskId?: string;
   name: string;
   description: string;
   status: "running" | "completed" | "failed" | "cancelled";
@@ -556,6 +558,11 @@ export interface SubagentRun {
   result?: string;
   error?: string;
   usage?: TokenUsage;
+  /** Explicit checks the parent must verify before accepting the delegation. */
+  acceptanceCriteria?: string[];
+  /** Best-effort progress metadata reported while the child loop is running. */
+  currentStep?: string;
+  progress?: number;
 }
 
 /* ==================================================== scheduled tasks === */
@@ -647,6 +654,12 @@ export interface AppSettings {
   };
   privacy: {
     telemetry: false;
+  };
+  /** User-controlled visual accents used by the renderer shell and Customize preview. */
+  customize: {
+    accentColor: string;
+    surfaceColor: string;
+    fontFamily: "sans" | "serif" | "mono";
   };
   /** User-registered custom OpenAI-compatible providers. */
   customProviders: ProviderPreset[];

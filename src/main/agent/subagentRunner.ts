@@ -54,8 +54,8 @@ export function makeRealRunner(deps: SubagentRunnerDeps): AgentRunner {
       deps.bumpProgress?.(spec.id, note, progress);
 
     const appSettings = await deps.settings.get();
-    const modeSettings = appSettings["cowork"];
-    const mode: Mode = "cowork";
+    const mode: Mode = spec.mode;
+    const modeSettings = appSettings[mode];
     let { providerId, keyId, modelId } = modeSettings.selection;
 
     if (!providerId) {
@@ -93,7 +93,7 @@ export function makeRealRunner(deps: SubagentRunnerDeps): AgentRunner {
       .map((s) => ({ name: s.name, toolCount: s.toolCount }));
 
     const visionCapable = looksVisionCapable(modelId, providerId);
-    const workingFolder = appSettings.general.defaultFolders.cowork ?? null;
+    const workingFolder = appSettings.general.defaultFolders[mode] ?? null;
 
     const promptCtx: PromptContext = {
       userName: appSettings.general.userName,
@@ -114,15 +114,19 @@ export function makeRealRunner(deps: SubagentRunnerDeps): AgentRunner {
         .filter((s) => s.enabled && s.modes.includes(mode))
         .map((s) => ({ name: s.name, description: s.description })),
       mcpServers,
-      subagents: [],
-      now: new Date(),
+        subagents: [],
+        now: new Date(),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       language: appSettings.general.language,
     };
 
-    const systemPrompt =
+    const baseSystemPrompt =
       spec.systemPrompt.trim() ||
-      buildSystemPrompt("cowork", promptCtx, null);
+      buildSystemPrompt(mode, promptCtx, null);
+    const acceptanceBlock = spec.acceptanceCriteria?.length
+      ? `\n\n<delegated_outcome_contract>\nThis run is supervised by a parent agent. The tracked task id is ${spec.taskId ?? "unassigned"}. You must satisfy every acceptance criterion and return concrete evidence for each one:\n${spec.acceptanceCriteria.map((criterion, index) => `${index + 1}. ${criterion}`).join("\n")}\nBefore stopping, verify each criterion against the real files, endpoint, or test result. Do not claim completion without evidence.\n</delegated_outcome_contract>`
+      : "";
+    const systemPrompt = `${baseSystemPrompt}${acceptanceBlock}`;
 
     const { capabilities } = resolveCapabilities(modelId, providerId);
 
@@ -154,7 +158,7 @@ export function makeRealRunner(deps: SubagentRunnerDeps): AgentRunner {
       maxIterations: modeSettings.maxIterations,
       signal,
       // Map the subagent's internal loop events onto parent-visible progress.
-      emit: (e) => {
+        emit: (e) => {
         switch (e.type) {
           case "tool_start":
             bump(`working: ${e.name}`);

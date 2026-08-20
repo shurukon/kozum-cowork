@@ -6,9 +6,10 @@
  * manager instance; a concurrency cap (default 4) queues beyond that.
  */
 
-import type { SubagentRun, AgentEvent, TokenUsage } from "../../shared/types.ts";
+import type { Mode, SubagentRun, AgentEvent, TokenUsage } from "../../shared/types.ts";
 import type { Tool } from "../tools/registry.ts";
 import { ok, fail } from "../tools/registry.ts";
+import type { TaskStore } from "../tools/tasks.ts";
 import { parseFrontmatter } from "./frontmatter.ts";
 
 /* -------------------------------------------------------------- runner ---- */
@@ -16,10 +17,15 @@ import { parseFrontmatter } from "./frontmatter.ts";
 export interface RunnerSpec {
   id: string;
   name: string;
+  mode: Mode;
   systemPrompt: string;
   prompt: string;
   model?: string;
   tools?: string[];
+  /** Explicit checks the parent must verify before accepting the delegation. */
+  acceptanceCriteria?: string[];
+  /** AgentTask id used to track this delegated outcome in the parent session. */
+  taskId?: string;
   /** Abort signal the run must honour; the manager aborts it on cancel(). */
   signal: AbortSignal;
 }
@@ -32,6 +38,7 @@ export type AgentRunner = (
 
 interface RunHandle {
   run: SubagentRun;
+  mode: Mode;
   controller: AbortController;
   /** Last progress note, local-only (not part of the wire `SubagentRun`). */
   note?: string;
@@ -40,6 +47,10 @@ interface RunHandle {
 /* ----------------------------------------------------------- id gen ---- */
 
 let seq = 0;
+function runMode(handle: RunHandle): Mode {
+  return handle.mode;
+}
+
 function newRunId(): string {
   seq += 1;
   return `agent_${Date.now().toString(36)}_${seq.toString(36)}`;
@@ -53,12 +64,14 @@ export class SubagentManager {
   private readonly concurrencyLimit: number;
   private queue: Array<() => void> = [];
   private runner: AgentRunner;
+  private readonly taskStore?: TaskStore;
   /** Bridges subagent lifecycle events to the parent session's renderer (P1-1). */
   private emit?: (sessionId: string, e: AgentEvent) => void;
 
-  constructor(runner: AgentRunner, concurrencyLimit = 4) {
+  constructor(runner: AgentRunner, concurrencyLimit = 4, taskStore?: TaskStore) {
     this.runner = runner;
     this.concurrencyLimit = concurrencyLimit;
+    this.taskStore = taskStore;
   }
 
   /**
@@ -88,32 +101,50 @@ export class SubagentManager {
     model?: string,
     tools?: string[],
     parentMessageId?: string,
+    mode: Mode = "cowork",
+    acceptanceCriteria: string[] = [],
+    taskId?: string,
   ): string {
     const id = newRunId();
     const controller = new AbortController();
+    this.taskStore?.setMode(parentSessionId, mode);
+    const normalizedCriteria = acceptanceCriteria.map((criterion) => criterion.trim()).filter(Boolean);
+    const trackedTask = taskId
+      ? this.taskStore?.get(parentSessionId, taskId)
+      : this.taskStore?.create(
+          parentSessionId,
+          `Delegated: ${name}`,
+          `${description}\n\nAcceptance criteria:\n${normalizedCriteria.length ? normalizedCriteria.map((criterion) => `- ${criterion}`).join("\n") : "- Parent verification required."}`,
+          "in_progress",
+        );
     const run: SubagentRun = {
       id,
       parentSessionId,
       parentMessageId,
+      taskId: trackedTask?.id ?? taskId,
       name,
       description,
       status: "running",
       startedAt: Date.now(),
+      acceptanceCriteria: normalizedCriteria,
+      progress: 0,
     };
-    const handle: RunHandle = { run, controller };
+    const handle: RunHandle = { run, controller, mode };
     this.runs.set(id, handle);
 
     // Announce the run to the parent's renderer immediately (P1-1 / D1).
     this.emit?.(parentSessionId, {
       type: "subagent_start",
-      mode: "cowork",
+      mode,
       sessionId: parentSessionId,
       parentMessageId,
       run,
       runId: id,
     });
 
-    this.schedule(() => this.executeRun(id, systemPrompt, prompt, model, tools, controller.signal));
+    this.schedule(() =>
+      this.executeRun(id, systemPrompt, prompt, model, tools, controller.signal),
+    );
 
     return id;
   }
@@ -126,9 +157,21 @@ export class SubagentManager {
     const handle = this.runs.get(id);
     if (!handle) return;
     handle.note = note;
+    handle.run = {
+      ...handle.run,
+      currentStep: note,
+      ...(progress !== undefined ? { progress } : {}),
+    };
+    if (handle.run.taskId) {
+      this.taskStore?.setMode(handle.run.parentSessionId, handle.mode);
+      this.taskStore?.update(handle.run.parentSessionId, handle.run.taskId, {
+        status: "in_progress",
+        description: `${handle.run.description}\n\nCurrent step: ${note}`,
+      });
+    }
     this.emit?.(handle.run.parentSessionId, {
       type: "subagent_progress",
-      mode: "cowork",
+      mode: runMode(handle),
       sessionId: handle.run.parentSessionId,
       runId: id,
       note,
@@ -168,18 +211,32 @@ export class SubagentManager {
     const spec: RunnerSpec = {
       id,
       name: handle.run.name,
+      mode: handle.mode,
       systemPrompt,
       prompt,
       signal: signal ?? new AbortController().signal,
+      acceptanceCriteria: handle.run.acceptanceCriteria,
+      taskId: handle.run.taskId,
       ...(model !== undefined ? { model } : {}),
       ...(tools !== undefined ? { tools } : {}),
     };
 
     const done = (run: SubagentRun) => {
+      // Cancellation emits the terminal event synchronously. The runner may
+      // reject afterwards, so ignore that late settlement rather than emitting
+      // a second end event or changing cancelled into failed.
+      if (handle.run.status !== "running") return;
       handle.run = run;
+      if (run.taskId) {
+        this.taskStore?.setMode(run.parentSessionId, handle.mode);
+        this.taskStore?.update(run.parentSessionId, run.taskId, {
+          status: run.status === "completed" ? "completed" : run.status === "cancelled" ? "stopped" : "failed",
+          description: `${run.description}${run.result ? `\n\nResult:\n${run.result}` : run.error ? `\n\nError:\n${run.error}` : ""}`,
+        });
+      }
       this.emit?.(run.parentSessionId, {
         type: "subagent_end",
-        mode: "cowork",
+        mode: runMode(handle),
         sessionId: run.parentSessionId,
         runId: id,
         status: run.status === "running" ? "completed" : (run.status as "completed" | "failed" | "cancelled"),
@@ -226,6 +283,12 @@ export class SubagentManager {
     return [...this.runs.values()].map((h) => h.run);
   }
 
+  listForSession(parentSessionId: string, mode?: Mode): SubagentRun[] {
+    return [...this.runs.values()]
+      .filter((h) => h.run.parentSessionId === parentSessionId && (mode === undefined || h.mode === mode))
+      .map((h) => h.run);
+  }
+
   /**
    * Cancel a running subagent. Aborts the run's AbortController so the in-flight
    * LLM call terminates, marks the run cancelled, and notifies the parent (D2).
@@ -234,10 +297,22 @@ export class SubagentManager {
     const handle = this.runs.get(id);
     if (!handle || handle.run.status !== "running") return false;
     handle.controller.abort();
-    handle.run = { ...handle.run, status: "cancelled", endedAt: Date.now() };
+    handle.run = {
+      ...handle.run,
+      status: "cancelled",
+      endedAt: Date.now(),
+      currentStep: "cancelled",
+    };
+    if (handle.run.taskId) {
+      this.taskStore?.setMode(handle.run.parentSessionId, handle.mode);
+      this.taskStore?.update(handle.run.parentSessionId, handle.run.taskId, {
+        status: "stopped",
+        description: `${handle.run.description}\n\nCancelled by parent.` ,
+      });
+    }
     this.emit?.(handle.run.parentSessionId, {
       type: "subagent_end",
-      mode: "cowork",
+      mode: runMode(handle),
       sessionId: handle.run.parentSessionId,
       runId: id,
       status: "cancelled",
@@ -269,19 +344,24 @@ export function makeSubagentTools(manager: SubagentManager): Tool[] {
             prompt: {
               type: "string",
               description:
-                "Full, self-contained task prompt. Include all context the subagent " +
-                "needs; it has no access to the current conversation.",
+          "Full, self-contained task prompt. Include the goal, constraints, files " +
+                  "or inputs, and acceptance checks. The subagent has no parent transcript.",
             },
             model: {
               type: "string",
               description: "Optional model id override for this run.",
             },
+            acceptance_criteria: {
+              type: "array",
+              description: "Concrete checks the parent must verify before accepting this run.",
+              items: { type: "string", description: "One observable acceptance check." },
+            },
             isolation: {
               type: "boolean",
-              description: "Placeholder for future isolation flag. Currently unused.",
+              description: "Run with an isolated prompt/history (default: true).",
             },
           },
-          required: ["description", "prompt"],
+          required: ["description", "prompt", "acceptance_criteria"],
         },
         icon: "bot",
         group: "agent",
@@ -291,6 +371,12 @@ export function makeSubagentTools(manager: SubagentManager): Tool[] {
         const description = String(input["description"] ?? "").trim();
         const prompt = String(input["prompt"] ?? "").trim();
         const model = input["model"] !== undefined ? String(input["model"]) : undefined;
+        const acceptanceCriteria = Array.isArray(input["acceptance_criteria"])
+          ? input["acceptance_criteria"].filter((value): value is string => typeof value === "string").map((value) => value.trim()).filter(Boolean)
+          : [];
+        if (!description || !prompt || acceptanceCriteria.length === 0) {
+          return fail("agent_run requires description, prompt, and at least one acceptance_criteria item.");
+        }
 
         const id = manager.launch(
           ctx.sessionId,
@@ -299,10 +385,17 @@ export function makeSubagentTools(manager: SubagentManager): Tool[] {
           "",
           prompt,
           model,
+          undefined,
+          undefined,
+          ctx.mode,
+          acceptanceCriteria,
         );
 
+        const run = manager.getStatus(id);
         return ok(
           `Subagent launched. id: ${id}\n` +
+            `Tracking task: ${run?.taskId ?? "none"}\n` +
+            `Acceptance criteria:\n${acceptanceCriteria.map((criterion) => `- ${criterion}`).join("\n")}\n` +
             `You can poll \`agent_status\` for completion. To cancel, call \`agent_cancel\` with the id.`,
           { summary: `Subagent launched: ${description}` },
         );
@@ -332,10 +425,14 @@ export function makeSubagentTools(manager: SubagentManager): Tool[] {
         group: "agent",
         modes: ["cowork", "code"],
       },
-      async handler(input, _ctx) {
+      async handler(input, ctx) {
         const agentId = String(input["agentId"] ?? "").trim();
         if (!agentId) {
           return fail("agent_cancel requires an `agentId`.");
+        }
+        const existing = manager.getStatus(agentId);
+        if (existing && (existing.parentSessionId !== ctx.sessionId || !manager.listForSession(ctx.sessionId, ctx.mode).some((run) => run.id === agentId))) {
+          return fail(`No subagent run found with id "${agentId}" in this session.`);
         }
         const cancelled = manager.cancel(agentId);
         if (!cancelled) {
@@ -374,12 +471,16 @@ export function makeSubagentTools(manager: SubagentManager): Tool[] {
         group: "agent",
         modes: ["cowork", "code"],
       },
-      async handler(input, _ctx) {
+      async handler(input, ctx) {
         const agentId = String(input["agentId"] ?? "").trim();
-        const run = manager.getStatus(agentId);
+        const run = manager.listForSession(ctx.sessionId, ctx.mode).find((candidate) => candidate.id === agentId);
         if (!run) {
           return fail(`No subagent run found with id "${agentId}". Use agent_list to see all runs.`);
         }
+        const criteria = run.acceptanceCriteria?.length
+          ? `\nAcceptance criteria:\n${run.acceptanceCriteria.map((criterion, index) => `${index + 1}. ${criterion}`).join("\n")}`
+          : "";
+        const tracking = `\nTask: ${run.taskId ?? "untracked"}\nStep: ${run.currentStep ?? "not reported"}\nProgress: ${run.progress ?? 0}%`;
         const detail =
           run.status === "completed"
             ? `Result:\n${run.result ?? "(empty)"}`
@@ -388,7 +489,7 @@ export function makeSubagentTools(manager: SubagentManager): Tool[] {
             : `Status: ${run.status}`;
 
         return ok(
-          `Agent ${agentId} — ${run.status}\n${detail}`,
+          `Agent ${agentId} — ${run.status}${tracking}${criteria}\n${detail}`,
           { summary: `Agent ${run.name}: ${run.status}` },
         );
       },
@@ -408,12 +509,12 @@ export function makeSubagentTools(manager: SubagentManager): Tool[] {
         group: "agent",
         modes: ["cowork", "code"],
       },
-      async handler(_input, _ctx) {
-        const runs = manager.listAll();
+      async handler(_input, ctx) {
+        const runs = manager.listForSession(ctx.sessionId, ctx.mode);
         if (runs.length === 0) return ok("No subagent runs.", { summary: "No agents" });
 
         const lines = runs.map(
-          (r) => `[${r.id}] ${r.status.toUpperCase()} — ${r.name}`,
+          (r) => `[${r.id}] ${r.status.toUpperCase()} — ${r.name} — task ${r.taskId ?? "untracked"} — ${r.progress ?? 0}%`,
         );
         return ok(lines.join("\n"), { summary: `${runs.length} agent run(s)` });
       },

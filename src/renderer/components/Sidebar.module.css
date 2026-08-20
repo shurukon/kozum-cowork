@@ -394,17 +394,6 @@
   letter-spacing: -0.015em;
 }
 
-.coworkPro {
-  margin-inline-start: auto;
-  padding: 3px 6px;
-  border: 1px solid rgba(0, 200, 255, 0.35);
-  border-radius: 999px;
-  color: #00c8ff;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-}
-
 .coworkSidebar .modeSwitch {
   padding: 3px;
   background: #0b0e15;
@@ -543,16 +532,6 @@
   font-size: 14px;
   font-weight: 500;
   letter-spacing: 0;
-}
-
-.coworkPro {
-  padding: 3px 7px;
-  border: 1px solid rgba(201, 100, 66, 0.5);
-  border-radius: 9999px;
-  color: #d98a6d;
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
 }
 
 .coworkSidebar .modeSwitch {

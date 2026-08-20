@@ -190,15 +190,15 @@
     "allow": "سماح",
     "deny": "رفض",
     "allowAlways": "سماح دائمًا",
-    "modePlan": "خطة",
+    "modeAcceptAll": "قبول الكل",
     "modeAcceptEdits": "قبول التعديلات",
-    "modeManual": "يدوي",
-    "modeBypass": "تجاوز الأذونات",
-    "modeTitle": "وضع الإذن",
-    "modeManualDesc": "تأكيد كل إجراء قبل تشغيله.",
-    "modeAcceptEditsDesc": "تُطبق تعديلات الملفات تلقائيًا؛ أوامر shell لا تزال تسأل.",
-    "modePlanDesc": "للقراءة فقط — لا كتابة ملفات ولا تنفيذ shell.",
-    "modeBypassDesc": "بدون تأكيدات — استخدم بحذر في المشاريع الموثوقة."
+    "modeAsk": "طلب التأكيد",
+    "modeReject": "رفض",
+    "modeTitle": "وضع الأذونات",
+    "modeAcceptAllDesc": "تشغيل الإجراءات المُغيّرة دون تأكيد. استخدمه فقط في المشاريع الموثوقة.",
+    "modeAcceptEditsDesc": "تُطبق تعديلات الملفات تلقائيًا؛ أوامر shell وإجراءات الجهاز تطلب التأكيد.",
+    "modeAskDesc": "طلب التأكيد قبل كل إجراء مُغيّر.",
+    "modeRejectDesc": "حظر كل إجراء مُغيّر؛ تبقى أدوات القراءة متاحة."
   },
   "home": {
     "greeting": "مساء الخير",

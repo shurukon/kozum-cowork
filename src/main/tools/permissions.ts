@@ -1,30 +1,23 @@
 /**
  * Permission mode gate for tool execution.
  *
- * Implements the four permission postures defined in the product spec:
+ * The gate is intentionally applied immediately before the real tool handler.
+ * Read-only tools remain available in every mode; mutating tools either run,
+ * request an inline approval, or return a structured denial to the model.
  *
- *   manual          — every mutating tool asks before running.
- *   accept_edits    — file-edit tools auto-approve; shell/process still ask.
- *   plan            — mutating tools are blocked with a "present a plan" message.
- *   bypass_permissions — nothing asks; all tools run immediately.
- *
- * "Mutating" means any tool whose group is filesystem (write/edit/delete/move),
- * shell, process, or computer. Read-only filesystem tools (file_read,
- * file_read_image, file_read_pdf, glob_match, file_search, directory_list)
- * are never blocked.
+ *   accept_all   — run every exposed tool without asking.
+ *   accept_edits — apply filesystem edits automatically; ask for commands,
+ *                  processes, browser interactions, connectors and host control.
+ *   ask          — ask before every mutating tool.
+ *   reject       — refuse every mutating tool.
  */
 
-import type { ToolResult } from "../../shared/types.ts";
-import type { PermissionMode } from "../../shared/types.ts";
+import type { PermissionMode, ToolResult } from "../../shared/types.ts";
 
-/** Tool groups that always mutate the system. */
-const SHELL_GROUPS = new Set(["shell", "process", "computer"]);
+/** Groups whose tools can change the host or cause an external side effect. */
+const MUTATING_GROUPS = new Set(["shell", "process", "computer", "browser", "mcp", "plugin"]);
 
-/**
- * Tool names within the filesystem group that are pure reads — never blocked.
- * Fixed: removed phantom entries (dir_list, dir_tree, dir_stats, env_list)
- * and added real read-only tools (file_read_image, file_read_pdf, directory_list).
- */
+/** Filesystem tools that only inspect data and never write or delete. */
 const READ_ONLY_FS_TOOLS = new Set([
   "file_read",
   "file_read_image",
@@ -32,82 +25,108 @@ const READ_ONLY_FS_TOOLS = new Set([
   "glob_match",
   "file_search",
   "directory_list",
-  "env_get",
-  "system_info",
 ]);
 
-/** Tool groups for filesystem write/edit/delete operations. */
-const FS_WRITE_GROUPS = new Set(["filesystem"]);
+/** Browser operations that only inspect or move the current browser view. */
+const READ_ONLY_BROWSER_TOOLS = new Set([
+  "browser_screenshot",
+  "browser_extract",
+  "browser_get_content",
+  "browser_wait",
+  "browser_back",
+  "browser_forward",
+]);
+
+/** Connector/plugin catalog operations that do not mutate configuration. */
+const READ_ONLY_EXTENSION_TOOLS = new Set([
+  "mcp_list",
+  "plugin_list",
+  "marketplace_list",
+]);
+
+/** Local memory and project-index operations with persistent side effects. */
+const MUTATING_SYSTEM_TOOLS = new Set([
+  "memory_write",
+  "memory_delete",
+  "project_kb_build",
+  "project_kb_update",
+]);
+
+/** Scheduled tasks change unattended future execution. */
+const MUTATING_TASK_TOOLS = new Set([
+  "schedule_create",
+  "schedule_update",
+  "schedule_delete",
+  "schedule_run_now",
+]);
 
 export interface PermissionGateOpts {
   toolName: string;
   toolGroup: string;
   permissionMode: PermissionMode;
-  /** Emit a permission_request event and wait for reply. */
+  /** Emit a permission_request event and wait for the user's reply. */
   requestPermission: (requestId: string, reason: string) => Promise<string[]>;
   sessionId: string;
 }
 
 export interface PermissionDecision {
-  /** True if the tool is allowed to run. */
   allowed: boolean;
-  /** Non-null when the decision was "blocked" — the reason to return to the model. */
+  /** Non-null when execution must not proceed. */
   blockedMessage: string | null;
 }
 
-/**
- * Decide whether a tool is allowed to run under the current permission mode.
- *
- * Returns { allowed: true, blockedMessage: null } when the tool may proceed.
- * Returns { allowed: false, blockedMessage } when it must not.
- * For modes that ask, this waits for the user to reply — the caller must await.
- */
+function isMutating(toolName: string, toolGroup: string): boolean {
+  if (toolGroup === "filesystem") return !READ_ONLY_FS_TOOLS.has(toolName);
+  if (toolGroup === "system") return MUTATING_SYSTEM_TOOLS.has(toolName);
+  if (toolGroup === "task") return MUTATING_TASK_TOOLS.has(toolName);
+  if (toolGroup === "web" || toolGroup === "agent") return false;
+  if (toolGroup === "browser") return !READ_ONLY_BROWSER_TOOLS.has(toolName);
+  if (toolGroup === "mcp" || toolGroup === "plugin") {
+    return !READ_ONLY_EXTENSION_TOOLS.has(toolName);
+  }
+  return MUTATING_GROUPS.has(toolGroup);
+}
+
+function newRequestId(): string {
+  return `perm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+}
+
+function isApproval(value: string): boolean {
+  return new Set(["yes", "allow", "approve", "approved", "y", "true"]).has(
+    value.trim().toLowerCase(),
+  );
+}
+
+/** Decide whether the tool may run under the current session posture. */
 export async function checkPermission(opts: PermissionGateOpts): Promise<PermissionDecision> {
   const { toolName, toolGroup, permissionMode } = opts;
-  const allowed = { allowed: true, blockedMessage: null };
+  const allowed = { allowed: true, blockedMessage: null } as const;
 
-  // Bypass: nothing asks, nothing blocks.
-  if (permissionMode === "bypass_permissions") return allowed;
+  if (!isMutating(toolName, toolGroup) || permissionMode === "accept_all") return allowed;
 
-  // Determine if this tool is mutating.
-  const isShellLike = SHELL_GROUPS.has(toolGroup);
-  const isFsWrite = FS_WRITE_GROUPS.has(toolGroup) && !READ_ONLY_FS_TOOLS.has(toolName);
-  const isMutating = isShellLike || isFsWrite;
-
-  if (!isMutating) return allowed;
-
-  if (permissionMode === "plan") {
+  if (permissionMode === "reject") {
     return {
       allowed: false,
       blockedMessage:
-        `The current permission mode is "plan". The tool "${toolName}" ` +
-        `would mutate the system, which is not allowed in plan mode. ` +
-        `Present a plan to the user (listing exactly which files you will write, ` +
-        `which commands you will run, and why) and ask for approval before proceeding.`,
+        `The current permission mode is "reject", so the mutating tool "${toolName}" was not executed. ` +
+        "Ask the user to change the Code permission mode before retrying.",
     };
   }
 
-  if (permissionMode === "accept_edits") {
-    // File edits auto-approve; shell/process/computer still ask.
-    if (isFsWrite && !isShellLike) return allowed;
-    // Shell/process/computer fall through to ask.
-  }
+  // accept_edits auto-approves filesystem edits but still protects commands,
+  // process control, host/browser actions, connectors, plugins and persistence.
+  const autoApprovedEdit = permissionMode === "accept_edits" && toolGroup === "filesystem";
+  if (autoApprovedEdit) return allowed;
 
-  // manual mode: ask for everything mutating.
-  // accept_edits mode: ask for shell/process/computer.
-  const requestId = `perm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+  const requestId = newRequestId();
   const reason =
     permissionMode === "accept_edits"
-      ? `The agent wants to run "${toolName}" (shell/process/computer). Allow?`
-      : `The agent wants to run "${toolName}". Allow?`;
+      ? `The agent wants to run "${toolName}". File edits are automatic in this mode; this action needs approval.`
+      : `The agent wants to run "${toolName}". Allow this action?`;
 
   try {
     const answers = await opts.requestPermission(requestId, reason);
-    // The user's reply is expected to be "yes", "no", or similar.
-    const answer = (answers[0] ?? "no").toLowerCase();
-    if (answer === "yes" || answer === "allow" || answer === "approve" || answer === "y") {
-      return allowed;
-    }
+    if (isApproval(answers[0] ?? "")) return allowed;
     return {
       allowed: false,
       blockedMessage: `The user denied permission for "${toolName}".`,
@@ -120,7 +139,7 @@ export async function checkPermission(opts: PermissionGateOpts): Promise<Permiss
   }
 }
 
-/** Build a ToolResult for a blocked tool. */
+/** Build a ToolResult for an action the current permission mode refused. */
 export function blockedResult(message: string): ToolResult {
   return {
     ok: false,

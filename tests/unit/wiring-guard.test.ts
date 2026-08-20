@@ -174,11 +174,11 @@ describe("App.tsx actually calls the backend", () => {
 });
 
 describe("navigation and settings reachability", () => {
-  it("Customize opens Settings rather than routing to a page", () => {
+  it("Customize opens the independent Customize page", () => {
     assert.match(
       APP,
-      /key === "customize"[\s\S]{0,200}openSettings\(\)/,
-      "Customize must open the Settings modal",
+      /key === "customize"[\s\S]{0,200}openCustomize\(\)/,
+      "Customize must open the independent Customize page",
     );
   });
 
@@ -212,12 +212,16 @@ describe("removed surfaces stay removed", () => {
         path.endsWith("hooks\\useDir.ts") ||
         path.endsWith("lib/dir.ts") ||
         path.endsWith("lib\\dir.ts");
+      const isLocaleOwner =
+        isDirOwner ||
+        path.endsWith("pages/SettingsPage.tsx") ||
+        path.includes("/i18n/");
       assert.ok(
         !/documentElement\.dir\s*=/.test(text) || isDirOwner,
         `${path} sets documentElement.dir outside the dedicated useDir hook`,
       );
       assert.ok(
-        !/"ar"/.test(text) || isDirOwner,
+        !/"ar"/.test(text) || isLocaleOwner,
         `${path} references the Arabic locale outside dir.ts / useDir.ts`,
       );
     }

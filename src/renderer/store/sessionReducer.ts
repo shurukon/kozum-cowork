@@ -25,6 +25,12 @@ import type {
 export type { ModeState, ToolCard };
 
 export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
+  // A new turn establishes the active run. Any later event carrying a
+  // different run id belongs to an older/late turn and must not mutate the UI.
+  if (e.type !== "turn_start" && e.runId && mode.currentRunId && e.runId !== mode.currentRunId) {
+    return mode;
+  }
+
   switch (e.type) {
     case "turn_start": {
       const shell = {
@@ -38,6 +44,7 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
       return {
         ...mode,
         sessionId: e.sessionId,
+        currentRunId: e.runId ?? mode.currentRunId,
         status: "running",
         streamingMessageId: e.messageId,
         streamingText: "",
@@ -186,6 +193,8 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
         ...mode,
         status: "error",
         streamingMessageId: null,
+        streamingText: "",
+        streamingThinking: "",
         error: e.message,
         pendingQuestions: [],
         pendingPermissions: [],
@@ -198,7 +207,13 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
         ...mode,
         status: e.status,
         ...(isRunning ? { error: null } : {}),
-        ...(!isRunning ? { streamingMessageId: null } : {}),
+        ...(!isRunning
+          ? {
+              streamingMessageId: null,
+              streamingText: "",
+              streamingThinking: "",
+            }
+          : {}),
         // Drop any unanswered question/permission prompts when the turn ends:
         // the backend AskBroker will have been rejected by abort, so the
         // pending arrays would otherwise dangle forever in the UI.
@@ -322,6 +337,7 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
 export function emptyModeState(): ModeState {
   return {
     sessionId: null,
+    currentRunId: null,
     status: "idle",
     messages: [],
     streamingMessageId: null,

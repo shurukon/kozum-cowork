@@ -43,7 +43,9 @@ import { ComposerBar } from "./components/ComposerBar.tsx";
 import { ChatView } from "./components/ChatView.tsx";
 import { RightPanel } from "./components/RightPanel.tsx";
 import { PreviewPanel } from "./components/PreviewPanel.tsx";
-import { Settings } from "./components/Settings.tsx";
+import { SettingsPage } from "./pages/SettingsPage.tsx";
+import { CustomizePage } from "./pages/CustomizePage.tsx";
+import type { CustomizeTab } from "./pages/CustomizePage.tsx";
 import { FirstRun } from "./components/FirstRun.tsx";
 import { PermissionPicker } from "./components/PermissionPicker.tsx";
 import { Scheduled } from "./pages/Scheduled.tsx";
@@ -94,9 +96,8 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [nav, setNav] = useState<NavKey>("new");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsInitialPane, setSettingsInitialPane] = useState<
-    "general" | "providers" | "cowork" | "code" | "skills" | "connectors" | "plugins"
-  >("general");
+  const [settingsView, setSettingsView] = useState<"settings" | "customize">("settings");
+  const [customizeInitialTab, setCustomizeInitialTab] = useState<CustomizeTab>("system");
   const [skippedSetup, setSkippedSetup] = useState(false);
   const [bootstrapReady, setBootstrapReady] = useState(false);
 
@@ -122,6 +123,12 @@ export function App() {
 
   // Files attached by the user for context tracking in RightPanel
   const [sharedFiles, setSharedFiles] = useState<string[]>([]);
+
+  // Edit-back draft is isolated per mode and is consumed by that mode's Composer.
+  const [composerDraft, setComposerDraft] = useState<Record<Mode, string | null>>({
+    cowork: null,
+    code: null,
+  });
 
   // Preview panel target (file / url / project / computer / mcp)
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
@@ -525,6 +532,7 @@ export function App() {
 
   async function handleSubmit(text: string) {
     setBanner(null);
+    setComposerDraft((prev) => ({ ...prev, [mode]: null }));
     if (inFlightSend.current[mode]) return;
 
     // Resolve a usable selection synchronously for this send. React state is
@@ -595,6 +603,42 @@ export function App() {
     if (!res.ok) setBanner(res.error);
   }
 
+  async function handleCopyMessage(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (error) {
+      setBanner(error instanceof Error ? error.message : "Unable to copy this message.");
+    }
+  }
+
+  async function handleEditMessage(messageId: string, text: string) {
+    if (!activeSessionId || inFlightSend.current[mode]) return;
+    const messages = useSessionStore.getState()[mode].messages;
+    const index = messages.findIndex((item) => item.id === messageId);
+    if (index < 0) {
+      setBanner("This message is no longer available for editing.");
+      return;
+    }
+    const previousMessageId = index > 0 ? messages[index - 1].id : null;
+    const res = await bridge().sessions.branch(activeSessionId, previousMessageId);
+    if (!res.ok) {
+      setBanner(res.error);
+      return;
+    }
+    const nextSession = res.value;
+    await reloadSessions(mode);
+    setActiveSessionId(nextSession.id);
+    lastSession.current[mode] = nextSession.id;
+    clearMode(mode);
+    setComposerDraft((prev) => ({ ...prev, [mode]: text }));
+    setNav("new");
+  }
+
+  async function handleRetryMessage(text: string) {
+    if (inFlightSend.current[mode]) return;
+    await handleSubmit(text);
+  }
+
   /* Reply to a pending question or permission_request from the inline UI.
    * Question forms also collapse via `resolveQuestion` so the form disappears
    * immediately even though the backend keeps the answer. */
@@ -633,13 +677,13 @@ export function App() {
         break;
       }
       case "connectors":
-        openSettings("connectors");
+        openCustomize("mcp");
         break;
       case "skills":
-        openSettings("skills");
+        openCustomize("skills");
         break;
       case "plugins":
-        openSettings("plugins");
+        openCustomize("plugins");
         break;
     }
   }
@@ -812,20 +856,21 @@ export function App() {
     await patchSettings({ code: { ...settings.code, permissionMode: pm } });
   }
 
-  function openSettings(
-    pane: "general" | "providers" | "cowork" | "code" | "skills" | "connectors" | "plugins" = "general",
-  ) {
+  function openSettings() {
     void reloadPresets();
-    setSettingsInitialPane(pane);
+    setSettingsView("settings");
+    setSettingsOpen(true);
+  }
+
+  function openCustomize(tab: CustomizeTab = "system") {
+    setCustomizeInitialTab(tab);
+    setSettingsView("customize");
     setSettingsOpen(true);
   }
 
   function handleNavKey(key: NavKey) {
     if (key === "customize") {
-      // Customize → open Settings directly on the Skills pane (per spec).
-      // Set the initial pane before opening so the guard sees openSettings().
-      setSettingsInitialPane("skills");
-      openSettings();
+      openCustomize();
       return;
     }
     setNav(key);
@@ -1045,6 +1090,11 @@ export function App() {
   ) : undefined;
 
   // ComposerBar remains shared, but Cowork receives only visual/slot props.
+  const openFilePreview = useCallback((path: string) => {
+    const isArtifact = /\.(?:html?|xhtml)$/i.test(path);
+    setPreviewTarget(isArtifact ? { kind: "artifact", path } : { kind: "file", path });
+  }, []);
+
   const composerBarShared = (
     <ComposerBar
       busy={modeState.status === "running" || modeState.streamingMessageId !== null}
@@ -1141,10 +1191,14 @@ export function App() {
                       onRefreshModels={(pid) => handleRefreshModels(pid)}
                       permissionSlot={mode === "code" ? codePermissionPicker : undefined}
                       projectSlot={coworkProjectSlot}
-                      onOpenFile={(path) => setPreviewTarget({ kind: "file", path })}
+                      onOpenFile={openFilePreview}
                       onPreview={(target) => setPreviewTarget(target)}
                       onReply={(requestId, answer) => void handleReply(requestId, answer)}
                       onResolveQuestion={(requestId) => handleResolveQuestion(requestId)}
+                      onCopyMessage={(text) => void handleCopyMessage(text)}
+                      onEditMessage={(messageId, text) => void handleEditMessage(messageId, text)}
+                      onRetryMessage={(text) => void handleRetryMessage(text)}
+                      composerDraft={composerDraft[mode]}
                     />
                   )}
                 </ErrorBoundary>
@@ -1277,53 +1331,53 @@ export function App() {
         )}
       </div>
 
-      {settingsOpen && settings && (
-        <Settings
-          settings={settings}
-          presets={presets}
-          keys={keys}
-          skills={skills}
-          connectors={connectors}
-          plugins={plugins}
-          rules={rules}
-          onRulesChange={setRules}
-          onRulesBlur={() => void handleRulesBlur()}
-          onSave={(patch) => void patchSettings(patch)}
-          onAddKey={(pid, rawKey, meta) => void handleAddKey(pid, rawKey, meta)}
-          onRemoveKey={(k) => void handleRemoveKey(k)}
-          onAddCustomProvider={(name, baseUrl) => handleAddCustomProvider(name, baseUrl)}
-          onRemoveCustomProvider={(id) => void handleRemoveCustomProvider(id)}
-          onToggleSkill={(id, en) => void toggle(() => bridge().skills.setEnabled(id, en))}
-          onToggleConnector={(id, en) => void toggle(() => bridge().mcp.setEnabled(id, en))}
-          onTogglePlugin={(id, en) => void toggle(() => bridge().plugins.setEnabled(id, en))}
-          onAddSkill={() =>
-            pushToast(
-              "info",
-              "Ask Kozum to install a skill, or drop a SKILL.md into the skills folder.",
-            )
-          }
-          onAddConnector={() => setConnectorDialogOpen(true)}
-          onAddPlugin={() => setPluginDialogOpen(true)}
-          onRemoveConnector={async (id) => {
-            const res = await bridge().mcp.remove(id);
-            if (!res.ok) setBanner(res.error);
-            await reloadExtensions();
-          }}
-          onRemovePlugin={async (id) => {
-            const res = await bridge().plugins.remove(id);
-            if (!res.ok) setBanner(res.error);
-            await reloadExtensions();
-          }}
-          onInspectConnector={(id) =>
-            pushToast("info", `Connector: ${connectors.find((c) => c.id === id)?.name ?? id}`)
-          }
-          onInspectPlugin={(id) =>
-            pushToast("info", `Plugin: ${plugins.find((p) => p.id === id)?.name ?? id}`)
-          }
-          onPickFolder={(m) => void handlePickFolder(m)}
-          onClose={() => setSettingsOpen(false)}
-          initialPane={settingsInitialPane}
-        />
+      {settingsOpen && settings && settingsView === "settings" && (
+        <div className={styles.fullPageOverlay}>
+          <SettingsPage
+            settings={settings}
+            presets={presets}
+            keys={keys}
+            rules={rules}
+            onRulesChange={setRules}
+            onRulesBlur={() => void handleRulesBlur()}
+            onSave={(patch) => void patchSettings(patch)}
+            onAddKey={(pid, rawKey, meta) => void handleAddKey(pid, rawKey, meta)}
+            onRemoveKey={(keyId) => void handleRemoveKey(keyId)}
+            onAddCustomProvider={(name, baseUrl) => handleAddCustomProvider(name, baseUrl)}
+            onRemoveCustomProvider={(id) => void handleRemoveCustomProvider(id)}
+            onPickFolder={(m) => void handlePickFolder(m)}
+            onBack={() => setSettingsOpen(false)}
+          />
+        </div>
+      )}
+
+      {settingsOpen && settings && settingsView === "customize" && (
+        <div className={styles.fullPageOverlay}>
+          <CustomizePage
+            settings={settings}
+            skills={skills}
+            connectors={connectors}
+            plugins={plugins}
+            initialTab={customizeInitialTab}
+            onSave={(patch) => void patchSettings(patch)}
+            onToggleSkill={(id, enabled) => void toggle(() => bridge().skills.setEnabled(id, enabled))}
+            onToggleConnector={(id, enabled) => void toggle(() => bridge().mcp.setEnabled(id, enabled))}
+            onTogglePlugin={(id, enabled) => void toggle(() => bridge().plugins.setEnabled(id, enabled))}
+            onRemoveConnector={async (id) => {
+              const res = await bridge().mcp.remove(id);
+              if (!res.ok) setBanner(res.error);
+              await reloadExtensions();
+            }}
+            onRemovePlugin={async (id) => {
+              const res = await bridge().plugins.remove(id);
+              if (!res.ok) setBanner(res.error);
+              await reloadExtensions();
+            }}
+            onAddConnector={() => setConnectorDialogOpen(true)}
+            onAddPlugin={() => setPluginDialogOpen(true)}
+            onBack={() => setSettingsOpen(false)}
+          />
+        </div>
       )}
 
       {scheduleDialogOpen && (

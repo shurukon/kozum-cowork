@@ -170,3 +170,13 @@
     padding-inline: 16px;
   }
 }
+
+/* Independent settings surfaces replace the old modal without unmounting the
+ * application shell, so extension dialogs and toasts keep their wiring. */
+.fullPageOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  overflow: hidden;
+  background: #0b1016;
+}

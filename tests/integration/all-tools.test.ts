@@ -191,7 +191,7 @@ describe("complete production registry coverage", () => {
         schedule_create: { name: "smoke schedule", prompt: "smoke", cron: "0 0 * * *" },
         schedule_run_now: { id: state.scheduleId }, schedule_update: { id: state.scheduleId, name: "updated", cron: "0 1 * * *" },
         schedule_delete: { id: state.scheduleId }, skill_list: {}, skill_invoke: { skill: "all-tools-skill" },
-        agent_list: {}, agent_run: { description: "smoke agent", prompt: "return immediately" },
+        agent_list: {}, agent_run: { description: "smoke agent", prompt: "return immediately", acceptance_criteria: ["Runner returns evidence"] },
         agent_status: { agentId: state.agentId }, agent_cancel: { agentId: state.agentId },
         marketplace_list: { id: "missing-marketplace" }, marketplace_add: { source: "https://example.com/marketplace.json" },
         plugin_install: { source: join(root, "all-tools-plugin.zip") }, plugin_list: {},
@@ -227,7 +227,7 @@ describe("complete production registry coverage", () => {
         state.scheduleId = id(results.get("schedule_create"), /Created task\s+"[^"]+"\s+\(([^)]+)\)/i);
       }
       if (["agent_status", "agent_cancel"].includes(tool.name) && !state.agentId) {
-        const launch = await execute("agent_run", { description: "dependency agent", prompt: "return immediately" });
+        const launch = await execute("agent_run", { description: "dependency agent", prompt: "return immediately", acceptance_criteria: ["Runner returns evidence"] });
         state.agentId = id(launch, /id:\s*(agent_[\w-]+)/i);
         results.set("agent_run", launch);
       }

@@ -70,6 +70,8 @@ export interface PendingPermission {
 export interface ModeState {
   /** Session identity used to separate a new transcript from an in-session follow-up. */
   sessionId: string | null;
+  /** Stable run identity used to ignore late events from an older turn. */
+  currentRunId: string | null;
   status: SessionStatus;
   messages: Message[];
   streamingMessageId: string | null;

@@ -208,7 +208,6 @@ export function Sidebar({
             alt="Kozum AI"
           />
           <span className={styles.coworkBrandName}>Kozum AI</span>
-          <span className={styles.coworkPro}>PRO</span>
         </div>
       )}
 

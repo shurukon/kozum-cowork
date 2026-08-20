@@ -70,6 +70,8 @@ export interface LoopOptions {
 }
 
 export interface LoopResult {
+  /** Stable identifier shared by every event emitted for this turn. */
+  runId: string;
   /** Messages produced this turn, to be appended to the session. */
   messages: Message[];
   usage: TokenUsage;
@@ -432,7 +434,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     });
   }
 
-  return { messages: produced, usage: total, stopReason, iterations };
+  return { runId, messages: produced, usage: total, stopReason, iterations };
 }
 
 /* --------------------------------------------------------------- utils -- */

@@ -16,6 +16,7 @@
 import {
   useRef,
   useState,
+  useEffect,
   useCallback,
   type KeyboardEvent,
   type ChangeEvent,
@@ -58,6 +59,8 @@ export interface ComposerBarProps {
 
   /** Placeholder text when idle. */
   placeholder?: string;
+  /** Optional text injected by edit-back; remains editable until submit. */
+  initialText?: string | null;
 
   // State-coverage governor (P1-5 / §7)
   takingLonger?: boolean;
@@ -80,6 +83,7 @@ export function ComposerBar({
   permissionSlot,
   projectSlot,
   placeholder = "Message…",
+  initialText = null,
   takingLonger = false,
 }: ComposerBarProps) {
   const [value, setValue] = useState("");
@@ -96,6 +100,12 @@ export function ComposerBar({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 260)}px`;
   }, []);
+
+  useEffect(() => {
+    if (initialText == null) return;
+    setValue(initialText);
+    if (taRef.current) autoGrow(taRef.current);
+  }, [initialText, autoGrow]);
 
   function handleChange(e: ChangeEvent<HTMLTextAreaElement>) {
     setValue(e.target.value);

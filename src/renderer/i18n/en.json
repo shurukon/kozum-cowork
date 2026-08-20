@@ -190,15 +190,15 @@
     "allow": "Allow",
     "deny": "Deny",
     "allowAlways": "Always allow",
-    "modePlan": "Plan",
+    "modeAcceptAll": "Accept all",
     "modeAcceptEdits": "Accept edits",
-    "modeManual": "Manual",
-    "modeBypass": "Bypass permissions",
+    "modeAsk": "Ask",
+    "modeReject": "Reject",
     "modeTitle": "Permission mode",
-    "modeManualDesc": "Confirm every action before it runs.",
-    "modeAcceptEditsDesc": "File edits apply automatically; shell commands still ask.",
-    "modePlanDesc": "Read-only — no file writes or shell execution.",
-    "modeBypassDesc": "No confirmations — use with caution in trusted projects."
+    "modeAcceptAllDesc": "Run mutating actions without confirmations. Use only in trusted projects.",
+    "modeAcceptEditsDesc": "File edits apply automatically; shell and host actions still ask.",
+    "modeAskDesc": "Confirm every mutating action before it runs.",
+    "modeRejectDesc": "Block every mutating action; read-only tools remain available."
   },
   "home": {
     "greeting": "Good evening",

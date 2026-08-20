@@ -41,7 +41,7 @@ const CODE_DEFAULTS: ModeSettings = {
   maxTokens: 16384,
   temperature: 0,
   maxIterations: 120,
-  permissionMode: "accept_edits",
+  permissionMode: "ask",
   enabledToolNames: null,
 };
 
@@ -115,6 +115,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   privacy: {
     telemetry: false,
+  },
+
+  customize: {
+    accentColor: "#68c8ed",
+    surfaceColor: "#101923",
+    fontFamily: "sans",
   },
 
   customProviders: [],

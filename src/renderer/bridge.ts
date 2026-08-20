@@ -99,8 +99,9 @@ export interface KozumBridge {
     /**
      * Fork a session. Creates a new session copying mode, selection, permissionMode,
      * and messages up to (and including) uptoMessageId, or all messages when omitted.
+     * Pass null to create an empty-prefix branch for replacing the first turn.
      */
-    branch: (sessionId: string, uptoMessageId?: string) => Promise<Result<Session>>;
+    branch: (sessionId: string, uptoMessageId?: string | null) => Promise<Result<Session>>;
     /** Rename a session. */
     rename: (sessionId: string, title: string) => Promise<Result<void>>;
     /** Change the permission posture for a session. */

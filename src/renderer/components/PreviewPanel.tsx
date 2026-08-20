@@ -10,13 +10,14 @@
  *   • project    — devUrl iframe when running, folder summary otherwise
  *   • computer   — base64 computer-use screenshot
  *   • mcp        — pretty-printed MCP result JSON
+ *   • artifact   — read-only, sanitized visual artifact canvas
  *
  * IPC: uses bridge().preview.readFile / bridge().preview.stat added by
  * src/main/ipc/index.ts. Falls back gracefully when the handlers are absent.
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { X, RefreshCw, FileText, Globe, Monitor, Plug, FolderOpen, AlertCircle, Download } from "lucide-react";
+import { X, RefreshCw, FileText, Globe, Monitor, Plug, FolderOpen, AlertCircle, Download, ShieldCheck } from "lucide-react";
 import { bridge } from "../bridge.ts";
 import type { Result } from "@shared/types.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -31,7 +32,8 @@ export type PreviewTarget =
   | { kind: "project"; path: string; devUrl?: string }
   | { kind: "computer"; imageData: string }
   | { kind: "mcp"; server: string; payload: unknown }
-  | { kind: "browser"; sessionId?: string };
+  | { kind: "browser"; sessionId?: string }
+  | { kind: "artifact"; path: string; title?: string };
 
 // ── Preview bridge types ───────────────────────────────────────────────
 
@@ -88,6 +90,7 @@ function kindIcon(target: PreviewTarget) {
     case "computer": return Monitor;
     case "mcp": return Plug;
     case "browser": return Globe;
+    case "artifact": return FileText;
   }
 }
 
@@ -105,6 +108,7 @@ function targetTitle(target: PreviewTarget): string {
     case "computer": return "Computer screenshot";
     case "mcp": return target.server;
     case "browser": return "Live browser";
+    case "artifact": return target.title ?? (target.path.split("/").pop() ?? target.path);
   }
 }
 
@@ -245,20 +249,11 @@ function FilePreview({ path }: { path: string }) {
     );
   }
 
-  // HTML landing pages render as a visual artifact, not source code. The
-  // sandbox prevents the generated page from reaching the Electron host while
-  // still allowing ordinary client-side UI scripts to run inside the frame.
+  // HTML landing pages render through the same read-only artifact canvas used
+  // by explicit artifact targets. Scripts, frames, embeds and event handlers
+  // are stripped before the content enters a sandboxed iframe.
   if (kind === "text" && /\.(?:html?|xhtml)$/i.test(path)) {
-    return (
-      <div className={styles.htmlVisualWrap} aria-label="Rendered HTML preview">
-        <iframe
-          className={styles.htmlVisualFrame}
-          title={`Rendered preview of ${path.split("/").pop() ?? path}`}
-          srcDoc={data.content}
-          sandbox="allow-scripts"
-        />
-      </div>
-    );
+    return <ArtifactCanvas content={data.content} title={path.split("/").pop() ?? path} />;
   }
 
   // Markdown
@@ -294,6 +289,92 @@ function FilePreview({ path }: { path: string }) {
           </tbody>
         </table>
       </pre>
+    </div>
+  );
+}
+
+// ── Safe artifact canvas ───────────────────────────────────────────────────
+
+/**
+ * Artifact content is untrusted model output. Keep the visual preview useful
+ * while preventing it from reaching Electron APIs, the parent DOM, or remote
+ * frames. The main-process readFile handler already confines the source path.
+ */
+function sanitizeArtifactHtml(source: string): string {
+  return source
+    .replace(/<\/?(?:script|iframe|frame|object|embed|portal|base)(?:\s[^>]*)?>/gi, "")
+    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/\s+(?:src|href)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*'|javascript:[^\s>]+)/gi, "")
+    .replace(/<meta[^>]+http-equiv\s*=\s*["']?refresh[^>]*>/gi, "");
+}
+
+function ArtifactCanvas({ content, title }: { content: string; title: string }) {
+  const sanitized = sanitizeArtifactHtml(content);
+  return (
+    <div className={styles.artifactCanvas} aria-label={`Safe artifact canvas: ${title}`}>
+      <div className={styles.artifactSafetyNote}>
+        <ShieldCheck size={13} aria-hidden="true" />
+        <span>Read-only sandboxed artifact</span>
+      </div>
+      <iframe
+        className={styles.htmlVisualFrame}
+        title={`Rendered artifact ${title}`}
+        srcDoc={sanitized}
+        sandbox="allow-forms"
+        referrerPolicy="no-referrer"
+      />
+    </div>
+  );
+}
+
+function ArtifactFilePreview({ path, title }: { path: string; title?: string }) {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "ok"; data: ReadFileResult }
+    | { status: "err"; message: string }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ status: "loading" });
+    safeReadFile(path).then((res) => {
+      if (cancelled) return;
+      setState(res.ok ? { status: "ok", data: res.value } : { status: "err", message: res.error });
+    });
+    return () => { cancelled = true; };
+  }, [path]);
+
+  if (state.status === "loading") return <LoadingShimmer />;
+  if (state.status === "err") return <PreviewError message={state.message} />;
+
+  const data = state.data;
+  if (data.base64 && /^image\//i.test(data.mime)) {
+    return (
+      <div className={styles.artifactCanvas} aria-label={`Safe artifact canvas: ${title ?? path}`}>
+        <div className={styles.artifactSafetyNote}>
+          <ShieldCheck size={13} aria-hidden="true" />
+          <span>Read-only artifact</span>
+        </div>
+        <img
+          src={`data:${data.mime};base64,${data.base64}`}
+          alt={title ?? path}
+          className={styles.artifactImage}
+        />
+      </div>
+    );
+  }
+
+  if (/html?/i.test(data.mime) || /\.(?:html?|xhtml)$/i.test(path)) {
+    return <ArtifactCanvas content={data.content} title={title ?? path} />;
+  }
+
+  return (
+    <div className={styles.artifactTextCanvas} aria-label={`Artifact content: ${title ?? path}`}>
+      <div className={styles.artifactSafetyNote}>
+        <ShieldCheck size={13} aria-hidden="true" />
+        <span>Read-only artifact</span>
+      </div>
+      <pre className={styles.textPre}>{data.content}</pre>
     </div>
   );
 }
@@ -739,6 +820,9 @@ export function PreviewPanel({ target, onClose, onRefresh }: PreviewPanelProps) 
         )}
         {target.kind === "browser" && (
           <BrowserPreview sessionId={target.sessionId} />
+        )}
+        {target.kind === "artifact" && (
+          <ArtifactFilePreview path={target.path} title={target.title} />
         )}
       </div>
     </aside>

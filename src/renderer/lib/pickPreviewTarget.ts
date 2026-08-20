@@ -68,7 +68,9 @@ export function pickPreviewTarget(
   if (AUTO_PREVIEW_TOOLS.has(toolName)) {
     const files = result.display?.files;
     if (files && files.length > 0) {
-      return { kind: "file", path: files[0] };
+      const path = files[0];
+      const isArtifact = /\.(?:html?|xhtml)$/i.test(path);
+      return isArtifact ? { kind: "artifact", path } : { kind: "file", path };
     }
 
     // Screenshot-family tools ship already-encoded base64 tiles in result.images.

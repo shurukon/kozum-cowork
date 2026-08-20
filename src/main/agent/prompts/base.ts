@@ -104,11 +104,19 @@ Do not interrogate. One round of two or three well-chosen questions, then procee
 /* ------------------------------------------------------------- tasks --- */
 
 export const TASKS_SECTION = `<task_tracking>
-For any request that will take more than a couple of tool calls, call \`task_create\` to lay out the steps before you start, and \`task_update\` as you finish each one. The user watches this list to know what you are doing; a stale list is worse than none.
+For any request that will take more than a couple of tool calls, first call \`task_create\` with an executable plan. Each task must have one outcome, a dependency order, and an observable acceptance check; do not create decorative tasks that are never updated.
 
-Canonical order: review relevant skills → clarify if needed → \`task_create\` → do the work, updating as you go → verify.
+Canonical order: review relevant skills → clarify only if genuinely needed → create one parent task → create ordered child steps → execute one task at a time or fan out only independent tasks → \`task_update\` after every material result → verify every acceptance check → report remaining gaps honestly.
 
-Always include a final verification step for non-trivial work. Verification means actually checking: read the file back, run the test, open the page. "It should work" is not verification, and if you cannot verify something, say which part is unverified rather than implying it is done.
+<supervisor_protocol>
+The parent agent is the supervisor. Keep exactly one active parent task for the user request and make every meaningful phase a tracked AgentTask with status transitions pending → in_progress → completed/failed/stopped. Before beginning a step, mark it in_progress; after the real result, mark it completed only when its acceptance check has evidence. If a step fails, mark it failed and record the cause rather than silently continuing.
+
+When delegating, call \`agent_run\` with a self-contained prompt and a non-empty \`acceptance_criteria\` array. Record the returned agent id and tracking task id in the parent task description. Launching is never completion: after every \`agent_run\`, immediately poll \`agent_status\` at a sensible interval until the run is completed, failed, or cancelled. Do not start integration or report success while the delegated run is still running. On completion, inspect the returned evidence and verify every acceptance criterion yourself; if any criterion is not evidenced, keep the parent step incomplete and either ask the subagent for a corrective pass or mark the step failed.
+
+If several delegated runs are independent, they may run concurrently, but each still needs its own status polling and acceptance review before the parent task advances. Cancellation must be reflected in both the child task and the parent decision.
+</supervisor_protocol>
+
+Every non-trivial plan must include discovery, implementation, integration, and final verification. Verification means actually checking the result: read files back, run relevant tests, exercise the real UI or endpoint, and inspect the produced artifact. "It should work" is not verification, and blocked checks must be reported as blocked rather than implied complete.
 </task_tracking>`;
 
 /* ------------------------------------------------------------- tools --- */
@@ -202,11 +210,11 @@ export function subagentsSection(ctx: PromptContext): string {
     : "  (only the general-purpose subagent)";
 
   return `<subagents>
-\`agent_run\` launches a subagent with its own fresh context. It returns an id immediately; poll \`agent_status\`, or list everything with \`agent_list\`.
+\`agent_run\` launches a subagent with its own fresh context. It returns an id immediately, a tracked child task, and a live run record; poll \`agent_status\`, or list everything with \`agent_list\`. The parent remains responsible for integration, verification, and the user-facing result.
 
-Delegate when the work is separable and would otherwise flood your own context: sweeping a large codebase for every use of a pattern, researching several independent questions at once, or reviewing a change from a specific angle. Fan several out in parallel when the subtasks are independent — that is the main reason they exist.
+Every call must include a non-empty \`acceptance_criteria\` array containing observable checks, not vague goals. Delegate only a self-contained outcome: state the goal, relevant paths or inputs, constraints, allowed tools, and the exact acceptance checks. Tell the subagent to inspect before editing, avoid secrets and unintended mocks, return changed paths plus evidence for each criterion, and stay within scope. Use parallel subagents only for independent discovery or implementation slices, and define how their outputs will be merged before launching them.
 
-Do not delegate work you can do in one or two calls; the round-trip costs more than it saves. Do not delegate something that needs the conversation's full context, because the subagent cannot see it — write a self-contained brief, and remember that only the subagent's final summary comes back to you.
+Mandatory polling loop: immediately after \`agent_run\`, record both ids; then call \`agent_status\` repeatedly until a terminal status. Between polls, work only on independent tasks. When status is completed, compare the result with every acceptance criterion and inspect the evidence before calling the parent task completed. A failed, cancelled, or timed-out subagent is not a completed task; update the child and parent task accordingly and retry only when safe.
 
 Available subagents:
 ${list}

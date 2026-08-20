@@ -76,6 +76,13 @@ export interface ChatViewProps {
 
   /** Drop a pending question from the local store (collapses the form). */
   onResolveQuestion?: (requestId: string) => void;
+
+  /** User-message actions shared by Cowork and Code. */
+  onCopyMessage?: (text: string) => void;
+  onEditMessage?: (messageId: string, text: string) => void;
+  onRetryMessage?: (text: string) => void;
+  /** Draft injected by edit-back for this mode. */
+  composerDraft?: string | null;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -104,6 +111,10 @@ export function ChatView({
   onPreview,
   onReply,
   onResolveQuestion,
+  onCopyMessage,
+  onEditMessage,
+  onRetryMessage,
+  composerDraft = null,
 }: ChatViewProps) {
   const modeState = useSessionStore((s) => s[mode]);
   const { messages, streamingMessageId, toolCards, pendingQuestions, pendingPermissions } = modeState;
@@ -183,6 +194,9 @@ export function ChatView({
               onPreview={onPreview}
               onReply={onReply}
               onResolveQuestion={onResolveQuestion}
+              onCopyMessage={onCopyMessage}
+              onEditMessage={onEditMessage}
+              onRetryMessage={onRetryMessage}
               pendingQuestions={pendingQuestions}
               pendingPermissions={pendingPermissions}
             />
@@ -223,6 +237,7 @@ export function ChatView({
         permissionSlot={permissionSlot}
         projectSlot={projectSlot}
         placeholder={mode === "cowork" ? "Give Kozum a followup..." : undefined}
+        initialText={composerDraft}
         takingLonger={takingLonger}
         elapsedMs={elapsedMs}
       />

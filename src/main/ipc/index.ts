@@ -285,7 +285,7 @@ export function registerIpc(deps: IpcDeps): void {
   handle(ipcMain, "sessions:branch", async (_e, sessionId, uptoMessageId) => {
     const newSession = await deps.sessions.branch(
       String(sessionId),
-      uptoMessageId !== undefined && uptoMessageId !== null ? String(uptoMessageId) : undefined,
+      uptoMessageId === null ? null : uptoMessageId !== undefined ? String(uptoMessageId) : undefined,
     );
     if (!newSession) return err(`Session "${String(sessionId)}" not found`);
     return ok(newSession);

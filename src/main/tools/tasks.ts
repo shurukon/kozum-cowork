@@ -6,7 +6,7 @@
  * on every mutating call so the model always sees the current state.
  */
 
-import type { AgentTask } from "../../shared/types.ts";
+import type { AgentTask, Mode } from "../../shared/types.ts";
 import type { Tool } from "./registry.ts";
 import { ok, fail } from "./registry.ts";
 
@@ -30,6 +30,7 @@ export type TaskListener = (sessionId: string, tasks: AgentTask[]) => void;
 
 export class TaskStore {
   private sessions = new Map<string, Map<string, AgentTask>>();
+  private modes = new Map<string, Mode>();
   private readonly listener?: TaskListener;
 
   constructor(listener?: TaskListener) {
@@ -38,6 +39,15 @@ export class TaskStore {
 
   private emit(sessionId: string): void {
     this.listener?.(sessionId, this.list(sessionId));
+  }
+
+  /** Associate a session with its mode before emitting task events. */
+  setMode(sessionId: string, mode: Mode): void {
+    this.modes.set(sessionId, mode);
+  }
+
+  modeFor(sessionId: string): Mode | undefined {
+    return this.modes.get(sessionId);
   }
 
   private getSession(sessionId: string): Map<string, AgentTask> {
@@ -163,6 +173,7 @@ export function makeTaskTools(store: TaskStore): Tool[] {
         modes: ["cowork", "code"],
       },
       async handler(input, ctx) {
+        store.setMode(ctx.sessionId, ctx.mode);
         const subject = String(input["subject"] ?? "").trim();
         const description = String(input["description"] ?? "").trim();
         const rawStatus = input["status"] ?? "pending";
@@ -196,6 +207,7 @@ export function makeTaskTools(store: TaskStore): Tool[] {
         modes: ["cowork", "code"],
       },
       async handler(input, ctx) {
+        store.setMode(ctx.sessionId, ctx.mode);
         const taskId = String(input["taskId"] ?? "").trim();
         const task = store.get(ctx.sessionId, taskId);
         if (!task) {
@@ -225,6 +237,7 @@ export function makeTaskTools(store: TaskStore): Tool[] {
         modes: ["cowork", "code"],
       },
       async handler(_input, ctx) {
+        store.setMode(ctx.sessionId, ctx.mode);
         const tasks = store.list(ctx.sessionId);
         return ok(tasksToContent(tasks), { summary: `${tasks.length} task(s)` });
       },
@@ -257,6 +270,7 @@ export function makeTaskTools(store: TaskStore): Tool[] {
         modes: ["cowork", "code"],
       },
       async handler(input, ctx) {
+        store.setMode(ctx.sessionId, ctx.mode);
         const taskId = String(input["taskId"] ?? "").trim();
 
         const fields: Partial<Pick<AgentTask, "status" | "subject" | "description">> = {};
@@ -303,6 +317,7 @@ export function makeTaskTools(store: TaskStore): Tool[] {
         modes: ["cowork", "code"],
       },
       async handler(input, ctx) {
+        store.setMode(ctx.sessionId, ctx.mode);
         const taskId = String(input["taskId"] ?? "").trim();
         const task = store.stop(ctx.sessionId, taskId);
         if (!task) {
