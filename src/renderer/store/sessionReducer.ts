@@ -7,6 +7,7 @@
 
 import type {
   AgentEvent,
+  AgentTask,
   ContentBlock,
   TextBlock,
   ThinkingBlock,
@@ -23,6 +24,13 @@ import type {
 } from "./sessionTypes.ts";
 
 export type { ModeState, ToolCard };
+
+/** Keep the renderer invariant: one visible task per stable backend id. */
+function dedupeTasks(tasks: AgentTask[]): AgentTask[] {
+  const byId = new Map<string, AgentTask>();
+  for (const task of tasks) byId.set(task.id, task);
+  return Array.from(byId.values());
+}
 
 export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
   // A new turn establishes the active run. Any later event carrying a
@@ -224,7 +232,7 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
     }
 
     case "task_update": {
-      return { ...mode, tasks: e.tasks };
+      return { ...mode, tasks: dedupeTasks(e.tasks) };
     }
 
     /* ─────────────────────────── Subagent live stream (P1-1) ─────────────── */

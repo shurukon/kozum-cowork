@@ -108,6 +108,8 @@ interface Props {
   message: MessageType;
   isStreaming: boolean;
   toolCards: Map<string, ToolCardType>;
+  /** Tool cards that have no persisted tool_use block; supplied once by ChatView. */
+  orphanToolCards?: ToolCardType[];
   /** Pending question prompts whose messageId === this message's id. */
   pendingQuestions?: PendingQuestion[];
   /** Pending permission prompts whose messageId === this message's id. */
@@ -137,6 +139,7 @@ export function Message({
   message,
   isStreaming,
   toolCards,
+  orphanToolCards = [],
   pendingQuestions,
   pendingPermissions,
   onOpenFile,
@@ -269,9 +272,10 @@ export function Message({
 
   // P1-1: show a subtle badge when the message was produced by a subagent.
   const isSubagentMessage = Boolean(message.runId);
-  const unreflectedToolCards = Array.from(toolCards.values()).filter(
-    (c) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === c.toolUseId),
-  );
+  // ChatView assigns orphan cards to exactly one assistant turn. Do not derive
+  // this from the global toolCards map here: every later assistant message would
+  // otherwise render the same live card again (the visible task duplication bug).
+  const unreflectedToolCards = orphanToolCards;
   const unmatchedPermissions = myPermissions.filter(
     (p) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === p.toolUseId),
   );

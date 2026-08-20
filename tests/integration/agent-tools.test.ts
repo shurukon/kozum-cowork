@@ -167,6 +167,25 @@ describe("task tools", () => {
     assert.equal(JSON.parse(getFinal.content).status, "stopped");
   });
 
+  it("uses plan wording for a Code-mode planning task only", async () => {
+    const codeCtx = { ...makeCtx("code-plan"), mode: "code" as const };
+    const plan = await registry.execute(
+      "task_create",
+      { subject: "autonomous UI task plan", description: "Plan and verify the UI." },
+      codeCtx,
+    );
+    assert.ok(plan.ok);
+    assert.equal(plan.display?.summary, "Plan created: autonomous UI task plan");
+
+    const ordinary = await registry.execute(
+      "task_create",
+      { subject: "write file", description: "Create the requested file." },
+      codeCtx,
+    );
+    assert.ok(ordinary.ok);
+    assert.equal(ordinary.display?.summary, "Task created: write file");
+  });
+
   it("unknown taskId fails cleanly", async () => {
     const ctx = makeCtx("t-2");
     const r = await registry.execute("task_get", { taskId: "task_nonexistent" }, ctx);

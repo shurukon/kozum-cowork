@@ -122,6 +122,23 @@ export function ChatView({
   const visibleToolCards = new Map(transcriptToolCards);
   for (const [toolUseId, card] of toolCards) visibleToolCards.set(toolUseId, card);
 
+  // A live tool event can briefly arrive before its persisted tool_use block.
+  // Keep that fallback visible, but attach it to one assistant turn only. If it
+  // were calculated inside Message from the global map, every later assistant
+  // turn would render the same card again.
+  const persistedToolUseIds = new Set<string>();
+  for (const message of messages) {
+    for (const block of message.content) {
+      if (block.type === "tool_use") persistedToolUseIds.add(block.id);
+    }
+  }
+  const orphanToolCards = Array.from(visibleToolCards.values()).filter(
+    (card) => !persistedToolUseIds.has(card.toolUseId),
+  );
+  const latestAssistantMessageId = [...messages]
+    .reverse()
+    .find((message) => message.role === "assistant")?.id;
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
 
@@ -190,6 +207,9 @@ export function ChatView({
               message={msg}
               isStreaming={streamingMessageId === msg.id}
               toolCards={visibleToolCards}
+              orphanToolCards={
+                msg.id === latestAssistantMessageId ? orphanToolCards : undefined
+              }
               onOpenFile={onOpenFile}
               onPreview={onPreview}
               onReply={onReply}

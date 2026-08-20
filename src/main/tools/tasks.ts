@@ -136,6 +136,16 @@ function tasksToContent(tasks: AgentTask[]): string {
     .join("\n");
 }
 
+/**
+ * Code mode often creates one parent planning item before executing work.
+ * Use plan wording only for an explicit plan-like subject; ordinary Code tasks
+ * keep the task wording so the card remains semantically accurate.
+ */
+function creationSummary(mode: Mode, subject: string): string {
+  const isPlan = mode === "code" && /\bplan\b/i.test(subject);
+  return `${isPlan ? "Plan" : "Task"} created: ${subject}`;
+}
+
 export function makeTaskTools(store: TaskStore): Tool[] {
   return [
     /* -------------------------------------------------------- task_create */
@@ -184,7 +194,7 @@ export function makeTaskTools(store: TaskStore): Tool[] {
 
         return ok(
           `Created task ${task.id}.\n\nCurrent tasks:\n${tasksToContent(all)}`,
-          { summary: `Task created: ${subject}` },
+          { summary: creationSummary(ctx.mode, subject) },
         );
       },
     },

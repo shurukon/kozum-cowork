@@ -170,6 +170,52 @@ describe("applyEventToMode — stale run isolation", () => {
   });
 });
 
+describe("applyEventToMode — task snapshot invariants", () => {
+  it("deduplicates tasks by id and keeps the latest snapshot entry", () => {
+    const duplicateTasks = [
+      {
+        id: "task-research",
+        subject: "research",
+        description: "Research the topic",
+        status: "pending" as const,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "task-research",
+        subject: "research",
+        description: "Research the topic",
+        status: "completed" as const,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      {
+        id: "task-plan",
+        subject: "content plan",
+        description: "Create a content plan",
+        status: "in_progress" as const,
+        createdAt: 3,
+        updatedAt: 3,
+      },
+    ];
+
+    const state = applyEventToMode(emptyModeState(), {
+      type: "task_update",
+      mode: "cowork",
+      sessionId: "s1",
+      tasks: duplicateTasks,
+    });
+
+    assert.deepEqual(
+      state.tasks.map((task) => [task.id, task.status]),
+      [
+        ["task-research", "completed"],
+        ["task-plan", "in_progress"],
+      ],
+    );
+  });
+});
+
 describe("useSessionStore — resolveQuestion / resolvePermission", () => {
   it("resolveQuestion removes only the matching requestId", () => {
     useSessionStore.setState({

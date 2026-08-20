@@ -35,6 +35,38 @@ describe("Message — inline previews (§4.1)", () => {
     assert.match(html, /data:image\/png;base64,BASE64PAYLOAD/);
   });
 
+  it("does not render a global tool card in an unrelated assistant turn", () => {
+    const msg: MsgType = {
+      id: "assistant-follow-up",
+      role: "assistant",
+      content: [{ type: "text", text: "The plan is ready." }],
+      createdAt: 0,
+    };
+    const toolCards = new Map([
+      [
+        "task-tool",
+        {
+          toolUseId: "task-tool",
+          name: "task_create",
+          input: { subject: "research" },
+          status: "ok" as const,
+          notes: [],
+          result: {
+            ok: true,
+            content: "Created task",
+            display: { summary: "Task created: research" },
+          },
+        },
+      ],
+    ]);
+
+    const html = renderToString(
+      <Message message={msg} isStreaming={false} toolCards={toolCards} />,
+    );
+
+    assert.doesNotMatch(html, /Task created: research/);
+  });
+
   it("renders a compact tool-result row for a user message with ONLY tool_result blocks", () => {
     const msg: MsgType = {
       id: "m1",
