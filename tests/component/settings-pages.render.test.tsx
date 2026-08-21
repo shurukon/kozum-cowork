@@ -25,10 +25,16 @@ function settingsProps(overrides: Record<string, unknown> = {}) {
 
 function customizeProps(overrides: Record<string, unknown> = {}) {
   return {
+    skills: FAKE_SKILLS,
     connectors: FAKE_CONNECTORS,
+    plugins: FAKE_PLUGINS,
+    onToggleSkill: vi.fn(),
     onToggleConnector: vi.fn(),
+    onTogglePlugin: vi.fn(),
     onRemoveConnector: vi.fn(),
+    onRemovePlugin: vi.fn(),
     onAddConnector: vi.fn(),
+    onAddPlugin: vi.fn(),
     onBack: vi.fn(),
     ...overrides,
   };
@@ -53,17 +59,40 @@ describe("independent settings surfaces", () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps Customize focused on MCP and removes other extension surfaces", () => {
+  it("restores Skills and Plugins settings while keeping system and appearance removed", () => {
     const onToggleConnector = vi.fn();
-    render(<CustomizePage {...customizeProps({ onToggleConnector })} />);
+    const onToggleSkill = vi.fn();
+    const onTogglePlugin = vi.fn();
+    render(<CustomizePage {...customizeProps({ onToggleConnector, onToggleSkill, onTogglePlugin })} />);
 
     expect(screen.getByRole("heading", { name: "MCP servers" })).toBeInTheDocument();
     expect(screen.getByText("Local MCP")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Enable Local MCP/i }));
     expect(onToggleConnector).toHaveBeenCalledWith("mcp-1", false);
 
-    expect(screen.queryByRole("heading", { name: "System prompt" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Skills/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Plugins/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Skills/i }));
+    expect(screen.getByRole("heading", { name: "Skills" })).toBeInTheDocument();
+    expect(screen.getByText("Code Review")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Enable Code Review/i }));
+    expect(onToggleSkill).toHaveBeenCalledWith("skill-1", false);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Plugins/i }));
+    expect(screen.getByRole("heading", { name: "Plugins" })).toBeInTheDocument();
+    expect(screen.getByText("Engineering Pack")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Enable Engineering Pack/i }));
+    expect(onTogglePlugin).toHaveBeenCalledWith("plugin-1", false);
+
+    expect(screen.queryByText("System prompt")).not.toBeInTheDocument();
+    expect(screen.queryByText("Colors & fonts")).not.toBeInTheDocument();
+  });
+
+  it("shows empty Skills and Plugins settings when nothing is installed", () => {
+    render(<CustomizePage {...customizeProps({ skills: [], connectors: [], plugins: [], initialTab: "skills" })} />);
+
+    expect(screen.getByRole("heading", { name: "Skills" })).toBeInTheDocument();
+    expect(screen.getByText(/No skills installed yet/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Plugins/i }));
+    expect(screen.getByRole("heading", { name: "Plugins" })).toBeInTheDocument();
+    expect(screen.getByText(/No plugins installed yet/i)).toBeInTheDocument();
   });
 });

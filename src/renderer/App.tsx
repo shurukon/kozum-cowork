@@ -1380,15 +1380,25 @@ export function App() {
       {settingsOpen && settings && settingsView === "customize" && (
         <div className={styles.fullPageOverlay} role="region" aria-label="Customize page">
           <CustomizePage
+            skills={skills}
             connectors={connectors}
+            plugins={plugins}
             initialTab={customizeInitialTab}
+            onToggleSkill={(id, enabled) => void toggle(() => bridge().skills.setEnabled(id, enabled))}
             onToggleConnector={(id, enabled) => void toggle(() => bridge().mcp.setEnabled(id, enabled))}
+            onTogglePlugin={(id, enabled) => void toggle(() => bridge().plugins.setEnabled(id, enabled))}
             onRemoveConnector={async (id) => {
               const res = await bridge().mcp.remove(id);
               if (!res.ok) setBanner(res.error);
               await reloadExtensions();
             }}
+            onRemovePlugin={async (id) => {
+              const res = await bridge().plugins.remove(id);
+              if (!res.ok) setBanner(res.error);
+              await reloadExtensions();
+            }}
             onAddConnector={() => setConnectorDialogOpen(true)}
+            onAddPlugin={() => setPluginDialogOpen(true)}
             onBack={() => setSettingsOpen(false)}
           />
         </div>
