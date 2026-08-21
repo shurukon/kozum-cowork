@@ -17,6 +17,7 @@ export interface AskPayload {
   question: string;
   options: Array<{ label: string; value: string }>;
   multiSelect: boolean;
+  allowFreeform?: boolean;
 }
 
 export class AskBroker {
@@ -99,7 +100,7 @@ export function makeAskTools(broker: AskBroker): Tool[] {
             options: {
               type: "array",
               description:
-                "Array of choices. Each must have a `label` (display text) and `value` (returned string).",
+                "Optional array of choices. Each must have a `label` (display text) and `value` (returned string). Omit it when allowFreeform is true.",
               items: {
                 type: "object",
                 properties: {
@@ -113,8 +114,13 @@ export function makeAskTools(broker: AskBroker): Tool[] {
               description: "Allow the user to pick multiple options. Default false.",
               default: false,
             },
+            allowFreeform: {
+              type: "boolean",
+              description: "Show a text field so the user can type an answer. Default false.",
+              default: false,
+            },
           },
-          required: ["question", "options"],
+          required: ["question"],
         },
         icon: "circle-help",
         group: "agent",
@@ -124,12 +130,13 @@ export function makeAskTools(broker: AskBroker): Tool[] {
         const question = String(input["question"] ?? "").trim();
         if (!question) return fail("question is required.");
 
+        const allowFreeform = input["allowFreeform"] === true;
         const rawOptions = input["options"];
-        if (!Array.isArray(rawOptions) || rawOptions.length === 0) {
-          return fail("options must be a non-empty array of {label, value} objects.");
+        if (!Array.isArray(rawOptions) && !allowFreeform) {
+          return fail("options must be a non-empty array unless allowFreeform is true.");
         }
 
-        const options = rawOptions
+        const options = (Array.isArray(rawOptions) ? rawOptions : [])
           .filter(
             (o): o is { label: string; value: string } =>
               typeof o === "object" &&
@@ -139,7 +146,7 @@ export function makeAskTools(broker: AskBroker): Tool[] {
           )
           .map((o) => ({ label: o.label, value: o.value }));
 
-        if (options.length === 0) {
+        if (options.length === 0 && !allowFreeform) {
           return fail("options must contain objects with label (string) and value (string).");
         }
 
@@ -150,10 +157,12 @@ export function makeAskTools(broker: AskBroker): Tool[] {
           question,
           options,
           multiSelect,
+          allowFreeform,
         });
 
-        // Emit the question event so the UI layer knows to render the prompt.
-        ctx.onProgress(`question:${requestId}`);
+        // Emit a structured question event so the renderer can render an inline
+        // prompt and the user can answer without leaving the chat.
+        ctx.onQuestion?.({ requestId, question, options, multiSelect, allowFreeform });
 
         // Race against abort.
         const abortPromise = new Promise<never>((_res, rej) => {

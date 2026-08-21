@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { app, BrowserWindow } from "electron";
 import { BrowserEngine, ElectronBrowserBackend } from "../src/main/browser/engine.ts";
+import { BrowserSurface } from "../src/main/browser/surface.ts";
 import { makeBrowserTools } from "../src/main/tools/browser.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -64,11 +65,15 @@ async function main() {
   }
 
   try {
+    console.log("step: attach before navigate");
+    const surface = new BrowserSurface();
+    const view = await backend.ensureWebContentsView();
+    surface.attachTo(window, view, { x: 0, y: 0, width: 1024, height: 720 });
+    const attachedState = surface.getState();
+    if (!attachedState.attached) throw new Error("Browser surface did not attach before navigation");
+
     console.log("step: navigate");
     await run("browser_navigate", { url: `${baseUrl}/index.html` });
-    const view = backend.getWebContentsView();
-    if (!view) throw new Error("Browser backend did not create WebContentsView");
-    window.contentView.addChildView(view);
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     console.log("step: get content");

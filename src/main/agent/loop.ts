@@ -46,7 +46,18 @@ export interface ToolExecutor {
   execute(
     name: string,
     input: unknown,
-    opts: { sessionId: string; signal: AbortSignal; onProgress: (note: string) => void },
+    opts: {
+      sessionId: string;
+      signal: AbortSignal;
+      onProgress: (note: string) => void;
+      onQuestion?: (payload: {
+        requestId: string;
+        question: string;
+        options: Array<{ label: string; value: string }>;
+        multiSelect: boolean;
+        allowFreeform?: boolean;
+      }) => void;
+    },
   ): Promise<ToolResult>;
 }
 
@@ -519,6 +530,18 @@ async function runOne(
             toolUseId: call.id,
             note,
           }),
+        onQuestion: (payload) => {
+          emit({
+            type: "question",
+            mode: opts.mode,
+            sessionId: opts.sessionId,
+            requestId: payload.requestId,
+            question: payload.question,
+            options: payload.options,
+            multiSelect: payload.multiSelect,
+            ...(payload.allowFreeform ? { allowFreeform: true } : {}),
+          });
+        },
       });
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {

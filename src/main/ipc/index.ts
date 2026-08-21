@@ -47,6 +47,18 @@ export interface DialogFacade {
   }): Promise<{ canceled: boolean; filePaths: string[] }>;
 }
 
+/** Minimal WebContentsView facade shared by browser IPC dependencies. */
+export interface BrowserViewFacade {
+  webContents: {
+    getURL(): string;
+    on(event: string, listener: (...args: unknown[]) => void): void;
+    removeListener?(event: string, listener: (...args: unknown[]) => void): void;
+    isDestroyed?(): boolean;
+  };
+  setBounds(b: { x: number; y: number; width: number; height: number }): void;
+  setAutoResize?(opts: { width: boolean; height: boolean }): void;
+}
+
 export interface IpcDeps {
   ipcMain: IpcMain;
   app: App;
@@ -73,18 +85,13 @@ export interface IpcDeps {
   /** Subagent manager — used for the subagents:cancel IPC (§10.3). */
   subagents?: SubagentManager;
   /** Returns the ElectronBrowserBackend's WebContentsView for attachment, or null. */
-  getBrowserView?: () =>
-    | {
-        webContents: {
-          getURL(): string;
-          on(event: string, listener: (...args: unknown[]) => void): void;
-          removeListener?(event: string, listener: (...args: unknown[]) => void): void;
-          isDestroyed?(): boolean;
-        };
-        setBounds(b: { x: number; y: number; width: number; height: number }): void;
-        setAutoResize?(opts: { width: boolean; height: boolean }): void;
-      }
-    | null;
+  getBrowserView?: () => BrowserViewFacade | null;
+  /**
+   * Creates/returns the same shared view when attach wins the race with the
+   * first browser tool. Kept separate from getBrowserView because the latter is
+   * intentionally a synchronous snapshot.
+   */
+  ensureBrowserView?: () => Promise<BrowserViewFacade>;
   /** Captures the actual agent-controlled Chromium view for live verification/export. */
   getBrowserScreenshot?: (opts?: { fullPage?: boolean; quality?: number }) => Promise<{
     data: string;
@@ -751,7 +758,18 @@ export function registerIpc(deps: IpcDeps): void {
     const win = deps.getWindow();
     if (!win) return err("app window is not available.");
 
-    const view = deps.getBrowserView?.();
+    // The renderer opens the preview on browser tool_start, which can happen
+    // before browser_navigate has reached the backend's lazy initializer. Ask
+    // the backend for its shared view instead of failing the first attach. The
+    // backend serialises creation, so this is the exact view navigation uses.
+    let view = deps.getBrowserView?.() ?? null;
+    if (!view && deps.ensureBrowserView) {
+      try {
+        view = await deps.ensureBrowserView();
+      } catch {
+        view = null;
+      }
+    }
     if (!view) return err("No active browser session. Navigating to a page first will create one.");
 
     const rect = rectRaw as SurfaceRect | undefined;

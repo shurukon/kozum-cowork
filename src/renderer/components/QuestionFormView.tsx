@@ -22,6 +22,7 @@ const SKIPPED = "__skipped__";
 
 export function QuestionFormView({ question, onAnswer }: QuestionFormViewProps) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [freeform, setFreeform] = useState("");
   const [submitted, setSubmitted] = useState<string[] | null>(null);
 
   if (submitted) {
@@ -58,9 +59,12 @@ export function QuestionFormView({ question, onAnswer }: QuestionFormViewProps) 
   };
 
   const submit = () => {
-    if (selected.length === 0) return;
-    setSubmitted(selected);
-    onAnswer(selected);
+    const values = question.allowFreeform && freeform.trim()
+      ? [freeform.trim()]
+      : selected;
+    if (values.length === 0) return;
+    setSubmitted(values);
+    onAnswer(values);
   };
 
   const skip = () => {
@@ -71,6 +75,20 @@ export function QuestionFormView({ question, onAnswer }: QuestionFormViewProps) 
   return (
     <div className={styles.root} role="group" aria-label={question.question}>
       <p className={styles.question}>{question.question}</p>
+
+      {question.allowFreeform ? (
+        <input
+          type="text"
+          className={styles.freeformInput}
+          value={freeform}
+          onChange={(event) => setFreeform(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && freeform.trim()) submit();
+          }}
+          placeholder="Type your answer…"
+          aria-label="Answer"
+        />
+      ) : null}
 
       <div className={styles.options}>
         {question.options.map((o) => {
@@ -98,7 +116,7 @@ export function QuestionFormView({ question, onAnswer }: QuestionFormViewProps) 
           type="button"
           className={styles.submitBtn}
           onClick={submit}
-          disabled={selected.length === 0}
+          disabled={selected.length === 0 && !(question.allowFreeform && freeform.trim())}
         >
           Submit
         </button>

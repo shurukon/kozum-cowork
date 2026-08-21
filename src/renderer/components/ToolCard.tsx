@@ -388,8 +388,7 @@ export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPrev
               key={p.requestId}
               reason={p.reason}
               toolName={p.toolName}
-              onAllow={() => onReply?.(p.requestId, ["yes"])}
-              onDeny={() => onReply?.(p.requestId, ["no"])}
+              onDecision={(decision) => onReply?.(p.requestId, [decision])}
             />
           ))}
         </div>

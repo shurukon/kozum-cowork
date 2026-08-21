@@ -163,13 +163,14 @@ export function ChatView({
 
   // Track run start time for the "taking longer" governor (P1-5 / §7)
   const [runStartTime, setRunStartTime] = useState<number | null>(null);
+  const isActive = modeState.status === "running" || modeState.status === "waiting_input";
   useEffect(() => {
-    if (streamingMessageId && !runStartTime) {
+    if (isActive && !runStartTime) {
       setRunStartTime(Date.now());
-    } else if (!streamingMessageId) {
+    } else if (!isActive) {
       setRunStartTime(null);
     }
-  }, [streamingMessageId, runStartTime]);
+  }, [isActive, runStartTime]);
 
   const elapsedMs = runStartTime ? Date.now() - runStartTime : 0;
   const takingLonger = elapsedMs >= TAKING_LONGER_MS;
@@ -198,7 +199,7 @@ export function ChatView({
     setAtBottom(true);
   }
 
-  const isRunning = streamingMessageId !== null;
+  const isRunning = isActive;
 
   // ── Render ───────────────────────────────────────────────────────────────
 

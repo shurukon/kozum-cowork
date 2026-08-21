@@ -344,6 +344,7 @@ if (!app.requestSingleInstanceLock()) {
       browserSurface,
       subagents,
       getBrowserView: () => browserBackend.getWebContentsView(),
+      ensureBrowserView: () => browserBackend.ensureWebContentsView(),
       getBrowserScreenshot: (opts) => browser.screenshot(opts),
     });
 

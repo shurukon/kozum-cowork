@@ -391,6 +391,7 @@ export type AgentEventPayload =
       question: string;
       options: Array<{ label: string; value: string }>;
       multiSelect: boolean;
+      allowFreeform?: boolean;
       runId?: string;
     }
   | { type: "turn_end"; mode: Mode; sessionId: string; messageId: string; usage: TokenUsage; stopReason: StopReason; runId?: string }

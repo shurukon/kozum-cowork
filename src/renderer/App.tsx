@@ -408,14 +408,13 @@ export function App() {
             const target = pickPreviewTarget(toolName, e.result);
             if (target) {
               setPreviewTarget((current) => {
-                // OQ-2: while a live browser preview is active, suppress the
-                // static browser_screenshot image preview — the live view is
-                // sufficient. The static image opens only when the user
-                // explicitly opens it after the live view closes.
-                if (
-                  toolName === "browser_screenshot" &&
-                  current?.kind === "browser"
-                ) {
+                // Keep the live browser surface mounted for the whole active
+                // turn. A later file_write or screenshot tool must not replace
+                // it, because doing so unmounts BrowserPreview and detaches
+                // the agent-controlled WebContentsView while browser work is
+                // still in progress. Static previews can still be opened by
+                // the user after closing the live browser preview.
+                if (current?.kind === "browser") {
                   return current;
                 }
                 return current ? current : target;

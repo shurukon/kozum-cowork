@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "baseUrl": "http://127.0.0.1:44653",
+  "tools": {
+    "browser_navigate": "passed",
+    "browser_get_content": "passed",
+    "browser_type": "passed",
+    "browser_click": "passed",
+    "browser_scroll": "passed",
+    "browser_wait": "passed",
+    "browser_extract": "passed",
+    "browser_screenshot": "passed",
+    "browser_back": "passed",
+    "browser_forward": "passed",
+    "browser_close": "passed"
+  },
+  "progress": [
+    "Navigating to http://127.0.0.1:44653/index.html…",
+    "Fetching page content…",
+    "Typing into #query…",
+    "Clicking #submit…",
+    "Fetching page content…",
+    "Scrolling down 500px…",
+    "Waiting for selector \"#delayed\"…",
+    "Extracting data…",
+    "Capturing screenshot…",
+    "Navigating to http://127.0.0.1:44653/second.html…",
+    "Going back…",
+    "Going forward…",
+    "Closing browser…"
+  ]
+}

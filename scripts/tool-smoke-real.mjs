@@ -102,10 +102,9 @@ const ctx = {
   modelId: "smoke-model",
   providerId: "smoke-provider",
   signal: new AbortController().signal,
-  onProgress: (event) => {
-    if (typeof event === "string" && event.startsWith("question:")) {
-      ask.resolve(event.slice("question:".length), ["ok"]);
-    }
+  onProgress: (_event) => {},
+  onQuestion: (payload) => {
+    ask.resolve(payload.requestId, [payload.options?.[0]?.value ?? "ok"]);
   },
 };
 

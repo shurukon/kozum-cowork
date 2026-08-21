@@ -59,6 +59,8 @@ export class SessionManager {
 
   /** Active loops keyed by sessionId */
   private inFlight = new Map<string, InFlight>();
+  /** Session-scoped approvals; intentionally discarded when the app/session manager restarts. */
+  private sessionAllowedTools = new Map<string, Set<string>>();
   /** Recently completed client turns; protects delayed renderer retries. */
   private completedTurns = new Map<string, number>();
   private readonly completedTurnTtlMs = 10 * 60_000;
@@ -313,10 +315,10 @@ export class SessionManager {
       // Build executor — use the resolved working folder
       const baseExecutor = makeExecutor(
         this.toolRegistry,
-        (sid: string): Omit<ToolContext, "signal" | "onProgress"> => ({
+        (sid: string): Omit<ToolContext, "signal" | "onProgress" | "onQuestion"> => ({
           sessionId: sid,
           mode: session.mode,
-          workingFolder: resolvedWorkingFolder,
+          workingFolder: resolvedWorkingFolder ?? null,
           outputsDir: resolvedWorkingFolder ?? process.cwd(),
           capabilities,
           modelId,
@@ -329,23 +331,56 @@ export class SessionManager {
       const permissionMode: PermissionMode = session.permissionMode;
       const askBroker = this.ask;
       const emitForPermission = this.emitEvent.bind(this);
+      const sessionAllowedTools = this.sessionAllowedTools;
+      const emitSessionEvent = this.emitEvent.bind(this);
       const executor = {
         list: baseExecutor.list.bind(baseExecutor),
         async execute(
           name: string,
           input: unknown,
-          opts: { sessionId: string; signal: AbortSignal; onProgress: (n: string) => void },
+          opts: {
+            sessionId: string;
+            signal: AbortSignal;
+            onProgress: (n: string) => void;
+            onQuestion?: NonNullable<ToolContext["onQuestion"]>;
+          },
         ) {
           // Look up the tool's group from the registry for permission classification.
           const toolDef = baseExecutor.list(session.mode).find((d) => d.name === name);
           const group = toolDef?.group ?? "system";
+
+          const allowedTools = sessionAllowedTools.get(opts.sessionId) ?? new Set<string>();
+          sessionAllowedTools.set(opts.sessionId, allowedTools);
+          const emitStatus = (status: "running" | "waiting_input") => {
+            emitSessionEvent(opts.sessionId, {
+              type: "session_status",
+              mode: session.mode,
+              sessionId: opts.sessionId,
+              status,
+              ...(currentRunId ? { runId: currentRunId } : {}),
+            });
+          };
 
           const decision = await checkPermission({
             toolName: name,
             toolGroup: group,
             permissionMode,
             sessionId: opts.sessionId,
+            sessionAllowedTools: allowedTools,
+            rememberTool: (toolName) => allowedTools.add(toolName),
             requestPermission: async (requestId: string, reason: string) => {
+              // Register the SAME requestId before emitting the event. A fast renderer
+              // reply must never arrive before the broker has a pending resolver.
+              const promise = askBroker.registerPending(requestId, {
+                question: reason,
+                options: [
+                  { label: "Allow once", value: "allow_once" },
+                  { label: "Allow always", value: "allow_always" },
+                  { label: "Deny", value: "deny" },
+                ],
+                multiSelect: false,
+              });
+              emitStatus("waiting_input");
               emitForPermission(opts.sessionId, {
                 type: "permission_request",
                 mode: session.mode,
@@ -358,18 +393,13 @@ export class SessionManager {
               });
               // Wait for the user to reply via AskBroker
               return new Promise<string[]>((resolve, reject) => {
-                // The user's reply comes via sessions:reply → AskBroker.resolve(requestId, [answer]).
-                // We must register the SAME requestId we emitted above (`ask()` would allocate
-                // a fresh id that `sessions:reply` could never resolve), so use registerPending.
-                const promise = askBroker.registerPending(requestId, {
-                  question: reason,
-                  options: [
-                    { label: "Allow", value: "yes" },
-                    { label: "Deny", value: "no" },
-                  ],
-                  multiSelect: false,
+                void promise.then((answers) => {
+                  emitStatus("running");
+                  resolve(answers);
+                }).catch((error) => {
+                  emitStatus("running");
+                  reject(error);
                 });
-                void promise.then(resolve).catch(reject);
 
                 // Abort support: reject through the broker as well as the local
                 // promise, otherwise the request would remain in the broker map
@@ -388,10 +418,19 @@ export class SessionManager {
           });
 
           if (!decision.allowed) {
+            emitStatus("running");
             return blockedResult(decision.blockedMessage!);
           }
 
-          return baseExecutor.execute(name, input, opts);
+          const result = await baseExecutor.execute(name, input, {
+            ...opts,
+            onQuestion: (payload) => {
+              emitStatus("waiting_input");
+              opts.onQuestion?.(payload);
+            },
+          });
+          emitStatus("running");
+          return result;
         },
       };
 

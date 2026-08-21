@@ -51,6 +51,7 @@ export interface PendingQuestion {
   question: string;
   options: PendingQuestionOption[];
   multiSelect: boolean;
+  allowFreeform?: boolean;
   /** The assistant message id this question is attached to, if known. */
   messageId?: string;
 }

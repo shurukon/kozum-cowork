@@ -40,10 +40,12 @@ class FakeIpcMain {
 /* ── Minimal fake deps for registerIpc ─────────────────────────────────── */
 
 import { registerIpc } from "../../src/main/ipc/index.ts";
+import { BrowserSurface } from "../../src/main/browser/surface.ts";
 
-function makeDeps(ipcMain: FakeIpcMain) {
-  // We only need the two preview handlers, but registerIpc registers all
-  // handlers so we need minimal stubs for the rest.
+function makeDeps(ipcMain: FakeIpcMain, overrides: Record<string, unknown> = {}) {
+  // We only need the preview handlers, but registerIpc registers all handlers
+  // so we need minimal stubs for the rest. Tests may override browser deps to
+  // exercise the real attach race through the registered IPC handler.
   return {
     ipcMain: ipcMain as unknown as import("electron").IpcMain,
     app: {
@@ -125,6 +127,7 @@ function makeDeps(ipcMain: FakeIpcMain) {
     dialog: {
       showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
     },
+    ...overrides,
   };
 }
 
@@ -268,5 +271,78 @@ describe("preview:readFile", () => {
     assert.ok(result.ok);
     assert.ok(result.value!.content.includes("Hello"));
     assert.equal(result.value!.truncated, false);
+  });
+});
+
+
+/* ── browser:attach lazy-view race ───────────────────────────────────────── */
+
+describe("browser:attach", () => {
+  it("waits for and attaches the shared view when lazy initialization wins the race", async () => {
+    const localIpc = new FakeIpcMain();
+    const surface = new BrowserSurface();
+    let activeView: {
+      webContents: {
+        getURL: () => string;
+        on: (event: string, listener: (...args: unknown[]) => void) => void;
+        removeListener: (event: string, listener: (...args: unknown[]) => void) => void;
+        isDestroyed: () => boolean;
+      };
+      setBounds: (bounds: { x: number; y: number; width: number; height: number }) => void;
+      lastBounds?: { x: number; y: number; width: number; height: number };
+    } | null = null;
+    let addedView: unknown = null;
+
+    const view = {
+      webContents: {
+        getURL: () => "http://example.test/",
+        on: (_event: string, _listener: (...args: unknown[]) => void) => undefined,
+        removeListener: (_event: string, _listener: (...args: unknown[]) => void) => undefined,
+        isDestroyed: () => false,
+      },
+      setBounds(bounds: { x: number; y: number; width: number; height: number }) {
+        this.lastBounds = bounds;
+      },
+      lastBounds: undefined as { x: number; y: number; width: number; height: number } | undefined,
+    };
+
+    const fakeWindow = {
+      contentView: {
+        addChildView: (candidate: unknown) => {
+          addedView = candidate;
+        },
+        removeChildView: (_candidate: unknown) => undefined,
+      },
+    };
+
+    registerIpc(
+      makeDeps(localIpc, {
+        getWindow: () => fakeWindow,
+        browserSurface: surface,
+        getBrowserView: () => activeView,
+        ensureBrowserView: async () => {
+          await new Promise<void>((resolve) => setTimeout(resolve, 20));
+          activeView = view;
+          return view;
+        },
+      }) as Parameters<typeof registerIpc>[0],
+    );
+
+    const result = await localIpc.invoke("browser:attach", {
+      x: 12,
+      y: 24,
+      width: 640,
+      height: 480,
+    }) as {
+      ok: boolean;
+      error?: string;
+      value?: { currentUrl: string; attached: boolean };
+    };
+
+    assert.equal(result.ok, true, result.error);
+    assert.equal(result.value?.attached, true);
+    assert.equal(result.value?.currentUrl, "http://example.test/");
+    assert.equal(addedView, view);
+    assert.deepEqual(view.lastBounds, { x: 12, y: 24, width: 640, height: 480 });
   });
 });

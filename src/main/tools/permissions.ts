@@ -27,6 +27,9 @@ const READ_ONLY_FS_TOOLS = new Set([
   "directory_list",
 ]);
 
+/** Filesystem operations that remain confirmation-gated in accept edits. */
+const DANGEROUS_FS_TOOLS = new Set(["file_delete", "directory_delete", "file_move"]);
+
 /** Browser operations that only inspect or move the current browser view. */
 const READ_ONLY_BROWSER_TOOLS = new Set([
   "browser_screenshot",
@@ -66,6 +69,10 @@ export interface PermissionGateOpts {
   permissionMode: PermissionMode;
   /** Emit a permission_request event and wait for the user's reply. */
   requestPermission: (requestId: string, reason: string) => Promise<string[]>;
+  /** Tool names approved with "allow always" for this live session only. */
+  sessionAllowedTools?: ReadonlySet<string>;
+  /** Persist an allow-always decision in the live session cache. */
+  rememberTool?: (toolName: string) => void;
   sessionId: string;
 }
 
@@ -91,10 +98,15 @@ function newRequestId(): string {
   return `perm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
 }
 
-function isApproval(value: string): boolean {
-  return new Set(["yes", "allow", "approve", "approved", "y", "true"]).has(
-    value.trim().toLowerCase(),
-  );
+function normalizeDecision(value: string): "allow_once" | "allow_always" | "deny" {
+  const normalized = value.trim().toLowerCase();
+  if (["allow_always", "always", "allow always", "remember", "yes_always"].includes(normalized)) {
+    return "allow_always";
+  }
+  if (["yes", "allow", "approve", "approved", "y", "true", "allow_once", "once", "allow once"].includes(normalized)) {
+    return "allow_once";
+  }
+  return "deny";
 }
 
 /** Decide whether the tool may run under the current session posture. */
@@ -103,6 +115,7 @@ export async function checkPermission(opts: PermissionGateOpts): Promise<Permiss
   const allowed = { allowed: true, blockedMessage: null } as const;
 
   if (!isMutating(toolName, toolGroup) || permissionMode === "bypass_permissions") return allowed;
+  if (opts.sessionAllowedTools?.has(toolName)) return allowed;
 
   if (permissionMode === "plan") {
     return {
@@ -115,7 +128,10 @@ export async function checkPermission(opts: PermissionGateOpts): Promise<Permiss
 
   // accept_edits auto-approves filesystem edits but still protects commands,
   // process control, host/browser actions, connectors, plugins and persistence.
-  const autoApprovedEdit = permissionMode === "accept_edits" && toolGroup === "filesystem";
+  const autoApprovedEdit =
+    permissionMode === "accept_edits" &&
+    toolGroup === "filesystem" &&
+    !DANGEROUS_FS_TOOLS.has(toolName);
   if (autoApprovedEdit) return allowed;
 
   const requestId = newRequestId();
@@ -126,7 +142,12 @@ export async function checkPermission(opts: PermissionGateOpts): Promise<Permiss
 
   try {
     const answers = await opts.requestPermission(requestId, reason);
-    if (isApproval(answers[0] ?? "")) return allowed;
+    const decision = normalizeDecision(answers[0] ?? "deny");
+    if (decision === "allow_always") {
+      opts.rememberTool?.(toolName);
+      return allowed;
+    }
+    if (decision === "allow_once") return allowed;
     return {
       allowed: false,
       blockedMessage: `The user denied permission for "${toolName}".`,

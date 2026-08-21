@@ -265,6 +265,13 @@ interface ElectronModule {
  */
 export class ElectronBrowserBackend implements BrowserBackend {
   private _view: ElectronWebContentsView | null = null;
+  /**
+   * Serialises lazy view creation. Browser navigation and the renderer's live
+   * preview attach can start in the same event-loop turn; without this promise
+   * both callers could create different WebContentsViews and one would become
+   * detached from the engine's active session.
+   */
+  private _viewPromise: Promise<ElectronWebContentsView> | null = null;
   private _electron: ElectronModule | null = null;
   private readonly _viewportWidth: number;
   private readonly _viewportHeight: number;
@@ -276,34 +283,118 @@ export class ElectronBrowserBackend implements BrowserBackend {
 
   private async getView(): Promise<ElectronWebContentsView> {
     if (this._view) return this._view;
+    if (this._viewPromise) return this._viewPromise;
 
-    if (!this._electron) {
-      try {
-        // See screenshot.ts: the package resolving does not mean we are in an
-        // Electron process. Check the runtime marker first.
-        if (!process.versions.electron) throw new BackendUnavailableError("Browser");
-        this._electron = (await import("electron")) as unknown as ElectronModule;
-      } catch {
-        throw new BackendUnavailableError("Browser");
+    const creating = (async (): Promise<ElectronWebContentsView> => {
+      if (!this._electron) {
+        try {
+          // See screenshot.ts: the package resolving does not mean we are in an
+          // Electron process. Check the runtime marker first.
+          if (!process.versions.electron) throw new BackendUnavailableError("Browser");
+          this._electron = (await import("electron")) as unknown as ElectronModule;
+        } catch {
+          throw new BackendUnavailableError("Browser");
+        }
       }
+
+      await this._electron.app.whenReady();
+
+      const view = new this._electron.WebContentsView({});
+      view.setBounds({
+        x: 0,
+        y: 0,
+        width: this._viewportWidth,
+        height: this._viewportHeight,
+      });
+      this._view = view;
+      return view;
+    })();
+
+    this._viewPromise = creating;
+    try {
+      return await creating;
+    } finally {
+      if (this._viewPromise === creating) this._viewPromise = null;
     }
-
-    await this._electron.app.whenReady();
-
-    const view = new this._electron.WebContentsView({});
-    view.setBounds({
-      x: 0,
-      y: 0,
-      width: this._viewportWidth,
-      height: this._viewportHeight,
-    });
-    this._view = view;
-    return view;
   }
 
   async navigate(url: string): Promise<void> {
     const view = await this.getView();
-    await view.webContents.loadURL(url);
+    const wc = view.webContents;
+
+    // Electron's loadURL() normally resolves after did-finish-load, but a
+    // WebContentsView can remain pending when it is re-parented while a page is
+    // starting. Resolve from the navigation lifecycle as soon as the main
+    // frame has committed, while still propagating real main-frame failures.
+    // This prevents browser_navigate from consuming the agent's 120s timeout.
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        wc.removeListener?.("did-navigate", onNavigate);
+        wc.removeListener?.("did-finish-load", onFinish);
+        wc.removeListener?.("did-stop-loading", onStop);
+        wc.removeListener?.("did-fail-load", onFail);
+      };
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve();
+      };
+      const fail = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      };
+      const onNavigate = (..._args: unknown[]) => {
+        finish();
+      };
+      const onFinish = () => {
+        finish();
+      };
+      const onStop = () => {
+        // Ignore a stale stop event for the initial about:blank document.
+        const current = wc.getURL();
+        if (current && current !== "about:blank") finish();
+      };
+      const onFail = (...args: unknown[]) => {
+        // did-fail-load receives (event, errorCode, description, validatedURL,
+        // isMainFrame). Subframes must not fail the browser tool.
+        if (args[4] === false) return;
+        const description = typeof args[2] === "string" ? args[2] : "Navigation failed";
+        fail(new Error(description));
+      };
+
+      wc.on("did-navigate", onNavigate);
+      wc.on("did-finish-load", onFinish);
+      wc.on("did-stop-loading", onStop);
+      wc.on("did-fail-load", onFail);
+
+      // Always observe the Promise so a late rejection cannot become an
+      // unhandled rejection after an event-based completion.
+      void wc.loadURL(url).then(
+        () => {
+          finish();
+        },
+        (error) => {
+          fail(error);
+        },
+      );
+
+      timer = setTimeout(() => {
+        const current = wc.getURL();
+        if (current && current !== "about:blank") {
+          finish();
+        } else {
+          fail(new Error(`Navigation did not start within 15 seconds: ${url}`));
+        }
+      }, 15_000);
+    });
   }
 
   async evaluate(js: string): Promise<unknown> {
@@ -429,6 +520,19 @@ export class ElectronBrowserBackend implements BrowserBackend {
   async currentUrl(): Promise<string> {
     const view = await this.getView();
     return view.webContents.getURL();
+  }
+
+  /**
+   * Ensure the shared browser view exists and return that same instance.
+   *
+   * This is intentionally separate from getWebContentsView(): the latter is a
+   * synchronous snapshot used by BrowserSurface, while IPC may need to create
+   * the lazy view before the first navigation completes. The shared creation
+   * promise guarantees that concurrent attach/navigate calls still converge on
+   * one active view.
+   */
+  async ensureWebContentsView(): Promise<ElectronWebContentsView> {
+    return this.getView();
   }
 
   /**

@@ -74,7 +74,7 @@ await page.evaluate(async ({ folder, mode }) => {
     },
     [mode]: {
       ...settings[mode],
-      permissionMode: "accept_edits",
+      permissionMode: "bypass_permissions",
       enabledToolNames: [
         "web_search",
         "web_fetch",
@@ -197,8 +197,12 @@ if (LIVE_MODE === "code") {
   await page.waitForTimeout(500);
 }
 
+// BrowserPreview verification must exercise the real browser backend, not wait for
+// an unrelated permission prompt. Permission UI has dedicated integration tests;
+// this run uses the real session default configured above with no prompt.
 const liveToolSettings = await page.evaluate(async (mode) => {
   const current = await window.kozum.settings.get();
+  const sessions = await window.kozum.sessions.list(mode);
   return {
     enabledToolNames: current[mode].enabledToolNames,
     autoOpenBrowserPreview: current.general.autoOpenBrowserPreview,
@@ -243,7 +247,10 @@ while (Date.now() < deadline) {
     await page.screenshot({ path: permissionPath, fullPage: false });
     sawPermission = true;
     console.log("captured=permission");
-    await permission.getByRole("button", { name: /^Allow$/i }).click();
+    const allowOnce = permission.getByRole("button", { name: /^Allow once$/i });
+    const allow = permission.getByRole("button", { name: /^Allow$/i });
+    if (await visible(allowOnce, 500)) await allowOnce.click();
+    else if (await visible(allow, 500)) await allow.click();
     await page.waitForTimeout(250);
   }
   const running = page.locator("[data-tool-state='running']");
@@ -403,7 +410,10 @@ const eventDiagnostics = {
   taskCreateCount: allToolNames.filter((name) => name === "task_create").length,
   taskUpdateCount: allToolNames.filter((name) => name === "task_update").length,
 };
-console.log(JSON.stringify({ sawPermission, sawRunning, sawLongRunning, sawTaskProgress, sawDone, sawPreview, sawBrowserPreview, sawBrowserNativeScreenshot, finalDiagnostics, eventDiagnostics, browserUiDiagnostics, disallowedToolNames, output: OUT }));
+console.log(JSON.stringify({
+  mainDiagnostics,
+  rendererDiagnostics,
+  sawPermission, sawRunning, sawLongRunning, sawTaskProgress, sawDone, sawPreview, sawBrowserPreview, sawBrowserNativeScreenshot, finalDiagnostics, eventDiagnostics, browserUiDiagnostics, disallowedToolNames, output: OUT }));
 const minimumTaskCreates = 5;
 const hasTaskEvidence = sawTaskProgress || eventDiagnostics.taskCreateCount >= minimumTaskCreates;
 if (!sawDone || !hasTaskEvidence || !sawBrowserPreview || !sawBrowserNativeScreenshot || eventDiagnostics.taskCreateCount < minimumTaskCreates) process.exitCode = 2;

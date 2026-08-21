@@ -221,17 +221,16 @@ describe("ask_user_question", () => {
     registry.registerAll(makeAskTools(broker));
   });
 
-  it("handler suspends until AskBroker.resolve() is called", async () => {
+  it("emits an inline question and suspends until AskBroker.resolve() is called", async () => {
     const ctx = makeCtx("ask-1");
     let requestId: string | null = null;
+    let questionText = "";
 
-    // Capture the requestId from onProgress
-    const progressCtx: ToolContext = {
+    const questionCtx: ToolContext = {
       ...ctx,
-      onProgress(note: string) {
-        if (note.startsWith("question:")) {
-          requestId = note.slice("question:".length);
-        }
+      onQuestion(payload) {
+        requestId = payload.requestId;
+        questionText = payload.question;
       },
     };
 
@@ -245,7 +244,7 @@ describe("ask_user_question", () => {
         ],
         multiSelect: false,
       },
-      progressCtx,
+      questionCtx,
     );
 
     // Handler must not have resolved yet
@@ -256,13 +255,38 @@ describe("ask_user_question", () => {
     await new Promise((r) => setImmediate(r));
     assert.equal(resolved, false, "handler should be suspended");
 
-    // Resolve through the broker
-    assert.ok(requestId, "onProgress should have been called with question:requestId");
+    // Resolve through the broker after verifying the event payload.
+    assert.ok(requestId, "onQuestion should have emitted a requestId");
+    assert.equal(questionText, "Pick a colour");
     broker.resolve(requestId!, ["blue"]);
 
     const result = await handlerPromise;
     assert.ok(result.ok, `ask failed: ${result.error}`);
     assert.equal(result.content, "blue");
+  });
+
+  it("supports a freeform answer with no predefined options", async () => {
+    const ctx = makeCtx("ask-freeform");
+    let requestId: string | null = null;
+    let allowFreeform = false;
+    const handlerPromise = registry.execute(
+      "ask_user_question",
+      { question: "What should I call the project?", allowFreeform: true },
+      {
+        ...ctx,
+        onQuestion(payload) {
+          requestId = payload.requestId;
+          allowFreeform = payload.allowFreeform === true;
+        },
+      },
+    );
+    await new Promise((r) => setImmediate(r));
+    assert.ok(requestId);
+    assert.equal(allowFreeform, true);
+    broker.resolve(requestId!, ["Kozum landing page"]);
+    const result = await handlerPromise;
+    assert.equal(result.ok, true);
+    assert.equal(result.content, "Kozum landing page");
   });
 
   it("aborting ctx.signal rejects rather than hanging forever", async () => {

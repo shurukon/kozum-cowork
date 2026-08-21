@@ -577,7 +577,10 @@ async function safeBrowserAttach(
     };
     if (typeof b.browser?.attach !== "function") return null;
     const res = await b.browser.attach(rect, sessionId);
-    return res.ok && res.value ? res.value : null;
+    // The IPC call can return a valid state snapshot even when the backend
+    // has not created the WebContentsView yet. Treat that as a retryable
+    // attach failure so polling can attach immediately after browser_navigate.
+    return res.ok && res.value?.attached ? res.value : null;
   } catch {
     return null;
   }

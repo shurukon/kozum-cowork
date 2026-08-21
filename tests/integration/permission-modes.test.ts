@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { checkPermission, blockedResult } from "../../src/main/tools/permissions.ts";
 import type { PermissionMode } from "../../src/shared/types.ts";
 
-type Answer = "yes" | "allow" | "approve" | "y" | "no" | "deny" | "reject" | "n" | "cancel";
+type Answer = "yes" | "allow" | "approve" | "y" | "no" | "deny" | "reject" | "n" | "cancel" | "allow_once" | "allow_always" | "allow once" | "allow always";
 
 function makeOpts(
   toolName: string,
@@ -111,6 +111,16 @@ describe("accept_edits — file edits auto-approve; host actions ask", () => {
     assert.equal(decision.allowed, true);
     assert.equal(asked, false);
   });
+
+  it("still asks before destructive filesystem operations", async () => {
+    let asked = 0;
+    const decision = await checkPermission({
+      ...makeOpts("file_delete", "filesystem", "accept_edits", "deny"),
+      requestPermission: async () => { asked += 1; return ["deny"]; },
+    });
+    assert.equal(decision.allowed, false);
+    assert.equal(asked, 1);
+  });
 });
 
 describe("ask_permission — every mutating tool asks", () => {
@@ -138,6 +148,38 @@ describe("ask_permission — every mutating tool asks", () => {
     });
     assert.equal(decision.allowed, true);
     assert.equal(asked, false);
+  });
+});
+
+describe("session-scoped permission decisions", () => {
+  it("returns allow once without remembering the tool", async () => {
+    let remembered = 0;
+    const decision = await checkPermission({
+      ...makeOpts("shell_exec", "shell", "ask_permission", "allow_once"),
+      rememberTool: () => { remembered += 1; },
+    });
+    assert.equal(decision.allowed, true);
+    assert.equal(remembered, 0);
+  });
+
+  it("remembers allow always and bypasses the next request in the same session", async () => {
+    const allowedTools = new Set<string>();
+    let asked = 0;
+    const first = await checkPermission({
+      ...makeOpts("shell_exec", "shell", "ask_permission", "allow_always"),
+      sessionAllowedTools: allowedTools,
+      rememberTool: (toolName) => allowedTools.add(toolName),
+      requestPermission: async () => { asked += 1; return ["allow_always"]; },
+    });
+    const second = await checkPermission({
+      ...makeOpts("shell_exec", "shell", "ask_permission"),
+      sessionAllowedTools: allowedTools,
+      rememberTool: (toolName) => allowedTools.add(toolName),
+      requestPermission: async () => { asked += 1; return ["deny"]; },
+    });
+    assert.equal(first.allowed, true);
+    assert.equal(second.allowed, true);
+    assert.equal(asked, 1);
   });
 });
 

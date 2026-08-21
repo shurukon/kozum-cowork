@@ -42,8 +42,9 @@ const context = (): ToolContext => ({
   modelId: "integration-test-model",
   providerId: "integration-test-provider",
   signal: new AbortController().signal,
-  onProgress: (note: string) => {
-    if (note.startsWith("question:")) ask.resolve(note.slice("question:".length), ["ok"]);
+  onProgress: (_note: string) => {},
+  onQuestion: (payload) => {
+    ask.resolve(payload.requestId, [payload.options[0]?.value ?? "ok"]);
   },
 });
 

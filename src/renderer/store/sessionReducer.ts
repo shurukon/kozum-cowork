@@ -210,7 +210,7 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
     }
 
     case "session_status": {
-      const isRunning = e.status === "running";
+      const isRunning = e.status === "running" || e.status === "waiting_input";
       return {
         ...mode,
         status: e.status,
@@ -326,6 +326,7 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
         question: e.question,
         options: e.options,
         multiSelect: e.multiSelect,
+        ...(e.allowFreeform ? { allowFreeform: true } : {}),
         messageId: mode.streamingMessageId ?? undefined,
       };
       return {

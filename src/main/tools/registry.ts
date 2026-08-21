@@ -43,6 +43,14 @@ export interface ToolContext {
   providerId: string;
   signal: AbortSignal;
   onProgress: (note: string) => void;
+  /** Emit an inline question prompt and suspend until the UI replies. */
+  onQuestion?: (payload: {
+    requestId: string;
+    question: string;
+    options: Array<{ label: string; value: string }>;
+    multiSelect: boolean;
+    allowFreeform?: boolean;
+  }) => void;
 }
 
 export type ToolHandler = (

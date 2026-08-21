@@ -436,8 +436,7 @@ function PendingPermissionInline({
     <PermissionBanner
       reason={permission.reason}
       toolName={permission.toolName}
-      onAllow={() => onReply?.(permission.requestId, ["yes"])}
-      onDeny={() => onReply?.(permission.requestId, ["no"])}
+      onDecision={(decision) => onReply?.(permission.requestId, [decision])}
     />
   );
 }

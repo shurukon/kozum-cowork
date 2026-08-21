@@ -1,28 +1,26 @@
 /**
- * PermissionBanner — inline Allow/Deny prompt for a single tool invocation.
+ * PermissionBanner — inline permission prompt for a single tool invocation.
  *
- * Rendered inside a ToolCard when a `permission_request` AgentEvent is pending
- * for that card's toolUseId (or, as a degraded fallback, at the bottom of the
- * assistant message when no matching card exists). The reply goes back through
- * `bridge().sessions.reply(sessionId, requestId, ["yes"|"no"])`, matching the
- * AskBroker.registerPending(requestId) the executor awaited on the main side.
+ * The decision is sent back through AskBroker and is scoped by the backend:
+ * allow_once applies to this invocation, while allow_always is remembered only
+ * for the current session.
  */
 
 import { ShieldQuestion } from "lucide-react";
 import styles from "./PermissionBanner.module.css";
 
+export type PermissionDecision = "allow_once" | "allow_always" | "deny";
+
 export interface PermissionBannerProps {
   reason: string;
   toolName: string;
-  onAllow: () => void;
-  onDeny: () => void;
+  onDecision: (decision: PermissionDecision) => void;
 }
 
 export function PermissionBanner({
   reason,
   toolName,
-  onAllow,
-  onDeny,
+  onDecision,
 }: PermissionBannerProps) {
   return (
     <div className={styles.root} role="alert" aria-live="assertive">
@@ -36,11 +34,14 @@ export function PermissionBanner({
         {reason ? <p className={styles.reason}>{reason}</p> : null}
       </div>
       <div className={styles.actions}>
-        <button type="button" className={styles.denyBtn} onClick={onDeny}>
+        <button type="button" className={styles.denyBtn} onClick={() => onDecision("deny")}>
           Deny
         </button>
-        <button type="button" className={styles.allowBtn} onClick={onAllow}>
-          Allow
+        <button type="button" className={styles.allowBtn} onClick={() => onDecision("allow_once")}>
+          Allow once
+        </button>
+        <button type="button" className={styles.allowBtn} onClick={() => onDecision("allow_always")}>
+          Allow always
         </button>
       </div>
     </div>

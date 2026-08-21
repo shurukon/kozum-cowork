@@ -115,7 +115,7 @@ export function buildToolRegistry(svc: ToolServices): ToolRegistry {
  */
 export function makeExecutor(
   registry: ToolRegistry,
-  getContext: (sessionId: string) => Omit<ToolContext, "signal" | "onProgress">,
+  getContext: (sessionId: string) => Omit<ToolContext, "signal" | "onProgress" | "onQuestion">,
   getModeSettings: (mode: Mode) => ModeSettings,
 ) {
   return {
@@ -126,7 +126,12 @@ export function makeExecutor(
     execute(
       name: string,
       input: unknown,
-      opts: { sessionId: string; signal: AbortSignal; onProgress: (n: string) => void },
+      opts: {
+        sessionId: string;
+        signal: AbortSignal;
+        onProgress: (n: string) => void;
+        onQuestion?: NonNullable<ToolContext["onQuestion"]>;
+      },
     ) {
       const base = getContext(opts.sessionId);
       const enabled = getModeSettings(base.mode).enabledToolNames;
@@ -141,6 +146,7 @@ export function makeExecutor(
         ...base,
         signal: opts.signal,
         onProgress: opts.onProgress,
+        onQuestion: opts.onQuestion,
       });
     },
   };
