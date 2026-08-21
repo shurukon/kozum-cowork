@@ -6,7 +6,7 @@
  * display strategy before loading any content.
  */
 
-export type PreviewKind = "text" | "markdown" | "image" | "pdf" | "binary";
+export type PreviewKind = "text" | "markdown" | "image" | "pdf" | "video" | "audio" | "binary";
 
 /** Extension → kind table (lower-case, without the leading dot). */
 const EXT_MAP: Record<string, PreviewKind> = {
@@ -85,6 +85,18 @@ const EXT_MAP: Record<string, PreviewKind> = {
   // PDF
   pdf: "pdf",
 
+  // Video / audio
+  mp4: "video",
+  webm: "video",
+  mov: "video",
+  avi: "video",
+  mkv: "video",
+  mp3: "audio",
+  wav: "audio",
+  ogg: "audio",
+  flac: "audio",
+  m4a: "audio",
+
   // Binary
   exe: "binary",
   dll: "binary",
@@ -105,14 +117,6 @@ const EXT_MAP: Record<string, PreviewKind> = {
   deb: "binary",
   rpm: "binary",
   wasm: "binary",
-  mp3: "binary",
-  mp4: "binary",
-  mov: "binary",
-  avi: "binary",
-  mkv: "binary",
-  wav: "binary",
-  ogg: "binary",
-  flac: "binary",
   ttf: "binary",
   otf: "binary",
   woff: "binary",

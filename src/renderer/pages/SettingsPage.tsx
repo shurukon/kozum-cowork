@@ -24,6 +24,7 @@ import type {
   ProviderPreset,
 } from "@shared/types.ts";
 import styles from "./SettingsPage.module.css";
+import logoUrl from "../assets/kozum-logo.png";
 
 export interface SettingsPageProps {
   settings: AppSettings;
@@ -315,7 +316,7 @@ export function SettingsPage(props: SettingsPageProps) {
     <div className={styles.page}>
       <aside className={styles.sidebar}>
         <button type="button" className={styles.backButton} onClick={props.onBack}><ArrowLeft size={15} /> Back to workspace</button>
-        <div className={styles.brand}><img src="/assets/kozum-logo.png" alt="Kozum AI" /><div><strong>Kozum AI</strong><span>Settings</span></div></div>
+        <div className={styles.brand}><img src={logoUrl} alt="Kozum AI" /><div><strong>Kozum AI</strong><span>Settings</span></div></div>
         <div className={styles.search}><SlidersHorizontal size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search settings" aria-label="Search settings" /></div>
         <nav className={styles.nav} aria-label="Settings sections">
           {visibleNav.map(({ id, label, icon: Icon }) => <button type="button" key={id} className={`${styles.navItem} ${section === id ? styles.navActive : ""}`} onClick={() => setSection(id)}><Icon size={15} /><span>{label}</span></button>)}

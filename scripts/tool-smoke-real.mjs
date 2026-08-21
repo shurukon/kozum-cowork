@@ -44,8 +44,24 @@ skills.register({
   modes: ["cowork", "code"],
   body: "Smoke skill instructions loaded successfully.",
 });
-const subagents = new SubagentManager(async () => {
-  throw new Error("standalone smoke runner is intentionally unavailable");
+const subagents = new SubagentManager(async (spec) => {
+  // A real asynchronous runner for the standalone contract smoke: it performs
+  // observable work, honours cancellation, and returns a deterministic result.
+  // This exercises SubagentManager and all three agent tools without replacing
+  // any tool implementation or hiding a runtime error behind a catch-all.
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, 250);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error("smoke runner cancelled"));
+    };
+    if (spec.signal.aborted) {
+      onAbort();
+      return;
+    }
+    spec.signal.addEventListener("abort", onAbort, { once: true });
+  });
+  return { text: `Completed smoke subagent: ${spec.prompt}` };
 });
 const scheduler = new Scheduler({ rootDir: join(root, "schedule"), runner: async () => undefined });
 const mcp = new McpManager();
@@ -155,7 +171,11 @@ const overrides = {
   skill_list: {},
   skill_invoke: { skill: "smoke-skill", args: "smoke" },
   agent_list: {},
-  agent_run: { description: "smoke agent", prompt: "return immediately" },
+  agent_run: {
+    description: "smoke agent",
+    prompt: "perform the standalone lifecycle smoke and return a result",
+    acceptance_criteria: ["the runner returns or honours cancellation"],
+  },
   agent_status: {},
   agent_cancel: {},
   marketplace_list: { id: "missing-marketplace" },

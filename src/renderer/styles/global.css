@@ -442,3 +442,9 @@ kbd {
   -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, #000 0%, transparent 78%);
   mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, #000 0%, transparent 78%);
 }
+
+/* The workspace is an interactive document: chat, tool output, paths and code
+   can be selected and copied. Controls keep their usual non-text selection. */
+body { user-select: text; }
+button, [role="button"], select, summary { user-select: none; }
+input, textarea, [contenteditable], pre, code, .selectable { user-select: text; }

@@ -225,6 +225,8 @@ export interface KozumBridge {
     }>>;
     /** Stat a file: size in bytes and isDir flag. */
     stat: (path: string) => Promise<Result<{ size: number; isDir: boolean }>>;
+    /** Open a file externally, reveal it in the file manager, or launch it in the IDE. */
+    open: (path: string, action?: "external" | "reveal" | "ide") => Promise<Result<void>>;
   };
 
   browser: {

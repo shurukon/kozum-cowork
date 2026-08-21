@@ -24,6 +24,7 @@ import {
 import type { Mode } from "@shared/types.ts";
 import { ConversationMenu } from "./ConversationMenu.tsx";
 import styles from "./Sidebar.module.css";
+import logoUrl from "../assets/kozum-logo.png";
 
 export type NavKey =
   | "new"
@@ -204,7 +205,7 @@ export function Sidebar({
         <div className={styles.coworkBrand}>
           <img
             className={styles.coworkBrandMark}
-            src="/assets/kozum-logo.png"
+            src={logoUrl}
             alt="Kozum AI"
           />
           <span className={styles.coworkBrandName}>Kozum AI</span>
@@ -293,7 +294,7 @@ export function Sidebar({
 
       {/* Account row — opens Settings */}
       <button className={styles.account} onClick={onAccountClick} title="Settings">
-        <img src="./icons/mark-24.png" alt="" className={styles.avatar} width={18} height={18} />
+        <img src={logoUrl} alt="" className={styles.avatar} width={18} height={18} />
         <span className={styles.accountName}>{accountLabel}</span>
         <span className={styles.accountSep}>·</span>
         <span className={styles.accountProvider}>{providerLabel}</span>

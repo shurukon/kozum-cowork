@@ -9,7 +9,11 @@
 import { randomUUID } from "node:crypto";
 import { readFile, stat as fsStat } from "node:fs/promises";
 import { extname } from "node:path";
+import { spawn } from "node:child_process";
+import electron from "electron";
 import type { IpcMain, BrowserWindow, App } from "electron";
+
+const { shell } = electron;
 import type { AgentEvent, McpServerConfig, Mode, ModelSelection, PermissionMode, ProviderPreset, ScheduledTask } from "../../shared/types.ts";
 import { ok, err } from "../../shared/types.ts";
 import { resolvePath, PathError } from "../tools/paths.ts";
@@ -613,9 +617,22 @@ export function registerIpc(deps: IpcDeps): void {
     tif: "image/tiff",
     avif: "image/avif",
     pdf: "application/pdf",
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mov: "video/quicktime",
+    avi: "video/x-msvideo",
+    mkv: "video/x-matroska",
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+    ogg: "audio/ogg",
+    flac: "audio/flac",
+    m4a: "audio/mp4",
   };
 
-  const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tiff", "tif", "avif"]);
+  const BINARY_PREVIEW_EXTS = new Set([
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tiff", "tif", "avif",
+    "pdf", "mp4", "webm", "mov", "avi", "mkv", "mp3", "wav", "ogg", "flac", "m4a",
+  ]);
 
   handle(ipcMain, "preview:readFile", async (_e, rawPath) => {
     const path = String(rawPath ?? "");
@@ -633,7 +650,11 @@ export function registerIpc(deps: IpcDeps): void {
     try {
       const buf = await readFile(resolved);
 
-      if (IMAGE_EXTS.has(ext)) {
+      if (BINARY_PREVIEW_EXTS.has(ext)) {
+        const binaryCap = 32 * 1024 * 1024;
+        if (buf.length > binaryCap) {
+          return err(`Preview is limited to ${binaryCap / (1024 * 1024)} MB for binary media.`);
+        }
         return ok({
           content: "",
           base64: buf.toString("base64"),
@@ -665,6 +686,49 @@ export function registerIpc(deps: IpcDeps): void {
     try {
       const s = await fsStat(resolved);
       return ok({ size: s.size, isDir: s.isDirectory() });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return err(msg);
+    }
+  });
+
+  handle(ipcMain, "preview:open", async (_e, rawPath, rawAction) => {
+    const path = String(rawPath ?? "");
+    const action = String(rawAction ?? "external");
+    if (!path) return err("path is required");
+    if (!["external", "reveal", "ide"].includes(action)) return err("unsupported preview open action");
+
+    const resolved = await resolvePath(path, { workingFolder: null }).catch((e: unknown) => {
+      if (e instanceof PathError) return e;
+      throw e;
+    });
+    if (resolved instanceof PathError) return err(resolved.message);
+
+    try {
+      if (action === "reveal") {
+        shell.showItemInFolder(resolved);
+        return ok(undefined);
+      }
+      if (action === "external") {
+        const error = await shell.openPath(resolved);
+        return error ? err(error) : ok(undefined);
+      }
+
+      const command = process.env.KOZUM_IDE_COMMAND?.trim() || (process.platform === "win32" ? "code.cmd" : "code");
+      const child = spawn(command, [resolved], { detached: true, stdio: "ignore" });
+      return await new Promise((resolve) => {
+        let settled = false;
+        const finish = (result: ReturnType<typeof ok> | ReturnType<typeof err>) => {
+          if (settled) return;
+          settled = true;
+          resolve(result);
+        };
+        child.once("spawn", () => {
+          child.unref();
+          finish(ok(undefined));
+        });
+        child.once("error", (error) => finish(err(`Could not launch IDE '${command}': ${error.message}`)));
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return err(msg);

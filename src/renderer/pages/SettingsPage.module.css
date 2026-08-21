@@ -187,3 +187,56 @@
   .actionRow { align-items: flex-start; }
   .keyAddRow .primaryButton, .keyAddRow .ghostButton { width: 100%; }
 }
+
+/* Shared Cowork surface: Settings intentionally uses the same visual language as the workspace. */
+.page {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  font-family: var(--font-sans);
+}
+.sidebar {
+  border-color: var(--border);
+  background: var(--bg-secondary);
+}
+.backButton, .ghostButton { color: var(--text-secondary); }
+.backButton:hover, .ghostButton:hover, .linkButton:hover { color: var(--text-primary); background: var(--bg-hover); }
+.brand { border-color: var(--border-subtle); }
+.brand span, .hint, .providerNote, .cardText, .breadcrumb, .sectionHeader p { color: var(--text-muted); }
+.search { border-color: var(--border); color: var(--text-muted); background: var(--bg-input); }
+.search input { color: var(--text-primary); }
+.search input::placeholder { color: var(--text-muted); }
+.navItem { color: var(--text-secondary); }
+.navItem:hover { color: var(--text-primary); background: var(--bg-hover); }
+.navActive { border-left-color: var(--accent-primary); color: var(--text-primary); background: var(--accent-soft); }
+.sidebarFooter { color: var(--text-muted); }
+.topBar { border-color: var(--border-subtle); }
+.breadcrumb span { color: var(--text-muted); }
+.iconButton { color: var(--text-muted); }
+.iconButton:hover { color: var(--text-primary); background: var(--bg-hover); }
+.eyebrow { color: var(--accent-secondary); }
+.sectionHeader h1 { color: var(--text-primary); }
+.card, .providerCard, .inlineCard, .aboutStat {
+  border-color: var(--border);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+.field { border-color: var(--border-subtle); }
+.label, .inlineTitle, .cardTitle, .providerName, .aboutStat strong { color: var(--text-primary); }
+.input, .textarea { border-color: var(--border); color: var(--text-primary); background: var(--bg-input); }
+.input:focus, .textarea:focus, .search:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-soft); }
+.toggle { background: var(--bg-active); }
+.toggleOn { background: var(--accent-primary); }
+.primaryButton { color: #fff; background: var(--accent-primary); }
+.primaryButton:hover { background: var(--accent-bright); }
+.secondaryButton { color: var(--text-primary); border-color: var(--glass-border-blue); background: var(--accent-softer); }
+.secondaryButton:hover { background: var(--accent-soft); }
+.linkButton { color: var(--accent-secondary); }
+.statusPill { color: var(--text-secondary); background: var(--bg-elevated); }
+.inlineCard { border-color: var(--glass-border-blue); }
+.keyRow, .folderRow { border-color: var(--border-subtle); color: var(--text-secondary); background: var(--bg-sunken); }
+.providerMeta, .keyStatus, .emptyState, .emptyState span, .aboutStat span { color: var(--text-muted); }
+.error { color: var(--error); }
+.profileCard { border-color: var(--border); background: var(--glass-bg-blue); }
+.avatar { color: var(--accent-bright); background: var(--accent-soft); }
+.emptyState strong { color: var(--text-primary); }
+.statusGood { color: var(--success); background: var(--success-soft); }

@@ -238,6 +238,10 @@ const api = {
     /** Stat a file — size in bytes, isDir flag. */
     stat: (path: string): Promise<Result<{ size: number; isDir: boolean }>> =>
       ipcRenderer.invoke("preview:stat", path),
+
+    /** Open a preview file externally, reveal it, or launch it in the configured IDE. */
+    open: (path: string, action: "external" | "reveal" | "ide" = "external"): Promise<Result<void>> =>
+      ipcRenderer.invoke("preview:open", path, action),
   },
 
   browser: {

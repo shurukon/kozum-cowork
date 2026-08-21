@@ -15,3 +15,59 @@
 .extensionList { display:grid; gap:7px; }.extensionRow { display:flex; align-items:center; gap:10px; min-height:60px; padding:10px; border:1px solid rgba(160,184,205,.1); border-radius:8px; background:rgba(0,0,0,.1); }.extensionIcon { display:grid; place-items:center; flex:0 0 auto; width:30px; height:30px; border-radius:8px; color:#8ea8b7; background:rgba(160,184,205,.08); }.iconGood { color:#80dfac; background:rgba(82,206,144,.1); }.extensionCopy { min-width:0; display:grid; gap:3px; flex:1; }.extensionCopy strong { overflow:hidden; color:#d7e7ed; font-size:12px; text-overflow:ellipsis; white-space:nowrap; }.extensionCopy strong small { color:#7e93a1; font-size:10px; font-weight:400; }.extensionCopy span { overflow:hidden; color:#8aa0ae; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }.extensionCopy > small { color:#6f8492; font-size:9px; }.rowActions { display:flex; align-items:center; gap:8px; }.iconButton { display:grid; place-items:center; width:28px; height:28px; border-radius:6px; color:#8396a4; background:transparent; }.iconButton:hover { color:#ffadb5; background:rgba(255,100,120,.1); }.toggle { position:relative; width:38px; height:22px; padding:2px; border-radius:999px; background:#344453; transition:background .18s ease; }.toggleOn { background:#3faed5; }.toggle span { display:block; width:18px; height:18px; border-radius:50%; background:#d9e4ea; transition:transform .18s ease; }.toggleOn span { transform:translateX(16px); background:white; }.empty { display:grid; justify-items:center; gap:9px; padding:36px 20px; color:#8094a2; text-align:center; font-size:11px; }
 @media (max-width:820px) { .sidebar { width:190px; flex-basis:190px; }.content { padding-inline:25px; }.appearanceGrid { grid-template-columns:1fr; } }
 @media (max-width:620px) { .page { display:block; overflow:auto; }.sidebar { width:auto; min-height:auto; border-right:0; border-bottom:1px solid rgba(160,184,205,.12); }.sidebarFooter { display:none; }.nav { grid-template-columns:repeat(2,1fr); }.main { min-height:70vh; }.topBar { padding-inline:18px; }.content { padding:30px 18px 55px; }.actionRow { align-items:flex-start; flex-direction:column; } }
+
+/* Shared Cowork surface: Customize intentionally uses the same visual language as the workspace. */
+.page {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  font-family: var(--font-sans);
+}
+.sidebar {
+  border-color: var(--border);
+  background: var(--bg-secondary);
+}
+.backButton { color: var(--text-secondary); }
+.backButton:hover { color: var(--text-primary); background: var(--bg-hover); }
+.brand { border-color: var(--border-subtle); }
+.brand span, .modeTitle, .navLabel, .modeHeading span, .listHeader span, .note, .empty { color: var(--text-muted); }
+.modePill { border-color: var(--border); color: var(--text-secondary); background: var(--bg-input); }
+.modePillActive { border-color: var(--accent-primary); color: var(--text-primary); background: var(--accent-soft); }
+.navItem { color: var(--text-secondary); }
+.navItem:hover { color: var(--text-primary); background: var(--bg-hover); }
+.navActive { border-left-color: var(--accent-primary); color: var(--text-primary); background: var(--accent-soft); }
+.navItem em, .count { color: var(--text-secondary); background: var(--bg-elevated); }
+.sidebarFooter { color: var(--text-muted); }
+.topBar { border-color: var(--border-subtle); }
+.breadcrumb { color: var(--text-secondary); }
+.breadcrumb span { color: var(--text-muted); }
+.closeButton { color: var(--text-primary); background: var(--accent-softer); }
+.closeButton:hover { background: var(--accent-soft); }
+.eyebrow { color: var(--accent-secondary); }
+.header h1, .modeHeading strong, .listHeader strong { color: var(--text-primary); }
+.header p { color: var(--text-muted); }
+.card { border-color: var(--border); background: var(--bg-card); box-shadow: var(--shadow-card); }
+.label, .colorField { color: var(--text-secondary); }
+.textarea { border-color: var(--border); color: var(--text-primary); background: var(--bg-input); }
+.textarea:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-soft); }
+.primaryButton { color: #fff; background: var(--accent-primary); }
+.primaryButton:hover { background: var(--accent-bright); }
+.secondaryButton { color: var(--text-primary); border-color: var(--glass-border-blue); background: var(--accent-softer); }
+.secondaryButton:hover { background: var(--accent-soft); }
+.choice { border-color: var(--border); color: var(--text-secondary); background: var(--bg-input); }
+.choice:hover, .choiceActive { border-color: var(--accent-primary); color: var(--text-primary); background: var(--accent-soft); }
+.choice svg { color: var(--accent-secondary); }
+.typeSample { color: var(--text-primary); background: var(--accent-soft); }
+.previewText { border-left-color: var(--accent-secondary); color: var(--text-primary); background: var(--bg-sunken); }
+.colorField { border-color: var(--border-subtle); }
+.colorField code { color: var(--text-muted); }
+.extensionRow { border-color: var(--border-subtle); background: var(--bg-sunken); }
+.extensionIcon { color: var(--text-muted); background: var(--bg-elevated); }
+.extensionCopy strong { color: var(--text-primary); }
+.extensionCopy strong small, .extensionCopy span, .extensionCopy > small { color: var(--text-muted); }
+.iconButton { color: var(--text-muted); }
+.iconButton:hover { color: var(--text-primary); background: var(--bg-hover); }
+.toggle { background: var(--bg-active); }
+.toggleOn { background: var(--accent-primary); }
+.empty strong { color: var(--text-primary); }
+/* Interactive content should remain selectable like the chat surface. */
+.content, .card, .previewText, .extensionCopy { user-select: text; }

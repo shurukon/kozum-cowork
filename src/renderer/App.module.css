@@ -132,17 +132,17 @@
 .coworkBody {
   gap: 0;
   padding: 0;
-  background: #0d0d0d;
+  background: var(--bg-primary);
 }
 
 .coworkBody .content {
   border-radius: 0;
-  background: #0d0d0d;
+  background: var(--bg-primary);
 }
 
 :global(.kz-cowork-shell) .app,
 :global(.kz-cowork-shell) .sessionWrap {
-  background: #0d0d0d;
+  background: var(--bg-primary);
 }
 
 :global(.kz-cowork-shell) .app::before {
@@ -150,13 +150,13 @@
 }
 
 :global(.kz-cowork-shell) .previewFocused {
-  background: #0d0d0d;
+  background: var(--bg-primary);
 }
 
 :global(.kz-cowork-shell) .previewFocused > aside[aria-label="Preview"] {
-  border-inline-start: 1px solid rgba(255, 255, 255, 0.08);
+  border-inline-start: 1px solid var(--border);
   border-radius: 0;
-  background: #111111;
+  background: var(--bg-secondary);
 }
 
 @media (max-width: 980px) {
@@ -178,5 +178,5 @@
   inset: 0;
   z-index: 80;
   overflow: hidden;
-  background: #0b1016;
+  background: var(--bg-primary);
 }

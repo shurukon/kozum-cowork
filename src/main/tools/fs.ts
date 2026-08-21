@@ -1289,10 +1289,13 @@ async function regexTestLines(
   const cappedLines = lines.map((l) => l.slice(0, MAX_WORKER_LINE_LEN));
 
   return new Promise((resolve) => {
+    // Worker threads inherit the parent Node options. Passing
+    // --experimental-strip-types explicitly is rejected by some Node 22
+    // worker runtimes (ERR_WORKER_INVALID_EXEC_ARGV), while inheritance
+    // already lets the .ts module load in development. The built app uses
+    // compiled .js and likewise needs no explicit flag.
     const worker = new Worker(new URL(import.meta.url), {
       workerData: { pattern, flags, lines: cappedLines },
-      // Strip TS types so the worker can load this .ts file.
-      execArgv: ["--experimental-strip-types"],
     });
 
     const timer = setTimeout(() => {

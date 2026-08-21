@@ -139,12 +139,10 @@ test("settings opens from the account row in the sidebar", async () => {
     }
 
     if (clicked) {
-      // The Settings modal should appear — it has role="dialog".
-      await page.waitForSelector('[role="dialog"][aria-label="Settings"]', {
-        timeout: 5_000,
-      });
-      const dialog = page.getByRole("dialog", { name: "Settings" });
-      await expect(dialog).toBeVisible();
+      // Settings is an independent full-page surface, not a modal dialog.
+      const settingsPage = page.getByRole("region", { name: "Settings page" });
+      await expect(settingsPage).toBeVisible({ timeout: 5_000 });
+      await expect(settingsPage.getByText("Settings", { exact: true }).first()).toBeVisible();
     }
     // If no clickable account row found, the test passes conditionally — the
     // CI build may use different rendering. The CI run will surface failures.
@@ -175,10 +173,10 @@ test("settings opens from the Customize nav item", async () => {
     if (customizeVisible) {
       await customizeBtn.click();
 
-      // Settings dialog must open (the old bug routed Customize to home instead).
-      await page.waitForSelector('[role="dialog"]', { timeout: 5_000 });
-      const dialog = page.locator('[role="dialog"]').first();
-      await expect(dialog).toBeVisible();
+      // Customize is an independent full-page surface, not a modal dialog.
+      const customizePage = page.getByRole("region", { name: "Customize page" });
+      await expect(customizePage).toBeVisible({ timeout: 5_000 });
+      await expect(customizePage.getByText("Customize", { exact: true }).first()).toBeVisible();
     }
   } finally {
     await app.close();

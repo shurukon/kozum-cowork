@@ -42,6 +42,7 @@ import { makeBrowserTools } from "./browser.ts";
 import { BrowserEngine } from "../browser/engine.ts";
 import { makeComputerTools } from "./computer.ts";
 import { PowerShellComputerBackend } from "../computer/windows.ts";
+import { X11ComputerBackend } from "../computer/x11.ts";
 
 export interface ToolServices {
   tasks: TaskStore;
@@ -100,7 +101,10 @@ export function buildToolRegistry(svc: ToolServices): ToolRegistry {
 
   // Direct control surfaces.
   registry.registerAll(makeBrowserTools(svc.browser));
-  registry.registerAll(makeComputerTools(new PowerShellComputerBackend(), svc.getComputerBlocklist));
+  const computerBackend = process.platform === "linux" && process.env.DISPLAY
+    ? new X11ComputerBackend()
+    : new PowerShellComputerBackend();
+  registry.registerAll(makeComputerTools(computerBackend, svc.getComputerBlocklist));
 
   return registry;
 }

@@ -17,7 +17,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { X, RefreshCw, FileText, Globe, Monitor, Plug, FolderOpen, AlertCircle, Download, ShieldCheck } from "lucide-react";
+import { X, RefreshCw, FileText, Globe, Monitor, Plug, FolderOpen, AlertCircle, ShieldCheck, Copy, ExternalLink, FolderSearch, Code2, Check, GripVertical } from "lucide-react";
 import { bridge } from "../bridge.ts";
 import type { Result } from "@shared/types.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -80,6 +80,20 @@ async function safeStat(path: string): Promise<Result<StatResult>> {
   }
 }
 
+async function safePreviewOpen(path: string, action: "external" | "reveal" | "ide"): Promise<Result<void>> {
+  try {
+    const b = bridge() as unknown as {
+      preview?: { open?: (p: string, a?: "external" | "reveal" | "ide") => Promise<Result<void>> };
+    };
+    if (typeof b.preview?.open !== "function") {
+      return { ok: false, error: "preview:open not available in this build." };
+    }
+    return b.preview.open(path, action);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 // ── Kind icon ─────────────────────────────────────────────────────────────
 
 function kindIcon(target: PreviewTarget) {
@@ -133,6 +147,52 @@ function PreviewError({ message }: { message: string }) {
     <div className={styles.errorWrap} role="alert">
       <AlertCircle size={16} className={styles.errorIcon} aria-hidden="true" />
       <p className={styles.errorMsg}>{message}</p>
+    </div>
+  );
+}
+
+// ── File actions ───────────────────────────────────────────────────────────
+
+function FileActions({ path, labelled = false }: { path: string; labelled?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const copyPath = async () => {
+    try {
+      await navigator.clipboard.writeText(path);
+      setCopied(true);
+      setError(null);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not copy path");
+    }
+  };
+
+  const open = async (action: "external" | "reveal" | "ide") => {
+    const result = await safePreviewOpen(path, action);
+    if (!result.ok) setError(result.error);
+    else setError(null);
+  };
+
+  return (
+    <div className={labelled ? styles.fileActionBar : styles.compactFileActions} aria-label="File actions">
+      <button className={labelled ? styles.openExternalBtn : styles.iconBtn} type="button" onClick={copyPath} title="Copy path" aria-label="Copy path">
+        {copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
+        {labelled && (copied ? "Copied" : "Copy path")}
+      </button>
+      <button className={labelled ? styles.openExternalBtn : styles.iconBtn} type="button" onClick={() => void open("ide")} title="Open in IDE" aria-label="Open in IDE">
+        <Code2 size={13} aria-hidden="true" />
+        {labelled && "Open in IDE"}
+      </button>
+      <button className={labelled ? styles.openExternalBtn : styles.iconBtn} type="button" onClick={() => void open("reveal")} title="Reveal in folder" aria-label="Reveal in folder">
+        <FolderSearch size={13} aria-hidden="true" />
+        {labelled && "Reveal"}
+      </button>
+      <button className={labelled ? styles.openExternalBtn : styles.iconBtn} type="button" onClick={() => void open("external")} title="Open externally" aria-label="Open externally">
+        <ExternalLink size={13} aria-hidden="true" />
+        {labelled && "Open externally"}
+      </button>
+      {error && <span className={styles.actionError} role="alert">{error}</span>}
     </div>
   );
 }
@@ -205,24 +265,34 @@ function FilePreview({ path }: { path: string }) {
     return <PreviewError message="Image could not be loaded." />;
   }
 
-  // PDF
+  // PDF — use Chromium's built-in PDF viewer when the file was read as base64.
   if (kind === "pdf") {
     return (
-      <div className={styles.pdfWrap}>
-        <FileText size={32} className={styles.pdfIcon} aria-hidden="true" />
-        <p className={styles.pdfName}>{path.split("/").pop() ?? path}</p>
-        <p className={styles.pdfHint}>PDF preview is not available inline.</p>
-        <button
-          className={styles.openExternalBtn}
-          onClick={() => {
-            // Shell.openExternal would live here in a real wiring — emit a no-op
-            // note for now; the event can be lifted to App.
-          }}
-          type="button"
-        >
-          <Download size={13} aria-hidden="true" />
-          Open externally
-        </button>
+      <div className={styles.mediaWrap}>
+        {data.base64 ? (
+          <iframe className={styles.pdfFrame} src={`data:application/pdf;base64,${data.base64}`} title={`PDF preview: ${path}`} />
+        ) : (
+          <PreviewError message="PDF could not be loaded inline." />
+        )}
+        <FileActions path={path} labelled />
+      </div>
+    );
+  }
+
+  if (kind === "video" || kind === "audio") {
+    if (!data.base64) return <PreviewError message="Media could not be loaded inline." />;
+    return (
+      <div className={styles.mediaWrap}>
+        {kind === "video" ? (
+          <video className={styles.previewVideo} controls preload="metadata" src={`data:${data.mime};base64,${data.base64}`}>
+            Your browser cannot play this video format.
+          </video>
+        ) : (
+          <audio className={styles.previewAudio} controls preload="metadata" src={`data:${data.mime};base64,${data.base64}`}>
+            Your browser cannot play this audio format.
+          </audio>
+        )}
+        <FileActions path={path} labelled />
       </div>
     );
   }
@@ -235,16 +305,7 @@ function FilePreview({ path }: { path: string }) {
         <FileText size={28} className={styles.binaryIcon} aria-hidden="true" />
         <p className={styles.binaryType}>.{ext} file</p>
         <p className={styles.binaryHint}>Binary file — no inline preview available.</p>
-        <button
-          className={styles.openExternalBtn}
-          onClick={() => {
-            // Open externally — handled by App via onOpenPath
-          }}
-          type="button"
-        >
-          <Download size={13} aria-hidden="true" />
-          Open externally
-        </button>
+        <FileActions path={path} labelled />
       </div>
     );
   }
@@ -263,6 +324,7 @@ function FilePreview({ path }: { path: string }) {
         {data.truncated && (
           <p className={styles.truncNote}>File truncated — showing first ~512 KB.</p>
         )}
+        <FileActions path={path} />
         <Markdown content={data.content} className={styles.markdownBody} />
       </div>
     );
@@ -275,6 +337,7 @@ function FilePreview({ path }: { path: string }) {
       {data.truncated && (
         <p className={styles.truncNote}>File truncated — showing first ~512 KB.</p>
       )}
+      <FileActions path={path} />
       <pre className={styles.textPre} aria-label="File contents">
         <table className={styles.lineTable}>
           <tbody>
@@ -752,10 +815,63 @@ export interface PreviewPanelProps {
   onRefresh?: () => void;
 }
 
+function targetPath(target: PreviewTarget): string | null {
+  return target.kind === "file" || target.kind === "artifact" || target.kind === "project" ? target.path : null;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────
 
 export function PreviewPanel({ target, onClose, onRefresh }: PreviewPanelProps) {
   const [refreshKey, setRefreshKey] = useState(0);
+  const [panelWidth, setPanelWidth] = useState(520);
+  const [resizing, setResizing] = useState(false);
+  const resizeState = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = Number(window.localStorage.getItem("kozum.preview.width"));
+      if (Number.isFinite(saved) && saved >= 360 && saved <= 960) setPanelWidth(saved);
+    } catch {
+      /* local storage is optional */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("kozum.preview.width", String(panelWidth));
+    } catch {
+      /* local storage is optional */
+    }
+  }, [panelWidth]);
+
+  useEffect(() => {
+    if (!resizing) return;
+    const onMove = (event: PointerEvent) => {
+      const current = resizeState.current;
+      if (!current) return;
+      const delta = current.startX - event.clientX;
+      setPanelWidth(Math.round(Math.max(360, Math.min(960, current.startWidth + delta))));
+    };
+    const onUp = () => {
+      resizeState.current = null;
+      setResizing(false);
+      document.body.style.cursor = "";
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.style.cursor = "";
+    };
+  }, [resizing]);
+
+  const handleResizeStart = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    resizeState.current = { startX: event.clientX, startWidth: panelWidth };
+    setResizing(true);
+    document.body.style.cursor = "col-resize";
+  };
 
   const handleRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -767,12 +883,24 @@ export function PreviewPanel({ target, onClose, onRefresh }: PreviewPanelProps) 
   const Icon = kindIcon(target);
   const title = targetTitle(target);
 
+  const path = targetPath(target);
+
   return (
     <aside
-      className={`${styles.panel} kz-glass kz-anim-fade`}
+      className={`${styles.panel} ${resizing ? styles.resizing : ""} kz-glass kz-anim-fade`}
       aria-label="Preview"
       key={target.kind}
+      style={{ width: `${panelWidth}px`, flex: `0 0 ${panelWidth}px` }}
     >
+      <button
+        className={styles.resizeHandle}
+        type="button"
+        aria-label="Resize preview"
+        title="Drag to resize preview"
+        onPointerDown={handleResizeStart}
+      >
+        <GripVertical size={14} aria-hidden="true" />
+      </button>
       {/* Header */}
       <header className={styles.header}>
         <Icon size={14} className={styles.headerIcon} aria-hidden="true" />
@@ -780,6 +908,7 @@ export function PreviewPanel({ target, onClose, onRefresh }: PreviewPanelProps) 
           {title}
         </span>
         <div className={styles.headerActions}>
+          {path && <FileActions path={path} />}
           <button
             className={styles.iconBtn}
             onClick={handleRefresh}

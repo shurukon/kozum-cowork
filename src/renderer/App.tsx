@@ -1332,7 +1332,7 @@ export function App() {
       </div>
 
       {settingsOpen && settings && settingsView === "settings" && (
-        <div className={styles.fullPageOverlay}>
+        <div className={styles.fullPageOverlay} role="region" aria-label="Settings page">
           <SettingsPage
             settings={settings}
             presets={presets}
@@ -1352,7 +1352,7 @@ export function App() {
       )}
 
       {settingsOpen && settings && settingsView === "customize" && (
-        <div className={styles.fullPageOverlay}>
+        <div className={styles.fullPageOverlay} role="region" aria-label="Customize page">
           <CustomizePage
             settings={settings}
             skills={skills}

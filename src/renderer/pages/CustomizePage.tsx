@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, Code2, Palette, Package, Plug, Plus, Save, Sparkles, Trash2, WandSparkles } from "lucide-react";
 import type { AppSettings, McpServerConfig, Mode, Plugin, Skill } from "@shared/types.ts";
 import styles from "./CustomizePage.module.css";
+import logoUrl from "../assets/kozum-logo.png";
 
 export interface CustomizePageProps {
   settings: AppSettings;
@@ -82,7 +83,7 @@ export function CustomizePage({ settings, skills, connectors, plugins, onSave, o
     <div className={styles.page}>
       <aside className={styles.sidebar}>
         <button type="button" className={styles.backButton} onClick={onBack}><ArrowLeft size={15} /> Back to workspace</button>
-        <div className={styles.brand}><img src="/assets/kozum-logo.png" alt="Kozum AI" /><div><strong>Kozum AI</strong><span>Customize</span></div></div>
+        <div className={styles.brand}><img src={logoUrl} alt="Kozum AI" /><div><strong>Kozum AI</strong><span>Customize</span></div></div>
         <div className={styles.modeSwitch}><span className={styles.modeTitle}>Active surface</span><div className={styles.modeRow}><ModePill mode="cowork" active={mode === "cowork"} onClick={() => setMode("cowork")} /><ModePill mode="code" active={mode === "code"} onClick={() => setMode("code")} /></div></div>
         <nav className={styles.nav} aria-label="Customize sections">
           <button type="button" className={`${styles.navItem} ${tab === "system" ? styles.navActive : ""}`} onClick={() => setTab("system")}><WandSparkles size={15} /><span>System prompt</span></button>

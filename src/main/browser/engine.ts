@@ -250,7 +250,7 @@ export interface ElectronWebContentsView {
   };
   setBounds(b: { x: number; y: number; width: number; height: number }): void;
   setAutoResize?(opts: { width: boolean; height: boolean }): void;
-  destroy(): void;
+  destroy?(): void;
 }
 
 interface ElectronModule {
@@ -402,9 +402,27 @@ export class ElectronBrowserBackend implements BrowserBackend {
   }
 
   async close(): Promise<void> {
-    if (this._view) {
-      this._view.destroy();
-      this._view = null;
+    const view = this._view;
+    this._view = null;
+    if (!view) return;
+
+    // WebContentsView does not expose destroy() in all Electron versions. Close
+    // its WebContents when the view object has no destroy method, and never let
+    // browser_close turn a successful session into a runtime exception.
+    try {
+      if (typeof view.destroy === "function") {
+        view.destroy();
+      } else {
+        const webContents = view.webContents as typeof view.webContents & {
+          close?: () => void;
+          destroy?: () => void;
+        };
+        if (typeof webContents.close === "function") webContents.close();
+        else webContents.destroy?.();
+      }
+    } catch {
+      // Closing is best-effort because Electron may already have torn down the
+      // WebContents during window shutdown.
     }
   }
 

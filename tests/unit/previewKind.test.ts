@@ -74,7 +74,7 @@ describe("previewKindForPath — binary files", () => {
   it(".tar → binary", () => assert.equal(previewKindForPath("source.tar"), "binary"));
   it(".gz → binary", () => assert.equal(previewKindForPath("file.gz"), "binary"));
   it(".wasm → binary", () => assert.equal(previewKindForPath("module.wasm"), "binary"));
-  it(".mp4 → binary", () => assert.equal(previewKindForPath("video.mp4"), "binary"));
+  it(".mp4 → video", () => assert.equal(previewKindForPath("video.mp4"), "video"));
   it(".ttf → binary", () => assert.equal(previewKindForPath("font.ttf"), "binary"));
 });
 
@@ -136,6 +136,6 @@ describe("isPreviewable", () => {
   it("exe is not previewable", () => assert.equal(isPreviewable("app.exe"), false));
   it("zip is not previewable", () => assert.equal(isPreviewable("archive.zip"), false));
   it("binary is not previewable", () => assert.equal(isPreviewable("fw.bin"), false));
-  it("mp4 is not previewable", () => assert.equal(isPreviewable("video.mp4"), false));
+  it("mp4 is previewable", () => assert.equal(isPreviewable("video.mp4"), true));
   it("no-extension is previewable (text fallback)", () => assert.ok(isPreviewable("Makefile")));
 });
