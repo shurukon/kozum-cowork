@@ -52,8 +52,6 @@ import { Scheduled } from "./pages/Scheduled.tsx";
 import { Projects } from "./pages/Projects.tsx";
 import { ToastRegion } from "./components/Toast.tsx";
 import { ScheduleDialog } from "./components/ScheduleDialog.tsx";
-import { ConnectorDialog } from "./components/ConnectorDialog.tsx";
-import { PluginDialog } from "./components/PluginDialog.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { TranscriptSkeleton } from "./components/TranscriptSkeleton.tsx";
 import { CommandPalette } from "./components/CommandPalette.tsx";
@@ -158,8 +156,6 @@ export function App() {
   );
   const [scheduleEditId, setScheduleEditId] = useState<string | undefined>(undefined);
   const [scheduleEditInitial, setScheduleEditInitial] = useState<ScheduledTask | undefined>(undefined);
-  const [connectorDialogOpen, setConnectorDialogOpen] = useState(false);
-  const [pluginDialogOpen, setPluginDialogOpen] = useState(false);
 
   // Compatibility shim: existing action handlers call setBanner. Keep that
   // API, but render errors inline in the current chat instead of opening a
@@ -1066,14 +1062,6 @@ export function App() {
         setScheduleDialogOpen(false);
         return;
       }
-      if (connectorDialogOpen) {
-        setConnectorDialogOpen(false);
-        return;
-      }
-      if (pluginDialogOpen) {
-        setPluginDialogOpen(false);
-        return;
-      }
       if (settingsOpen) setSettingsOpen(false);
     },
   });
@@ -1397,8 +1385,22 @@ export function App() {
               if (!res.ok) setBanner(res.error);
               await reloadExtensions();
             }}
-            onAddConnector={() => setConnectorDialogOpen(true)}
-            onAddPlugin={() => setPluginDialogOpen(true)}
+            onAddConnector={async (input) => {
+              const result = await bridge().mcp.add(input);
+              if (result.ok) await reloadExtensions();
+              return result;
+            }}
+            onInstallPlugin={async (source) => {
+              const result = source.kind === "zip"
+                ? await bridge().plugins.installFromZip(source.value)
+                : await bridge().plugins.installFromUrl(source.value);
+              if (result.ok) await reloadExtensions();
+              return result;
+            }}
+            onPickPluginZip={async () => {
+              const files = await bridge().dialog.selectFiles();
+              return files[0] ?? null;
+            }}
             onBack={() => setSettingsOpen(false)}
           />
         </div>
@@ -1434,33 +1436,6 @@ export function App() {
         />
       )}
 
-      {connectorDialogOpen && (
-        <ConnectorDialog
-          onSave={(server) => {
-            setConnectorDialogOpen(false);
-            void reloadExtensions();
-            pushToast(
-              "success",
-              `Connected to "${server.name}"` +
-                (server.toolCount > 0
-                  ? ` — ${server.toolCount} tool${server.toolCount !== 1 ? "s" : ""}`
-                  : ""),
-            );
-          }}
-          onClose={() => setConnectorDialogOpen(false)}
-        />
-      )}
-
-      {pluginDialogOpen && (
-        <PluginDialog
-          onSave={(plugin) => {
-            setPluginDialogOpen(false);
-            void reloadExtensions();
-            pushToast("success", `Plugin "${plugin.name}" installed.`);
-          }}
-          onClose={() => setPluginDialogOpen(false)}
-        />
-      )}
 
       <CommandPalette
         open={paletteOpen}

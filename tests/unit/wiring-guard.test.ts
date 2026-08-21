@@ -22,17 +22,13 @@ import { join } from "node:path";
 const RENDERER = join(import.meta.dirname, "..", "..", "src", "renderer");
 const APP = readFileSync(join(RENDERER, "App.tsx"), "utf8");
 
-// Dialog files that now own the bridge calls that moved out of App.tsx.
+// Schedule remains a separate dialog; MCP and Plugin setup now live inline in Customize.
 const SCHEDULE_DIALOG = readFileSync(
   join(RENDERER, "components", "ScheduleDialog.tsx"),
   "utf8",
 );
-const CONNECTOR_DIALOG = readFileSync(
-  join(RENDERER, "components", "ConnectorDialog.tsx"),
-  "utf8",
-);
-const PLUGIN_DIALOG = readFileSync(
-  join(RENDERER, "components", "PluginDialog.tsx"),
+const CUSTOMIZE = readFileSync(
+  join(RENDERER, "pages", "CustomizePage.tsx"),
   "utf8",
 );
 
@@ -111,8 +107,8 @@ describe("App.tsx actually calls the backend", () => {
     });
   }
 
-  // These three calls moved into their respective dialog components.
-  // The guard now confirms they exist there.
+  // Schedule remains in its dedicated dialog; MCP and Plugin setup are now
+  // wired from App into the inline Customize forms.
 
   it("calls bridge().schedule.create (in ScheduleDialog)", () => {
     assert.ok(
@@ -121,18 +117,19 @@ describe("App.tsx actually calls the backend", () => {
     );
   });
 
-  it("calls bridge().mcp.add (in ConnectorDialog)", () => {
-    assert.ok(
-      CONNECTOR_DIALOG.includes("bridge().mcp.add"),
-      "ConnectorDialog.tsx never calls bridge().mcp.add",
-    );
+  it("passes MCP add to the inline Customize form", () => {
+    assert.ok(CUSTOMIZE.includes("onAddConnector"), "CustomizePage.tsx has no MCP add callback");
+    assert.ok(APP.includes("bridge().mcp.add"), "App.tsx never calls bridge().mcp.add");
   });
 
-  it("calls bridge().plugins.installFromUrl (in PluginDialog)", () => {
-    assert.ok(
-      PLUGIN_DIALOG.includes("bridge().plugins.installFromUrl"),
-      "PluginDialog.tsx never calls bridge().plugins.installFromUrl",
-    );
+  it("passes Plugin install paths to the inline Customize form", () => {
+    assert.ok(CUSTOMIZE.includes("onInstallPlugin"), "CustomizePage.tsx has no Plugin install callback");
+    assert.ok(APP.includes("bridge().plugins.installFromUrl"), "App.tsx never calls bridge().plugins.installFromUrl");
+    assert.ok(APP.includes("bridge().plugins.installFromZip"), "App.tsx never calls bridge().plugins.installFromZip");
+  });
+
+  it("calls bridge().dialog.selectFiles (for inline Plugin ZIP selection)", () => {
+    assert.ok(APP.includes("bridge().dialog.selectFiles"), "App.tsx never calls bridge().dialog.selectFiles");
   });
 
   it("calls bridge().dialog.selectFolder (in ScheduleDialog for working folder)", () => {

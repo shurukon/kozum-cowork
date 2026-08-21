@@ -1,275 +1,105 @@
-/**
- * dialogs.test.tsx
- *
- * ScheduleDialog: saving with an EMPTY PROMPT is rejected with a visible
- *   message and schedule.create is NOT called.
- *
- * ConnectorDialog: an invalid URL is rejected client-side.
- *
- * PluginDialog: both zip and GitHub install paths are reachable.
- */
-
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ScheduleDialog } from "../../src/renderer/components/ScheduleDialog.tsx";
-import { ConnectorDialog } from "../../src/renderer/components/ConnectorDialog.tsx";
-import { PluginDialog } from "../../src/renderer/components/PluginDialog.tsx";
-import {
-  makeFakeBridge,
-  makeScheduledTask,
-  makeMcpServer,
-  makePlugin,
-  installFakeBridge,
-} from "./fixtures.ts";
+import { CustomizePage, type CustomizePageProps } from "../../src/renderer/pages/CustomizePage.tsx";
+import { installFakeBridge, makeFakeBridge, makeMcpServer, makePlugin, makeScheduledTask } from "./fixtures.ts";
 
-// ── ScheduleDialog ────────────────────────────────────────────────────────
+function customizeProps(overrides: Partial<CustomizePageProps> = {}): CustomizePageProps {
+  return {
+    skills: [],
+    connectors: [],
+    plugins: [],
+    onToggleSkill: vi.fn(),
+    onToggleConnector: vi.fn(),
+    onTogglePlugin: vi.fn(),
+    onRemoveConnector: vi.fn(),
+    onRemovePlugin: vi.fn(),
+    onAddConnector: vi.fn(async () => ({ ok: true, value: makeMcpServer() })),
+    onInstallPlugin: vi.fn(async () => ({ ok: true, value: makePlugin() })),
+    onPickPluginZip: vi.fn(async () => "/tmp/plugin.zip"),
+    onBack: vi.fn(),
+    ...overrides,
+  };
+}
 
 describe("ScheduleDialog — empty prompt validation", () => {
-  let scheduleCreateCalled: boolean;
-  let cleanup: () => void;
+  let cleanup: (() => void) | undefined;
 
   beforeEach(() => {
-    scheduleCreateCalled = false;
-    const bridge = makeFakeBridge({
+    cleanup = installFakeBridge(makeFakeBridge({
       schedule: {
-        create: async (_task) => {
-          scheduleCreateCalled = true;
-          return { ok: true, value: { ...makeScheduledTask(), id: "new-task", createdAt: Date.now(), runCount: 0, ..._task } };
-        },
+        create: async (task) => ({ ok: true, value: { ...makeScheduledTask(), ...task, id: "new-task" } }),
       },
-      dialog: {
-        selectFolder: async () => null,
-      },
-    });
-    cleanup = installFakeBridge(bridge);
+    }));
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(() => cleanup?.());
 
-  it("shows a validation error when Schedule is clicked with an empty prompt", async () => {
-    render(
-      <ScheduleDialog
-        prefill={{}}
-        onSave={vi.fn()}
-        onClose={vi.fn()}
-      />,
-    );
-
-    // The prompt textarea should be empty by default (no prefill).
-    const scheduleBtn = screen.getByRole("button", { name: /schedule/i });
-    fireEvent.click(scheduleBtn);
-
-    // A validation error message must appear immediately (no async needed).
-    await waitFor(() => {
-      const errorEl = screen.queryByRole("alert");
-      expect(errorEl).not.toBeNull();
-      expect(errorEl?.textContent).toMatch(/prompt is required/i);
-    });
-  });
-
-  it("does NOT call bridge().schedule.create when prompt is empty", async () => {
+  it("shows a validation error and does not save an empty prompt", async () => {
     const onSave = vi.fn();
-    render(
-      <ScheduleDialog
-        prefill={{}}
-        onSave={onSave}
-        onClose={vi.fn()}
-      />,
-    );
-
-    const scheduleBtn = screen.getByRole("button", { name: /schedule/i });
-    fireEvent.click(scheduleBtn);
-
-    // Give async code a moment to potentially fire.
-    await new Promise((r) => setTimeout(r, 100));
-
-    expect(scheduleCreateCalled).toBe(false);
+    render(<ScheduleDialog prefill={{}} onSave={onSave} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /schedule/i }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/prompt is required/i));
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("calls schedule.create when a valid prompt is entered", async () => {
+  it("calls onSave when a valid prompt is entered", async () => {
     const onSave = vi.fn();
-    render(
-      <ScheduleDialog
-        prefill={{}}
-        onSave={onSave}
-        onClose={vi.fn()}
-      />,
-    );
-
-    const promptTextarea = screen.getByLabelText(/scheduled\.prompt/i);
-    fireEvent.change(promptTextarea, { target: { value: "Do the daily standup report." } });
-
-    const scheduleBtn = screen.getByRole("button", { name: /schedule/i });
-    fireEvent.click(scheduleBtn);
-
-    await waitFor(() => {
-      expect(scheduleCreateCalled).toBe(true);
-    }, { timeout: 2000 });
-
-    expect(onSave).toHaveBeenCalled();
+    render(<ScheduleDialog prefill={{}} onSave={onSave} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText(/scheduled\.prompt/i), { target: { value: "Do the daily standup report." } });
+    fireEvent.click(screen.getByRole("button", { name: /schedule/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
   });
 });
 
-// ── ConnectorDialog ───────────────────────────────────────────────────────
-
-describe("ConnectorDialog — URL validation", () => {
-  let cleanup: () => void;
-
-  beforeEach(() => {
-    const bridge = makeFakeBridge({
-      mcp: {
-        add: async (_config) => ({ ok: true, value: makeMcpServer() }),
-      },
-    });
-    cleanup = installFakeBridge(bridge);
+describe("Customize inline MCP form", () => {
+  it("rejects an invalid URL without calling the backend callback", async () => {
+    const onAddConnector = vi.fn(async () => ({ ok: true, value: makeMcpServer() }));
+    render(<CustomizePage {...customizeProps({ onAddConnector })} initialTab="mcp" />);
+    fireEvent.click(screen.getByRole("button", { name: /add server/i }));
+    fireEvent.change(screen.getByPlaceholderText(/https:\/\/example\.com\/mcp/i), { target: { value: "ftp://example.com/mcp" } });
+    fireEvent.click(screen.getByRole("button", { name: /connect server/i }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/http|url|valid/i));
+    expect(onAddConnector).not.toHaveBeenCalled();
   });
 
-  afterEach(() => {
-    cleanup();
-  });
-
-  it("rejects an invalid URL with a visible error on Save", async () => {
-    render(<ConnectorDialog onSave={vi.fn()} onClose={vi.fn()} />);
-
-    const urlInput = screen.getByPlaceholderText(/https:\/\/example\.com\/mcp/i);
-    fireEvent.change(urlInput, { target: { value: "not-a-valid-url" } });
-
-    const saveBtn = screen.getByRole("button", { name: "Connect", exact: true });
-    fireEvent.click(saveBtn);
-
-    await waitFor(() => {
-      const alert = screen.queryByRole("alert");
-      expect(alert).not.toBeNull();
-      // Should mention URL validation failure.
-      expect(alert?.textContent?.toLowerCase()).toMatch(/url|valid|http/);
-    });
-  });
-
-  it("rejects an ftp:// URL", async () => {
-    render(<ConnectorDialog onSave={vi.fn()} onClose={vi.fn()} />);
-
-    const urlInput = screen.getByPlaceholderText(/https:\/\/example\.com\/mcp/i);
-    fireEvent.change(urlInput, { target: { value: "ftp://example.com/mcp" } });
-
-    const saveBtn = screen.getByRole("button", { name: "Connect", exact: true });
-    fireEvent.click(saveBtn);
-
-    await waitFor(() => {
-      const alert = screen.queryByRole("alert");
-      expect(alert).not.toBeNull();
-    });
-  });
-
-  it("accepts a valid https:// URL and calls mcp.add", async () => {
-    const onSave = vi.fn();
-    render(<ConnectorDialog onSave={onSave} onClose={vi.fn()} />);
-
-    const urlInput = screen.getByPlaceholderText(/https:\/\/example\.com\/mcp/i);
-    fireEvent.change(urlInput, { target: { value: "https://my-server.example.com/mcp" } });
-
-    const saveBtn = screen.getByRole("button", { name: "Connect", exact: true });
-    fireEvent.click(saveBtn);
-
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalled();
-    }, { timeout: 2000 });
+  it("passes a valid MCP payload to the backend callback and renders success inline", async () => {
+    const onAddConnector = vi.fn(async () => ({ ok: true, value: makeMcpServer({ name: "Docs MCP", toolCount: 3 }) }));
+    render(<CustomizePage {...customizeProps({ onAddConnector })} initialTab="mcp" />);
+    fireEvent.click(screen.getByRole("button", { name: /add server/i }));
+    fireEvent.change(screen.getByPlaceholderText(/https:\/\/example\.com\/mcp/i), { target: { value: "https://my-server.example.com/mcp" } });
+    fireEvent.click(screen.getByRole("button", { name: /connect server/i }));
+    await waitFor(() => expect(onAddConnector).toHaveBeenCalled());
+    expect(onAddConnector.mock.calls[0][0]).toMatchObject({ transport: "http", url: "https://my-server.example.com/mcp", enabled: true, installedByAgent: false });
+    expect(await screen.findByText(/connected to docs mcp/i)).toBeInTheDocument();
   });
 });
 
-// ── PluginDialog ──────────────────────────────────────────────────────────
-
-describe("PluginDialog — install paths", () => {
-  let cleanup: () => void;
-
-  beforeEach(() => {
-    const bridge = makeFakeBridge({
-      plugins: {
-        installFromUrl: async (url) => ({
-          ok: true,
-          value: makePlugin({ name: `Plugin from ${url}` }),
-        }),
-      },
-      dialog: {
-        selectFiles: async () => ["/tmp/plugin.zip"],
-      },
-    });
-    cleanup = installFakeBridge(bridge);
+describe("Customize inline Plugin form", () => {
+  it("keeps plugin installation disabled until a source is selected", () => {
+    render(<CustomizePage {...customizeProps()} initialTab="plugins" />);
+    fireEvent.click(screen.getByRole("button", { name: /install plugin/i }));
+    expect(screen.getByRole("button", { name: /install plugin/i })).toBeDisabled();
   });
 
-  afterEach(() => {
-    cleanup();
+  it("supports GitHub installation through the backend callback", async () => {
+    const onInstallPlugin = vi.fn(async () => ({ ok: true, value: makePlugin({ name: "GitHub Plugin" }) }));
+    render(<CustomizePage {...customizeProps({ onInstallPlugin })} initialTab="plugins" />);
+    fireEvent.click(screen.getByRole("button", { name: /install plugin/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /from github/i }));
+    fireEvent.change(screen.getByPlaceholderText(/owner\/repo/i), { target: { value: "kozum/my-plugin" } });
+    fireEvent.click(screen.getByRole("button", { name: /install plugin/i }));
+    await waitFor(() => expect(onInstallPlugin).toHaveBeenCalledWith({ kind: "github", value: "kozum/my-plugin" }));
+    expect(await screen.findByText("GitHub Plugin")).toBeInTheDocument();
   });
 
-  it("renders the zip tab by default", () => {
-    render(<PluginDialog onSave={vi.fn()} onClose={vi.fn()} />);
-
-    // The zip tab should be active (aria-selected).
-    const zipTab = screen.getByRole("tab", { name: /from \.zip file/i });
-    expect(zipTab.getAttribute("aria-selected")).toBe("true");
-  });
-
-  it("GitHub tab is reachable by clicking it", () => {
-    render(<PluginDialog onSave={vi.fn()} onClose={vi.fn()} />);
-
-    const githubTab = screen.getByRole("tab", { name: /from github/i });
-    fireEvent.click(githubTab);
-
-    expect(githubTab.getAttribute("aria-selected")).toBe("true");
-
-    // The GitHub ref input should now be visible.
-    expect(screen.getByPlaceholderText(/owner\/repo/i)).toBeInTheDocument();
-  });
-
-  it("shows an error if trying to install from GitHub without a ref", async () => {
-    render(<PluginDialog onSave={vi.fn()} onClose={vi.fn()} />);
-
-    const githubTab = screen.getByRole("tab", { name: /from github/i });
-    fireEvent.click(githubTab);
-
-    const installBtn = screen.getByRole("button", { name: /^install$/i });
-    // Button should be disabled when ref is empty.
-    expect(installBtn).toBeDisabled();
-  });
-
-  it("install button is disabled on zip tab when no file chosen", () => {
-    render(<PluginDialog onSave={vi.fn()} onClose={vi.fn()} />);
-
-    const installBtn = screen.getByRole("button", { name: /^install$/i });
-    expect(installBtn).toBeDisabled();
-  });
-
-  it("install button is enabled after a GitHub ref is entered", () => {
-    render(<PluginDialog onSave={vi.fn()} onClose={vi.fn()} />);
-
-    const githubTab = screen.getByRole("tab", { name: /from github/i });
-    fireEvent.click(githubTab);
-
-    const refInput = screen.getByPlaceholderText(/owner\/repo/i);
-    fireEvent.change(refInput, { target: { value: "kozum/my-plugin" } });
-
-    const installBtn = screen.getByRole("button", { name: /^install$/i });
-    expect(installBtn).not.toBeDisabled();
-  });
-
-  it("installs a plugin from a GitHub ref and calls onSave", async () => {
-    const onSave = vi.fn();
-    render(<PluginDialog onSave={onSave} onClose={vi.fn()} />);
-
-    const githubTab = screen.getByRole("tab", { name: /from github/i });
-    fireEvent.click(githubTab);
-
-    const refInput = screen.getByPlaceholderText(/owner\/repo/i);
-    fireEvent.change(refInput, { target: { value: "kozum/my-plugin" } });
-
-    const installBtn = screen.getByRole("button", { name: /^install$/i });
-    fireEvent.click(installBtn);
-
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalled();
-    }, { timeout: 2000 });
+  it("supports local zip selection through the picker callback", async () => {
+    const onInstallPlugin = vi.fn(async () => ({ ok: true, value: makePlugin({ name: "Local Plugin" }) }));
+    render(<CustomizePage {...customizeProps({ onInstallPlugin })} initialTab="plugins" />);
+    fireEvent.click(screen.getByRole("button", { name: /install plugin/i }));
+    fireEvent.click(screen.getByRole("button", { name: /choose a \.zip file/i }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /install plugin/i })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: /install plugin/i }));
+    await waitFor(() => expect(onInstallPlugin).toHaveBeenCalledWith({ kind: "zip", value: "/tmp/plugin.zip" }));
   });
 });
