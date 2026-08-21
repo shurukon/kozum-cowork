@@ -5,11 +5,11 @@
  * Read-only tools remain available in every mode; mutating tools either run,
  * request an inline approval, or return a structured denial to the model.
  *
- *   accept_all   — run every exposed tool without asking.
- *   accept_edits — apply filesystem edits automatically; ask for commands,
- *                  processes, browser interactions, connectors and host control.
- *   ask          — ask before every mutating tool.
- *   reject       — refuse every mutating tool.
+ *   bypass_permissions — run every exposed tool without asking.
+ *   plan               — allow inspection and planning, but refuse mutating tools.
+ *   accept_edits      — apply filesystem edits automatically; ask for commands,
+ *                       processes, browser interactions, connectors and host control.
+ *   ask_permission    — ask before every mutating tool.
  */
 
 import type { PermissionMode, ToolResult } from "../../shared/types.ts";
@@ -102,14 +102,14 @@ export async function checkPermission(opts: PermissionGateOpts): Promise<Permiss
   const { toolName, toolGroup, permissionMode } = opts;
   const allowed = { allowed: true, blockedMessage: null } as const;
 
-  if (!isMutating(toolName, toolGroup) || permissionMode === "accept_all") return allowed;
+  if (!isMutating(toolName, toolGroup) || permissionMode === "bypass_permissions") return allowed;
 
-  if (permissionMode === "reject") {
+  if (permissionMode === "plan") {
     return {
       allowed: false,
       blockedMessage:
-        `The current permission mode is "reject", so the mutating tool "${toolName}" was not executed. ` +
-        "Ask the user to change the Code permission mode before retrying.",
+        `The current permission mode is "plan", so the mutating tool "${toolName}" was not executed. ` +
+        "Planning and read-only inspection remain available; ask the user to change the Code permission mode before applying changes.",
     };
   }
 

@@ -32,7 +32,7 @@ const COWORK_DEFAULTS: ModeSettings = {
 
 /**
  * Code runs longer still and benefits from deterministic output, so temperature
- * drops and the iteration ceiling rises. `accept_edits` matches the reference
+ * drops and the iteration ceiling rises. `ask_permission` keeps host actions
  * app's default posture: edits apply, shell commands still ask.
  */
 const CODE_DEFAULTS: ModeSettings = {
@@ -41,7 +41,7 @@ const CODE_DEFAULTS: ModeSettings = {
   maxTokens: 16384,
   temperature: 0,
   maxIterations: 120,
-  permissionMode: "ask",
+  permissionMode: "ask_permission",
   enabledToolNames: null,
 };
 

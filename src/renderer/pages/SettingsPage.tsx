@@ -264,7 +264,7 @@ function SettingsSection({
     return <>
       <SectionHeader eyebrow="Safety" title="Privacy & permissions" description="Kozum keeps credentials local and makes Code's action posture explicit." />
       <div className={styles.card}>
-        <Field label="Code default permission" hint="Controls new Code sessions. Existing sessions keep their own mode."><select className={styles.input} value={settings.code.permissionMode} onChange={(event) => onSave({ code: { ...settings.code, permissionMode: event.target.value as PermissionMode } })}><option value="accept_all">Accept all</option><option value="accept_edits">Accept edits</option><option value="ask">Ask</option><option value="reject">Reject</option></select></Field>
+        <Field label="Code default permission" hint="Controls new Code sessions. Existing sessions keep their own mode."><select className={styles.input} value={settings.code.permissionMode} onChange={(event) => onSave({ code: { ...settings.code, permissionMode: event.target.value as PermissionMode } })}><option value="bypass_permissions">bypass permissions</option><option value="plan">plan</option><option value="accept_edits">accept edits</option><option value="ask_permission">ask permission</option></select></Field>
         <Field label="Computer use"><Toggle checked={settings.computerUse.enabled} label="Computer use" onChange={(value) => onSave({ computerUse: { ...settings.computerUse, enabled: value } })} /></Field>
         <Field label="Require confirmation for computer use"><Toggle checked={settings.computerUse.requireConfirmation} label="Require computer confirmation" onChange={(value) => onSave({ computerUse: { ...settings.computerUse, requireConfirmation: value } })} /></Field>
       </div>

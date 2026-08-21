@@ -829,10 +829,10 @@ function PaneCode({
           value={cd.permissionMode}
           onChange={(v) => patch("permissionMode", v)}
           options={[
-            { value: "accept_all", label: "Accept all — no confirmations" },
-            { value: "accept_edits", label: "Accept edits — shell still asks" },
-            { value: "ask", label: "Ask — confirm every action" },
-            { value: "reject", label: "Reject — block all changes" },
+            { value: "bypass_permissions", label: "bypass permissions — no confirmations" },
+            { value: "plan", label: "plan — inspect without changes" },
+            { value: "accept_edits", label: "accept edits — shell still asks" },
+            { value: "ask_permission", label: "ask permission — confirm every action" },
           ]}
         />
       </Field>

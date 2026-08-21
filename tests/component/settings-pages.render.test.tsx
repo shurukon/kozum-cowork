@@ -25,18 +25,10 @@ function settingsProps(overrides: Record<string, unknown> = {}) {
 
 function customizeProps(overrides: Record<string, unknown> = {}) {
   return {
-    settings: makeSettings(),
-    skills: FAKE_SKILLS,
     connectors: FAKE_CONNECTORS,
-    plugins: FAKE_PLUGINS,
-    onSave: vi.fn(),
-    onToggleSkill: vi.fn(),
     onToggleConnector: vi.fn(),
-    onTogglePlugin: vi.fn(),
     onRemoveConnector: vi.fn(),
-    onRemovePlugin: vi.fn(),
     onAddConnector: vi.fn(),
-    onAddPlugin: vi.fn(),
     onBack: vi.fn(),
     ...overrides,
   };
@@ -61,31 +53,17 @@ describe("independent settings surfaces", () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it("exposes mode-aware prompt and extension management without a modal", () => {
-    const onSave = vi.fn();
-    const onToggleSkill = vi.fn();
+  it("keeps Customize focused on MCP and removes other extension surfaces", () => {
     const onToggleConnector = vi.fn();
-    const onTogglePlugin = vi.fn();
-    render(<CustomizePage {...customizeProps({ onSave, onToggleSkill, onToggleConnector, onTogglePlugin })} />);
+    render(<CustomizePage {...customizeProps({ onToggleConnector })} />);
 
-    expect(screen.getByRole("heading", { name: "System prompt" })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Mode system prompt override"), { target: { value: "Use concise acceptance checks." } });
-    fireEvent.click(screen.getByRole("button", { name: /Save instructions/i }));
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ cowork: expect.objectContaining({ systemPromptOverride: "Use concise acceptance checks." }) }));
-
-    fireEvent.click(screen.getByRole("button", { name: /Skills/i }));
-    expect(screen.getByText("Code Review")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Enable Code Review/i }));
-    expect(onToggleSkill).toHaveBeenCalledWith("skill-1", false);
-
-    fireEvent.click(screen.getByRole("button", { name: /MCP servers/i }));
+    expect(screen.getByRole("heading", { name: "MCP servers" })).toBeInTheDocument();
     expect(screen.getByText("Local MCP")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Enable Local MCP/i }));
     expect(onToggleConnector).toHaveBeenCalledWith("mcp-1", false);
 
-    fireEvent.click(screen.getByRole("button", { name: /Plugins/i }));
-    expect(screen.getByText("Engineering Pack")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Enable Engineering Pack/i }));
-    expect(onTogglePlugin).toHaveBeenCalledWith("plugin-1", false);
+    expect(screen.queryByRole("heading", { name: "System prompt" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Skills/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Plugins/i })).not.toBeInTheDocument();
   });
 });

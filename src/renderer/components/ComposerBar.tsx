@@ -23,7 +23,7 @@ import {
   type ReactNode,
 } from "react";
 import { ArrowUp, Plus, Square } from "lucide-react";
-import type { ModelSelection, ProviderPreset, ApiKeyEntry, ModelInfo } from "@shared/types.ts";
+import type { ModelSelection, ProviderPreset, ApiKeyEntry, ModelInfo, McpServerConfig, Plugin, Skill } from "@shared/types.ts";
 import { AddMenu, type AddMenuKind } from "./AddMenu.tsx";
 import { SelectorBar } from "./SelectorBar.tsx";
 import styles from "./ComposerBar.module.css";
@@ -57,6 +57,15 @@ export interface ComposerBarProps {
   /** Optional Cowork-only project/folder picker rendered in the toolbar. */
   projectSlot?: ReactNode;
 
+  /** Extension catalogues used by the in-chat QuickPanel. */
+  skills?: Skill[];
+  connectors?: McpServerConfig[];
+  plugins?: Plugin[];
+  onToggleSkill?: (id: string, enabled: boolean) => void;
+  onToggleConnector?: (id: string, enabled: boolean) => void;
+  onTogglePlugin?: (id: string, enabled: boolean) => void;
+  onInvokeExtension?: (command: string) => void;
+
   /** Placeholder text when idle. */
   placeholder?: string;
   /** Optional text injected by edit-back; remains editable until submit. */
@@ -82,6 +91,13 @@ export function ComposerBar({
   onRefreshModels,
   permissionSlot,
   projectSlot,
+  skills = [],
+  connectors = [],
+  plugins = [],
+  onToggleSkill,
+  onToggleConnector,
+  onTogglePlugin,
+  onInvokeExtension,
   placeholder = "Message…",
   initialText = null,
   takingLonger = false,
@@ -93,6 +109,7 @@ export function ComposerBar({
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const canSend = value.trim().length > 0 && !busy;
+  const commandQuery = value.startsWith("/") || value.startsWith("@") ? value : "";
 
   // ── Auto-grow textarea ─────────────────────────────────────────────────
 
@@ -139,6 +156,12 @@ export function ComposerBar({
     setMenuOpen(false);
   }
 
+  function handleInvokeExtension(command: string) {
+    setValue("");
+    if (taRef.current) taRef.current.style.height = "auto";
+    onInvokeExtension?.(command);
+  }
+
   return (
     <div ref={wrapRef} className={styles.wrap}>
       {/* In-flight sweep line at the bottom edge while running */}
@@ -179,7 +202,7 @@ export function ComposerBar({
               ref={plusBtnRef}
               className={styles.plus}
               aria-label="Add attachment"
-              title="Attach files, connectors, skills, or plugins"
+              title="Add files, skills, MCP servers, or plugins"
               onClick={() => setMenuOpen((v) => !v)}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
@@ -188,11 +211,19 @@ export function ComposerBar({
               <Plus size={16} />
             </button>
 
-            {menuOpen && (
+            {(menuOpen || commandQuery) && (
               <AddMenu
                 onPick={handlePick}
                 onClose={() => setMenuOpen(false)}
                 triggerRef={plusBtnRef}
+                skills={skills}
+                connectors={connectors}
+                plugins={plugins}
+                onToggleSkill={onToggleSkill}
+                onToggleConnector={onToggleConnector}
+                onTogglePlugin={onTogglePlugin}
+                onInvoke={handleInvokeExtension}
+                query={commandQuery}
               />
             )}
           </div>

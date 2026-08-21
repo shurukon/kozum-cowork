@@ -33,6 +33,25 @@ function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   };
 }
 
+/** Convert sessions written by pre-rename builds to the current wire values. */
+function normalizePermissionMode(value: unknown): PermissionMode {
+  switch (value) {
+    case "accept_all":
+      return "bypass_permissions";
+    case "ask":
+      return "ask_permission";
+    case "reject":
+      return "plan";
+    case "bypass_permissions":
+    case "plan":
+    case "accept_edits":
+    case "ask_permission":
+      return value;
+    default:
+      return "ask_permission";
+  }
+}
+
 /* -------------------------------------------------------------- class --- */
 
 export class SessionStore {
@@ -164,7 +183,16 @@ export class SessionStore {
 
   /** Get a single session by id. */
   async get(sessionId: string): Promise<Session | null> {
-    return readJson<Session | null>(this.sessionFilePath(sessionId), null);
+    const session = await readJson<Session | null>(this.sessionFilePath(sessionId), null);
+    if (!session) return null;
+
+    const permissionMode = normalizePermissionMode((session as { permissionMode?: unknown }).permissionMode);
+    if (session.permissionMode !== permissionMode) {
+      const migrated: Session = { ...session, permissionMode };
+      await writeJson(this.sessionFilePath(sessionId), migrated);
+      return migrated;
+    }
+    return session;
   }
 
   /** Create a new session. */
@@ -183,7 +211,7 @@ export class SessionStore {
       messageCount: 0,
       totalUsage: emptyUsage(),
       archived: false,
-      permissionMode: "ask",
+      permissionMode: "ask_permission",
     };
 
     await mkdir(this.sessionDir(session.id), { recursive: true });

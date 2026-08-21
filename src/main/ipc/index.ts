@@ -581,9 +581,9 @@ export function registerIpc(deps: IpcDeps): void {
     }));
   });
 
-  handle(ipcMain, "skills:setEnabled", async (_e, _id, _enabled) => {
-    // SkillStore doesn't persist enabled state via a toggle; accept the call.
-    return ok(undefined);
+  handle(ipcMain, "skills:setEnabled", async (_e, id, enabled) => {
+    const changed = deps.skills.setEnabled(String(id), Boolean(enabled));
+    return changed ? ok(undefined) : err(`Skill not found: ${String(id)}`);
   });
 
   /* ----------------------------------------------------------- memory --- */

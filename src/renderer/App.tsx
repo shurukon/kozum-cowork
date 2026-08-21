@@ -97,7 +97,7 @@ export function App() {
   const [nav, setNav] = useState<NavKey>("new");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsView, setSettingsView] = useState<"settings" | "customize">("settings");
-  const [customizeInitialTab, setCustomizeInitialTab] = useState<CustomizeTab>("system");
+  const [customizeInitialTab, setCustomizeInitialTab] = useState<CustomizeTab>("mcp");
   const [skippedSetup, setSkippedSetup] = useState(false);
   const [bootstrapReady, setBootstrapReady] = useState(false);
 
@@ -653,11 +653,7 @@ export function App() {
     useSessionStore.getState().resolveQuestion(mode, requestId);
   }
 
-  /**
-   * Handles all AddMenu kinds from ComposerBar/ChatView.
-   * files → dialog.selectFiles, connectors → ConnectorDialog,
-   * skills → Settings(skills pane), plugins → PluginDialog.
-   */
+  /** Handles file attachment from the in-chat QuickPanel. Extension actions stay in chat. */
   async function handleAttach(kind: AddMenuKind) {
     switch (kind) {
       case "files": {
@@ -677,13 +673,9 @@ export function App() {
         break;
       }
       case "connectors":
-        openCustomize("mcp");
-        break;
       case "skills":
-        openCustomize("skills");
-        break;
       case "plugins":
-        openCustomize("plugins");
+        // Extension toggles and invocation are handled by QuickPanel callbacks.
         break;
     }
   }
@@ -862,10 +854,30 @@ export function App() {
     setSettingsOpen(true);
   }
 
-  function openCustomize(tab: CustomizeTab = "system") {
+  function openCustomize(tab: CustomizeTab = "mcp") {
     setCustomizeInitialTab(tab);
     setSettingsView("customize");
     setSettingsOpen(true);
+  }
+
+  async function handleExtensionInvoke(command: string) {
+    const value = command.trim();
+    if (!value) return;
+    if (value.startsWith("/skill ")) {
+      const id = value.slice("/skill ".length).trim();
+      const skill = skills.find((item) => item.id === id);
+      await handleSubmit(skill ? `Use the skill "${skill.name}" for this task.` : `Use the skill "${id}" for this task.`);
+      return;
+    }
+    if (value.startsWith("/plugin ")) {
+      const name = value.slice("/plugin ".length).trim();
+      await handleSubmit(`Use the plugin "${name}" for this task.`);
+      return;
+    }
+    if (value.startsWith("@")) {
+      const name = value.slice(1).trim();
+      await handleSubmit(`Use the MCP server "${name}" for this task.`);
+    }
   }
 
   function handleNavKey(key: NavKey) {
@@ -1109,6 +1121,13 @@ export function App() {
       onRefreshModels={(pid) => handleRefreshModels(pid)}
       permissionSlot={mode === "code" ? codePermissionPicker : undefined}
       projectSlot={coworkProjectSlot}
+      skills={skills}
+      connectors={connectors}
+      plugins={plugins}
+      onToggleSkill={(id, enabled) => void toggle(() => bridge().skills.setEnabled(id, enabled))}
+      onToggleConnector={(id, enabled) => void toggle(() => bridge().mcp.setEnabled(id, enabled))}
+      onTogglePlugin={(id, enabled) => void toggle(() => bridge().plugins.setEnabled(id, enabled))}
+      onInvokeExtension={(command) => void handleExtensionInvoke(command)}
       placeholder={mode === "cowork" ? "Give Kozum a followup..." : undefined}
     />
   );
@@ -1191,6 +1210,13 @@ export function App() {
                       onRefreshModels={(pid) => handleRefreshModels(pid)}
                       permissionSlot={mode === "code" ? codePermissionPicker : undefined}
                       projectSlot={coworkProjectSlot}
+                      skills={skills}
+                      connectors={connectors}
+                      plugins={plugins}
+                      onToggleSkill={(id, enabled) => void toggle(() => bridge().skills.setEnabled(id, enabled))}
+                      onToggleConnector={(id, enabled) => void toggle(() => bridge().mcp.setEnabled(id, enabled))}
+                      onTogglePlugin={(id, enabled) => void toggle(() => bridge().plugins.setEnabled(id, enabled))}
+                      onInvokeExtension={(command) => void handleExtensionInvoke(command)}
                       onOpenFile={openFilePreview}
                       onPreview={(target) => setPreviewTarget(target)}
                       onReply={(requestId, answer) => void handleReply(requestId, answer)}
@@ -1354,27 +1380,15 @@ export function App() {
       {settingsOpen && settings && settingsView === "customize" && (
         <div className={styles.fullPageOverlay} role="region" aria-label="Customize page">
           <CustomizePage
-            settings={settings}
-            skills={skills}
             connectors={connectors}
-            plugins={plugins}
             initialTab={customizeInitialTab}
-            onSave={(patch) => void patchSettings(patch)}
-            onToggleSkill={(id, enabled) => void toggle(() => bridge().skills.setEnabled(id, enabled))}
             onToggleConnector={(id, enabled) => void toggle(() => bridge().mcp.setEnabled(id, enabled))}
-            onTogglePlugin={(id, enabled) => void toggle(() => bridge().plugins.setEnabled(id, enabled))}
             onRemoveConnector={async (id) => {
               const res = await bridge().mcp.remove(id);
               if (!res.ok) setBanner(res.error);
               await reloadExtensions();
             }}
-            onRemovePlugin={async (id) => {
-              const res = await bridge().plugins.remove(id);
-              if (!res.ok) setBanner(res.error);
-              await reloadExtensions();
-            }}
             onAddConnector={() => setConnectorDialogOpen(true)}
-            onAddPlugin={() => setPluginDialogOpen(true)}
             onBack={() => setSettingsOpen(false)}
           />
         </div>

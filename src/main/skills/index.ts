@@ -166,6 +166,16 @@ export class SkillStore {
   names(): string[] {
     return [...this.skills.keys()].sort();
   }
+
+  /** Enable or disable a discovered skill by its stable renderer-facing id. */
+  setEnabled(id: string, enabled: boolean): boolean {
+    for (const skill of this.skills.values()) {
+      if (skill.id !== id) continue;
+      skill.enabled = enabled;
+      return true;
+    }
+    return false;
+  }
 }
 
 /* ---------------------------------------------------------- skill tools --- */

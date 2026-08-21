@@ -198,23 +198,23 @@ describe("SessionStore.rename", () => {
 
 describe("SessionStore.setPermissionMode", () => {
   it("returns false for a non-existent session", async () => {
-    const result = await store.setPermissionMode("nonexistent", "ask");
+    const result = await store.setPermissionMode("nonexistent", "ask_permission");
     assert.equal(result, false);
   });
 
   it("updates permissionMode on disk", async () => {
     const session = await store.create("code", SELECTION);
-    assert.equal(session.permissionMode, "ask"); // default
+    assert.equal(session.permissionMode, "ask_permission"); // default
 
-    const result = await store.setPermissionMode(session.id, "reject");
+    const result = await store.setPermissionMode(session.id, "plan");
     assert.equal(result, true);
 
     const updated = await store.get(session.id);
     assert.ok(updated);
-    assert.equal(updated.permissionMode, "reject");
+    assert.equal(updated.permissionMode, "plan");
   });
 
-  for (const mode of ["accept_all", "accept_edits", "ask", "reject"] as const) {
+  for (const mode of ["bypass_permissions", "accept_edits", "ask_permission", "plan"] as const) {
     it(`persists mode: ${mode}`, async () => {
       const session = await store.create("cowork", SELECTION);
       await store.setPermissionMode(session.id, mode);

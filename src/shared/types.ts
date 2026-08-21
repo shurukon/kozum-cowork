@@ -333,10 +333,10 @@ export interface Session {
 }
 
 export type PermissionMode =
-  | "accept_all"
+  | "bypass_permissions"
+  | "plan"
   | "accept_edits"
-  | "ask"
-  | "reject";
+  | "ask_permission";
 
 export interface Project {
   id: string;

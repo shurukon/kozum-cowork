@@ -190,15 +190,15 @@
     "allow": "Allow",
     "deny": "Deny",
     "allowAlways": "Always allow",
-    "modeAcceptAll": "Accept all",
-    "modeAcceptEdits": "Accept edits",
-    "modeAsk": "Ask",
-    "modeReject": "Reject",
+    "modeBypassPermissions": "bypass permissions",
+    "modePlan": "plan",
+    "modeAcceptEdits": "accept edits",
+    "modeAskPermission": "ask permission",
     "modeTitle": "Permission mode",
-    "modeAcceptAllDesc": "Run mutating actions without confirmations. Use only in trusted projects.",
+    "modeBypassPermissionsDesc": "Run mutating actions without confirmations. Use only in trusted projects.",
+    "modePlanDesc": "Inspect and plan without applying mutating actions.",
     "modeAcceptEditsDesc": "File edits apply automatically; shell and host actions still ask.",
-    "modeAskDesc": "Confirm every mutating action before it runs.",
-    "modeRejectDesc": "Block every mutating action; read-only tools remain available."
+    "modeAskPermissionDesc": "Confirm every mutating action before it runs."
   },
   "home": {
     "greeting": "Good evening",

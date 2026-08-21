@@ -107,16 +107,18 @@
 .plus {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-sm);
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
   color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-code, #171717);
   transition: background var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out);
 }
 
 .plus:not(:disabled):hover {
-  background: var(--bg-hover);
+  background: var(--bg-elevated);
   color: var(--text-primary);
 }
 

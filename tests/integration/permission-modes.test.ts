@@ -1,10 +1,10 @@
 /**
  * Integration tests for the real permission gate.
  *
- * accept_all   — mutating tools run without asking.
+ * bypass_permissions   — mutating tools run without asking.
  * accept_edits — filesystem edits run; shell/process/computer ask.
- * ask          — every mutating tool asks.
- * reject       — every mutating tool is blocked.
+ * ask_permission — every mutating tool asks.
+ * plan         — every mutating tool is blocked.
  *
  * The callback represents the live SessionManager permission broker boundary;
  * the test does not execute a fake tool handler or bypass the gate.
@@ -32,7 +32,7 @@ function makeOpts(
   };
 }
 
-describe("accept_all — nothing blocks or asks", () => {
+describe("bypass_permissions — nothing blocks or asks", () => {
   it("allows shell, filesystem and computer tools without asking", async () => {
     let asked = 0;
     for (const [toolName, toolGroup] of [
@@ -41,7 +41,7 @@ describe("accept_all — nothing blocks or asks", () => {
       ["computer_click", "computer"],
     ]) {
       const decision = await checkPermission({
-        ...makeOpts(toolName, toolGroup, "accept_all"),
+        ...makeOpts(toolName, toolGroup, "bypass_permissions"),
         requestPermission: async () => { asked += 1; return ["no"]; },
       });
       assert.equal(decision.allowed, true);
@@ -50,7 +50,7 @@ describe("accept_all — nothing blocks or asks", () => {
   });
 });
 
-describe("reject — mutating tools are blocked", () => {
+describe("plan — mutating tools are blocked", () => {
   it("blocks shell, filesystem and computer tools without asking", async () => {
     let asked = 0;
     for (const [toolName, toolGroup] of [
@@ -59,18 +59,18 @@ describe("reject — mutating tools are blocked", () => {
       ["computer_type", "computer"],
     ]) {
       const decision = await checkPermission({
-        ...makeOpts(toolName, toolGroup, "reject"),
+        ...makeOpts(toolName, toolGroup, "plan"),
         requestPermission: async () => { asked += 1; return ["yes"]; },
       });
       assert.equal(decision.allowed, false);
-      assert.match(decision.blockedMessage ?? "", /reject/i);
+      assert.match(decision.blockedMessage ?? "", /plan/i);
     }
     assert.equal(asked, 0);
   });
 
   it("still allows read-only tools and web tools", async () => {
     for (const [toolName, toolGroup] of [["file_read", "filesystem"], ["web_fetch", "web"]]) {
-      const decision = await checkPermission(makeOpts(toolName, toolGroup, "reject"));
+      const decision = await checkPermission(makeOpts(toolName, toolGroup, "plan"));
       assert.equal(decision.allowed, true);
     }
   });
@@ -113,11 +113,11 @@ describe("accept_edits — file edits auto-approve; host actions ask", () => {
   });
 });
 
-describe("ask — every mutating tool asks", () => {
+describe("ask_permission — every mutating tool asks", () => {
   it("asks for file writes and allows on yes", async () => {
     let asked = false;
     const decision = await checkPermission({
-      ...makeOpts("file_write", "filesystem", "ask"),
+      ...makeOpts("file_write", "filesystem", "ask_permission"),
       requestPermission: async () => { asked = true; return ["yes"]; },
     });
     assert.equal(decision.allowed, true);
@@ -125,7 +125,7 @@ describe("ask — every mutating tool asks", () => {
   });
 
   it("asks for shell and blocks on no", async () => {
-    const decision = await checkPermission(makeOpts("shell_exec", "shell", "ask", "no"));
+    const decision = await checkPermission(makeOpts("shell_exec", "shell", "ask_permission", "no"));
     assert.equal(decision.allowed, false);
     assert.ok(decision.blockedMessage);
   });
@@ -133,7 +133,7 @@ describe("ask — every mutating tool asks", () => {
   it("does not ask for read-only tools", async () => {
     let asked = false;
     const decision = await checkPermission({
-      ...makeOpts("file_search", "filesystem", "ask"),
+      ...makeOpts("file_search", "filesystem", "ask_permission"),
       requestPermission: async () => { asked = true; return ["yes"]; },
     });
     assert.equal(decision.allowed, true);
@@ -144,13 +144,13 @@ describe("ask — every mutating tool asks", () => {
 describe("permission answer normalisation", () => {
   for (const answer of ["yes", "allow", "approve", "y"] as const) {
     it(`treats ${answer} as approval`, async () => {
-      const decision = await checkPermission(makeOpts("shell_exec", "shell", "ask", answer));
+      const decision = await checkPermission(makeOpts("shell_exec", "shell", "ask_permission", answer));
       assert.equal(decision.allowed, true);
     });
   }
   for (const answer of ["no", "deny", "reject", "n", "cancel"] as const) {
     it(`treats ${answer} as denial`, async () => {
-      const decision = await checkPermission(makeOpts("shell_exec", "shell", "ask", answer));
+      const decision = await checkPermission(makeOpts("shell_exec", "shell", "ask_permission", answer));
       assert.equal(decision.allowed, false);
     });
   }
@@ -177,12 +177,12 @@ describe("side-effect classification beyond files and shell", () => {
       ["web_search", "web"],
       ["ask_user_question", "agent"],
     ]) {
-      const decision = await checkPermission(makeOpts(toolName, toolGroup, "reject"));
+      const decision = await checkPermission(makeOpts(toolName, toolGroup, "plan"));
       assert.equal(decision.allowed, true, `${toolName} should remain available`);
     }
   });
 
-  it("blocks persistent memory, schedule, connector and browser actions in reject", async () => {
+  it("blocks persistent memory, schedule, connector and browser actions in plan", async () => {
     for (const [toolName, toolGroup] of [
       ["memory_write", "system"],
       ["schedule_create", "task"],
@@ -190,15 +190,15 @@ describe("side-effect classification beyond files and shell", () => {
       ["plugin_install", "plugin"],
       ["browser_click", "browser"],
     ]) {
-      const decision = await checkPermission(makeOpts(toolName, toolGroup, "reject"));
+      const decision = await checkPermission(makeOpts(toolName, toolGroup, "plan"));
       assert.equal(decision.allowed, false, `${toolName} should be blocked`);
     }
   });
 
-  it("asks before a connector action in ask mode and proceeds only after approval", async () => {
+  it("asks before a connector action in ask_permission mode and proceeds only after approval", async () => {
     let asked = false;
     const decision = await checkPermission({
-      ...makeOpts("mcp_call", "mcp", "ask"),
+      ...makeOpts("mcp_call", "mcp", "ask_permission"),
       requestPermission: async () => { asked = true; return ["allow"]; },
     });
     assert.equal(decision.allowed, true);

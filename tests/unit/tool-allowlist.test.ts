@@ -31,7 +31,7 @@ const settings = (enabledToolNames: string[] | null): ModeSettings => ({
   maxTokens: 1024,
   temperature: 0,
   maxIterations: 2,
-  permissionMode: "accept_all",
+  permissionMode: "bypass_permissions",
   enabledToolNames,
 });
 

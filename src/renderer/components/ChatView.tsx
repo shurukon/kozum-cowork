@@ -28,6 +28,9 @@ import type {
   ProviderPreset,
   ApiKeyEntry,
   ModelInfo,
+  McpServerConfig,
+  Plugin,
+  Skill,
 } from "@shared/types.ts";
 import { reconstructToolCards, useSessionStore } from "../store/session.ts";
 import { Message } from "./Message.tsx";
@@ -64,6 +67,15 @@ export interface ChatViewProps {
 
   /** Optional Cowork-only project/folder picker rendered in the composer. */
   projectSlot?: ReactNode;
+
+  /** Extension catalogues and actions for the in-chat QuickPanel. */
+  skills?: Skill[];
+  connectors?: McpServerConfig[];
+  plugins?: Plugin[];
+  onToggleSkill?: (id: string, enabled: boolean) => void;
+  onToggleConnector?: (id: string, enabled: boolean) => void;
+  onTogglePlugin?: (id: string, enabled: boolean) => void;
+  onInvokeExtension?: (command: string) => void;
 
   /** Called when the user clicks a file chip inside a tool card. */
   onOpenFile?: (path: string) => void;
@@ -107,6 +119,13 @@ export function ChatView({
   onRefreshModels,
   permissionSlot,
   projectSlot,
+  skills,
+  connectors,
+  plugins,
+  onToggleSkill,
+  onToggleConnector,
+  onTogglePlugin,
+  onInvokeExtension,
   onOpenFile,
   onPreview,
   onReply,
@@ -256,6 +275,13 @@ export function ChatView({
         onRefreshModels={onRefreshModels}
         permissionSlot={permissionSlot}
         projectSlot={projectSlot}
+        skills={skills}
+        connectors={connectors}
+        plugins={plugins}
+        onToggleSkill={onToggleSkill}
+        onToggleConnector={onToggleConnector}
+        onTogglePlugin={onTogglePlugin}
+        onInvokeExtension={onInvokeExtension}
         placeholder={mode === "cowork" ? "Give Kozum a followup..." : undefined}
         initialText={composerDraft}
         takingLonger={takingLonger}
