@@ -63,6 +63,10 @@ export class SessionManager {
   private sessionAllowedTools = new Map<string, Set<string>>();
   /** Recently completed client turns; protects delayed renderer retries. */
   private completedTurns = new Map<string, number>();
+  /** Sessions being archived/deleted; late loop callbacks must become no-ops. */
+  private retiredSessions = new Set<string>();
+  /** Sidecar writes already accepted before retirement; teardown waits for them. */
+  private pendingRunWrites = new Map<string, Set<Promise<void>>>();
   private readonly completedTurnTtlMs = 10 * 60_000;
 
   constructor(opts: {
@@ -100,6 +104,9 @@ export class SessionManager {
   ): Promise<Result<void>> {
     const session = await this.sessions.get(sessionId);
     if (!session) return err(`Session "${sessionId}" not found`);
+    if (this.retiredSessions.has(sessionId)) {
+      return err(`Session "${sessionId}" is being closed`);
+    }
 
     // A renderer retry can arrive after the original run reached its terminal
     // event but before the UI received the acknowledgement. Treat it as a
@@ -150,14 +157,37 @@ export class SessionManager {
     return ok(undefined);
   }
 
+  /**
+   * Tear down a session before archive/delete. This is deliberately stronger
+   * than cancel(): a cancelled session may be reused, while a deleted session
+   * must release all session-scoped state and pending user requests.
+   */
+  async teardown(sessionId: string): Promise<Result<void>> {
+    // Retire before aborting so a provider callback that wins the race cannot
+    // emit or persist another event while the IPC delete/archive is underway.
+    this.retiredSessions.add(sessionId);
+    const result = await this.cancel(sessionId);
+    const pendingWrites = this.pendingRunWrites.get(sessionId);
+    if (pendingWrites && pendingWrites.size > 0) {
+      await Promise.all([...pendingWrites]);
+    }
+    this.pendingRunWrites.delete(sessionId);
+    this.sessionAllowedTools.delete(sessionId);
+    this.ask.rejectAllForSession(sessionId, "Session was deleted.");
+    for (const key of this.completedTurns.keys()) {
+      if (key.startsWith(`${sessionId}:`)) this.completedTurns.delete(key);
+    }
+    return result;
+  }
+
   /** Resolve a pending ask/question. */
   async reply(
-    _sessionId: string,
+    sessionId: string,
     requestId: string,
     answer: string | string[],
   ): Promise<Result<void>> {
     const values = Array.isArray(answer) ? answer : [answer];
-    const resolved = this.ask.resolve(requestId, values);
+    const resolved = this.ask.resolve(requestId, values, sessionId);
     if (!resolved) return err(`No pending request "${requestId}"`);
     return ok(undefined);
   }
@@ -379,7 +409,7 @@ export class SessionManager {
                   { label: "Deny", value: "deny" },
                 ],
                 multiSelect: false,
-              });
+              }, opts.sessionId);
               emitStatus("waiting_input");
               emitForPermission(opts.sessionId, {
                 type: "permission_request",
@@ -450,16 +480,30 @@ export class SessionManager {
         signal: controller.signal,
         // Forward events to the renderer and persist a sidecar for reattachment.
         emit: (e: AgentEvent) => {
+          if (this.retiredSessions.has(sessionId)) return;
           if (e.runId) currentRunId = e.runId;
           this.emitEvent(sessionId, e);
-          void this.sessions.appendRunEvent(sessionId, e);
+          const write = this.sessions.appendRunEvent(sessionId, e).catch(() => undefined);
+          const writes = this.pendingRunWrites.get(sessionId) ?? new Set<Promise<void>>();
+          writes.add(write);
+          this.pendingRunWrites.set(sessionId, writes);
+          void write.finally(() => {
+            const current = this.pendingRunWrites.get(sessionId);
+            current?.delete(write);
+            if (current && current.size === 0 && this.retiredSessions.has(sessionId)) {
+              this.pendingRunWrites.delete(sessionId);
+            }
+          });
         },
       });
 
-      // Persist produced messages (user turn + agent turns)
+      // Persist produced messages (user turn + agent turns), unless archive/
+      // delete retired this session while the provider was finishing.
+      if (this.retiredSessions.has(sessionId)) return;
       const produced = [userMsg, ...result.messages];
       await this.sessions.appendMessages(sessionId, produced);
 
+      if (this.retiredSessions.has(sessionId)) return;
       currentRunId = result.runId;
       const finalStatus = result.stopReason === "cancelled" ? "cancelled" : "idle";
       await this.sessions.updateStatus(sessionId, finalStatus);
@@ -471,6 +515,7 @@ export class SessionManager {
         runId: currentRunId,
       });
     } catch (e) {
+      if (this.retiredSessions.has(sessionId)) return;
       const msg = e instanceof Error ? e.message : String(e);
       // Mirror to stdout so failures are visible in dev logs even if the
       // renderer never receives the IPC event.

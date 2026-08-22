@@ -89,11 +89,23 @@ function makeMcpStub() {
     added,
     connectCalls,
     manager: {
-      add(cfg: McpServerConfig) {
+      async testConnection() {
+        return {
+          protocolVersion: "2024-11-05",
+          serverInfo: { name: "fixture", version: "1" },
+          tools: [],
+        };
+      },
+      async add(cfg: McpServerConfig) {
         added.push(cfg);
       },
       async connect(id: string, opts: { authToken?: string } = {}) {
         connectCalls.push({ id, authToken: opts.authToken });
+        const server = added.find((entry) => entry.id === id);
+        if (server) {
+          server.status = "connected";
+          server.toolCount = 0;
+        }
       },
       status() {
         return added.map((c) => ({ ...c }));

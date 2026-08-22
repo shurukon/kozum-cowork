@@ -764,7 +764,7 @@ describe("JSON-RPC error response handling", () => {
         toolCount: 0,
         allowLocal: true,
       };
-      manager.add(config);
+      await manager.add(config);
       await manager.connect("fail-srv");
 
       const result = await manager.callTool("fail-srv", "fail_tool", {});
@@ -805,6 +805,27 @@ describe("mcp_install end-to-end", () => {
 
   after(async () => {
     await new Promise<void>((res) => server.close(() => res()));
+  });
+
+  it("testConnection performs a real handshake without registering the server", async () => {
+    const manager = new McpManager();
+    const result = await manager.testConnection({
+      transport: "http",
+      url,
+      allowLocal: true,
+    });
+    assert.equal(result.transport, "http");
+    assert.ok(result.toolCount >= 2);
+    assert.ok(result.toolNames.includes("echo"));
+    assert.equal(manager.status().length, 0, "testConnection must not persist a server");
+  });
+
+  it("testConnection refuses a localhost endpoint unless explicitly allowed", async () => {
+    const manager = new McpManager();
+    await assert.rejects(
+      () => manager.testConnection({ transport: "http", url, allowLocal: false }),
+      /SSRF guard/i,
+    );
   });
 
   it("install → new tools appear in allTools() → mcp_call succeeds", async () => {
@@ -909,8 +930,8 @@ describe("server isolation", () => {
         allowLocal: true,
       };
 
-      manager.add(deadConfig);
-      manager.add(goodConfig);
+      await manager.add(deadConfig);
+      await manager.add(goodConfig);
       await manager.connectAll();
 
       const statuses = manager.status();
@@ -957,7 +978,7 @@ describe("tool namespacing", () => {
         toolCount: 0,
         allowLocal: true,
       };
-      manager.add(config);
+      await manager.add(config);
       await manager.connect("ns-test");
 
       const allTools = manager.allTools();

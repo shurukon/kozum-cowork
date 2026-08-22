@@ -44,12 +44,12 @@ describe("pickPreviewTarget", () => {
     assert.deepEqual(target, { kind: "file", path: "/tmp/hi.txt" });
   });
 
-  it("returns a safe artifact target for generated HTML", () => {
+  it("returns a live file target for generated HTML", () => {
     const target = pickPreviewTarget("file_write", {
       ...OK,
       display: { summary: "wrote landing page", files: ["/tmp/landing.html"] },
     });
-    assert.deepEqual(target, { kind: "artifact", path: "/tmp/landing.html" });
+    assert.deepEqual(target, { kind: "file", path: "/tmp/landing.html" });
   });
 
   it("returns a computer target for screenshot tools with images", () => {

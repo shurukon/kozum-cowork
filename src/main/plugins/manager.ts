@@ -248,31 +248,27 @@ export class PluginManager {
     const parsed = parseGitHubRef(repoRef);
     const { owner, repo, ref, subPath } = parsed;
 
-    const downloadRef = ref ?? "HEAD";
-
-    // Encode each URL path segment individually so that a ref containing
-    // "/../" cannot collapse into a different path component.  owner/repo are
-    // already validated to contain only safe characters, but encode anyway
-    // for defence in depth.
+    // GitHub's /zip/HEAD endpoint is the correct default. Requesting
+    // /zip/refs/heads/HEAD treats HEAD as a literal branch and returns 404.
+    // Encode each URL path segment separately so a ref cannot collapse into a
+    // different path component. owner/repo are already validated above.
     const encodedOwner = encodeURIComponent(owner);
     const encodedRepo = encodeURIComponent(repo);
-    const encodedRef = encodeURIComponent(downloadRef);
-
-    // GitHub zipball URL via codeload — each segment encoded separately.
-    const zipUrl =
-      `https://codeload.github.com/${encodedOwner}/${encodedRepo}` +
-      `/zip/refs/heads/${encodedRef}`;
+    const zipBase = `https://codeload.github.com/${encodedOwner}/${encodedRepo}`;
+    const zipUrl = ref
+      ? `${zipBase}/zip/refs/heads/${encodeURIComponent(ref)}`
+      : `${zipBase}/zip/HEAD`;
 
     let response: Response;
     let resolvedUrl = zipUrl;
     try {
       response = await fetchGitHub(zipUrl);
     } catch (e) {
-      // Try fallback: zip/HEAD
-      if (downloadRef !== "HEAD") {
+      // For an explicit ref, retry the repository default branch. This also
+      // covers tags and refs that GitHub cannot resolve in the heads endpoint.
+      if (ref) {
         try {
-          const fallbackUrl =
-            `https://codeload.github.com/${encodedOwner}/${encodedRepo}/zip/HEAD`;
+          const fallbackUrl = `${zipBase}/zip/HEAD`;
           response = await fetchGitHub(fallbackUrl);
           resolvedUrl = fallbackUrl;
         } catch {

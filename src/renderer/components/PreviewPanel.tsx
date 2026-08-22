@@ -10,7 +10,10 @@
  *   • project    — devUrl iframe when running, folder summary otherwise
  *   • computer   — base64 computer-use screenshot
  *   • mcp        — pretty-printed MCP result JSON
- *   • artifact   — read-only, sanitized visual artifact canvas
+  *   • artifact    — read-only, sanitized visual artifact canvas
+ *
+ * HTML file targets use the hardened loopback preview server when available;
+ * explicit artifact targets remain sanitized and script-free.
  *
  * IPC: uses bridge().preview.readFile / bridge().preview.stat added by
  * src/main/ipc/index.ts. Falls back gracefully when the handlers are absent.
@@ -77,6 +80,22 @@ async function safeStat(path: string): Promise<Result<StatResult>> {
     return b.preview.stat(path);
   } catch (e) {
     return { ok: false, error: String(e) };
+  }
+}
+
+async function safeOpenLiveHtml(path: string): Promise<Result<{ url: string; path: string }>> {
+  try {
+    const b = bridge() as unknown as {
+      preview?: {
+        openLiveHtml?: (p: string) => Promise<Result<{ url: string; path: string }>>;
+      };
+    };
+    if (typeof b.preview?.openLiveHtml !== "function") {
+      return { ok: false, error: "Live HTML preview is not available in this build." };
+    }
+    return b.preview.openLiveHtml(path);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -310,11 +329,11 @@ function FilePreview({ path }: { path: string }) {
     );
   }
 
-  // HTML landing pages render through the same read-only artifact canvas used
-  // by explicit artifact targets. Scripts, frames, embeds and event handlers
-  // are stripped before the content enters a sandboxed iframe.
+  // HTML file targets use the real Chromium live preview so relative assets,
+  // SVGs, fonts and safe local JavaScript behave like the source page. If this
+  // build cannot provide the loopback server, retain the safe static fallback.
   if (kind === "text" && /\.(?:html?|xhtml)$/i.test(path)) {
-    return <ArtifactCanvas content={data.content} title={path.split("/").pop() ?? path} />;
+    return <LiveHtmlPreview path={path} content={data.content} />;
   }
 
   // Markdown
@@ -352,6 +371,53 @@ function FilePreview({ path }: { path: string }) {
           </tbody>
         </table>
       </pre>
+    </div>
+  );
+}
+
+function LiveHtmlPreview({ path, content }: { path: string; content: string }) {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "ready"; url: string }
+    | { status: "fallback"; message: string }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ status: "loading" });
+    safeOpenLiveHtml(path).then((result) => {
+      if (cancelled) return;
+      if (result.ok) setState({ status: "ready", url: result.value.url });
+      else setState({ status: "fallback", message: result.error });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  if (state.status === "loading") return <LoadingShimmer />;
+  if (state.status === "ready") {
+    return (
+      <div className={styles.liveHtmlWrap} aria-label="Live local HTML preview">
+        <p className={styles.liveHtmlNote}>
+          Live local preview · local assets and sandboxed page scripts · {state.url}
+        </p>
+        <iframe
+          className={styles.htmlVisualFrame}
+          src={state.url}
+          title={`Live HTML preview: ${path}`}
+          sandbox="allow-scripts allow-same-origin"
+          referrerPolicy="no-referrer"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.liveHtmlFallback}>
+      <p className={styles.liveHtmlNote}>Live preview unavailable; showing a safe static fallback.</p>
+      <p className={styles.liveHtmlError} role="status">{state.message}</p>
+      <ArtifactCanvas content={content} title={path.split("/").pop() ?? path} />
     </div>
   );
 }

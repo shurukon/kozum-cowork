@@ -7,10 +7,12 @@
  * Tool names are namespaced: mcp__<serverName>__<toolName>
  */
 
-import type { McpServerConfig, McpStatus, McpToolInfo } from "../../shared/types.ts";
+import type { McpConnectionTest, McpServerConfig, McpStatus, McpToolInfo } from "../../shared/types.ts";
 import { McpClient } from "./client.ts";
 import type { McpToolDefinition } from "./client.ts";
 import { createTransport } from "./transport.ts";
+import { readJson, writeJson } from "../store/json.ts";
+import type { SecretStore } from "../store/secrets.ts";
 
 /* -------------------------------------------------------- server entry --- */
 
@@ -24,37 +26,142 @@ interface ServerEntry {
 
 /* ----------------------------------------------------------- manager --- */
 
+interface McpFile {
+  servers: McpServerConfig[];
+}
+
 export class McpManager {
   private servers = new Map<string, ServerEntry>();
+  private readonly filePath?: string;
+  private readonly secrets?: SecretStore;
+  private readonly tokenIds = new Map<string, string>();
+  private loaded = false;
+  private loading: Promise<void> | null = null;
+  private persistQueue: Promise<void> = Promise.resolve();
+
+  constructor(filePath?: string, secrets?: SecretStore) {
+    this.filePath = filePath;
+    this.secrets = secrets;
+  }
+
+  /** Load persisted configs once. Runtime status is always reset on boot. */
+  async load(): Promise<void> {
+    await this.ensureLoaded();
+  }
+
+  private async ensureLoaded(): Promise<void> {
+    if (this.loaded) return;
+    if (this.loading) return this.loading;
+    this.loading = (async () => {
+      if (this.filePath) {
+        const data = await readJson<McpFile>(this.filePath, { servers: [] });
+        for (const raw of Array.isArray(data.servers) ? data.servers : []) {
+          if (!raw || typeof raw.id !== "string" || typeof raw.name !== "string") continue;
+          this.servers.set(raw.id, {
+            config: {
+              ...raw,
+              status: "disconnected",
+              statusMessage: undefined,
+              toolCount: 0,
+            },
+            client: null,
+            tools: [],
+            status: "disconnected",
+          });
+        }
+      }
+      this.loaded = true;
+    })();
+    try {
+      await this.loading;
+    } finally {
+      this.loading = null;
+    }
+  }
+
+  private persist(): Promise<void> {
+    if (!this.filePath) return Promise.resolve();
+    this.persistQueue = this.persistQueue.then(async () => {
+      const servers = [...this.servers.values()].map((entry) => ({
+        ...entry.config,
+        status: "disconnected" as const,
+        statusMessage: undefined,
+        toolCount: 0,
+      }));
+      await writeJson(this.filePath!, { servers });
+    });
+    return this.persistQueue;
+  }
+
+  /** Store or replace a server token in the OS-backed secret store. */
+  async setAuthToken(id: string, token?: string): Promise<void> {
+    if (!token || !this.secrets) return;
+    const providerId = `mcp:${id}`;
+    // Add first so a transient secret-store failure never destroys the token
+    // that is currently working. Cleanup of older records follows only after
+    // the replacement has been committed.
+    const replacement = await this.secrets.add(providerId, "MCP authentication", token);
+    const previous = await this.secrets.list(providerId);
+    for (const record of previous) {
+      if (record.id !== replacement.id) {
+        await this.secrets.remove(record.id);
+      }
+    }
+    this.tokenIds.set(id, replacement.id);
+  }
+
+  private async authTokenFor(id: string): Promise<string | undefined> {
+    if (!this.secrets) return undefined;
+    const cachedId = this.tokenIds.get(id);
+    if (cachedId) return (await this.secrets.reveal(cachedId)) ?? undefined;
+    const records = await this.secrets.list(`mcp:${id}`);
+    const first = records[0];
+    if (!first) return undefined;
+    this.tokenIds.set(id, first.id);
+    return (await this.secrets.reveal(first.id)) ?? undefined;
+  }
 
   /** Add a server configuration (does not connect — call connect() after). */
-  add(config: McpServerConfig): void {
+  async add(config: McpServerConfig): Promise<void> {
+    await this.ensureLoaded();
     if (this.servers.has(config.id)) {
       throw new Error(`MCP server "${config.id}" is already registered`);
     }
     this.servers.set(config.id, {
-      config,
+      config: { ...config, status: "disconnected", toolCount: 0 },
       client: null,
       tools: [],
       status: "disconnected",
     });
+    await this.persist();
   }
 
   /** Remove a server and close its connection. */
   async remove(id: string): Promise<void> {
+    await this.ensureLoaded();
     const entry = this.servers.get(id);
     if (!entry) return;
     if (entry.client) {
       await entry.client.close().catch(() => undefined);
     }
     this.servers.delete(id);
+    if (this.secrets) {
+      const providerId = `mcp:${id}`;
+      for (const record of await this.secrets.list(providerId)) {
+        await this.secrets.remove(record.id).catch(() => undefined);
+      }
+    }
+    this.tokenIds.delete(id);
+    await this.persist();
   }
 
   /** Enable a server (does not reconnect automatically). */
-  enable(id: string): void {
+  async enable(id: string): Promise<void> {
+    await this.ensureLoaded();
     const entry = this.servers.get(id);
     if (entry) {
       entry.config = { ...entry.config, enabled: true };
+      await this.persist();
     }
   }
 
@@ -69,6 +176,8 @@ export class McpManager {
     entry.config = { ...entry.config, enabled: false };
     entry.status = "disconnected";
     entry.tools = [];
+    entry.config = { ...entry.config, toolCount: 0 };
+    await this.persist();
   }
 
   /** Connect to a single server by id. Safe to call even if already connected. */
@@ -76,9 +185,11 @@ export class McpManager {
     id: string,
     opts: { authToken?: string } = {},
   ): Promise<void> {
+    await this.ensureLoaded();
     const entry = this.servers.get(id);
     if (!entry) throw new Error(`Unknown MCP server: ${id}`);
     if (!entry.config.enabled) return;
+    if (opts.authToken) await this.setAuthToken(id, opts.authToken);
 
     // Close any existing connection
     if (entry.client) {
@@ -95,7 +206,7 @@ export class McpManager {
         command: entry.config.command,
         args: entry.config.args,
         env: entry.config.env,
-        authToken: opts.authToken,
+        authToken: opts.authToken ?? await this.authTokenFor(id),
         authHeader: entry.config.authHeader,
         allowLocal: entry.config.allowLocal,
       });
@@ -108,17 +219,52 @@ export class McpManager {
       entry.tools = tools;
       entry.status = "connected";
       entry.config = { ...entry.config, toolCount: tools.length };
+      await this.persist();
     } catch (err) {
       entry.client = null;
       entry.tools = [];
       entry.status = "error";
       entry.statusMessage = err instanceof Error ? err.message : String(err);
       entry.config = { ...entry.config, toolCount: 0 };
+      await this.persist();
+    }
+  }
+
+  /**
+   * Perform a real initialize + tools/list handshake without persisting or
+   * registering the server. This is used by Customize's Test connection flow
+   * so malformed or unreachable endpoints are rejected before mcp:add.
+   */
+  async testConnection(
+    config: Pick<McpServerConfig, "transport" | "url" | "command" | "args" | "env" | "authHeader" | "allowLocal">,
+    opts: { authToken?: string } = {},
+  ): Promise<McpConnectionTest> {
+    const transport = createTransport(config.transport, {
+      url: config.url,
+      command: config.command,
+      args: config.args,
+      env: config.env,
+      authToken: opts.authToken,
+      authHeader: config.authHeader,
+      allowLocal: config.allowLocal,
+    });
+    const client = new McpClient(transport);
+    try {
+      await client.initialize();
+      const tools = await client.listTools();
+      return {
+        transport: config.transport,
+        toolCount: tools.length,
+        toolNames: tools.map((tool) => tool.name),
+      };
+    } finally {
+      await client.close().catch(() => undefined);
     }
   }
 
   /** Connect to all enabled servers. Errors on individual servers are swallowed. */
   async connectAll(tokenMap: Record<string, string> = {}): Promise<void> {
+    await this.ensureLoaded();
     const tasks = [...this.servers.values()]
       .filter((e) => e.config.enabled)
       .map((e) =>

@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "endpoint": "http://127.0.0.1:36861",
+  "server": {
+    "id": "mcp_1787407066122_1",
+    "name": "local-proof",
+    "status": "connected"
+  },
+  "discoveredTools": [
+    "mcp__local-proof__echo",
+    "mcp__local-proof__add"
+  ],
+  "install": {
+    "ok": true,
+    "content": "Connected to \"local-proof\" — 2 tools available: mcp__local-proof__echo, mcp__local-proof__add"
+  },
+  "call": {
+    "ok": true,
+    "content": "42"
+  },
+  "rpcMethodsSeen": [
+    "initialize",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call"
+  ],
+  "persistedServerCount": 1,
+  "persistedHasRawAuthToken": false
+}

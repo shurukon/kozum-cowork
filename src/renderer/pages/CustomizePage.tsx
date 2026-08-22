@@ -22,6 +22,7 @@ export interface CustomizePageProps {
   onRemoveConnector: (id: string) => void | Promise<void>;
   onRemovePlugin: (id: string) => void | Promise<void>;
   onAddConnector: (input: McpAddInput) => Promise<Result<McpServerConfig>>;
+  onTestConnector: (input: McpAddInput) => Promise<Result<{ transport: McpServerConfig["transport"]; toolCount: number; toolNames: string[] }>>;
   onInstallPlugin: (source: PluginInstallSource) => Promise<Result<Plugin>>;
   onPickPluginZip: () => Promise<string | null>;
   onBack: () => void;
@@ -86,11 +87,12 @@ function InlineNotice({ kind, children }: { kind: "success" | "error" | "info"; 
   return <div className={`${styles.inlineNotice} ${styles[`inlineNotice${kind[0].toUpperCase()}${kind.slice(1)}`]}`} role={kind === "error" ? "alert" : undefined}>{children}</div>;
 }
 
-function McpForm({ onSubmit, onClose }: { onSubmit: CustomizePageProps["onAddConnector"]; onClose: () => void }) {
+function McpForm({ onSubmit, onTest, onClose }: { onSubmit: CustomizePageProps["onAddConnector"]; onTest: CustomizePageProps["onTestConnector"]; onClose: () => void }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
   const [headerName, setHeaderName] = useState("Authorization");
+  const [allowLocal, setAllowLocal] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [testMessage, setTestMessage] = useState<string | null>(null);
@@ -116,6 +118,47 @@ function McpForm({ onSubmit, onClose }: { onSubmit: CustomizePageProps["onAddCon
     }
   }
 
+  function buildInput(): McpAddInput {
+    return {
+      name: name.trim() || deriveName(url.trim()),
+      enabled: true,
+      transport: "http",
+      url: url.trim(),
+      hasAuthToken: Boolean(token.trim()),
+      authToken: token.trim() || undefined,
+      authHeader: headerName.trim() || "Authorization",
+      allowLocal,
+      installedByAgent: false,
+    };
+  }
+
+  async function handleTest() {
+    setError(null);
+    setTestMessage(null);
+    const urlError = validateUrl(url);
+    if (urlError) {
+      setError(urlError);
+      setTestMessage(urlError);
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await onTest(buildInput());
+      if (!result.ok) {
+        setError(result.error);
+        setTestMessage(result.error);
+        return;
+      }
+      setTestMessage(`Handshake succeeded · ${result.value.toolCount} tool${result.value.toolCount === 1 ? "" : "s"} discovered.`);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(message);
+      setTestMessage(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSubmit() {
     setError(null);
     const urlError = validateUrl(url);
@@ -125,16 +168,7 @@ function McpForm({ onSubmit, onClose }: { onSubmit: CustomizePageProps["onAddCon
     }
     setBusy(true);
     try {
-      const result = await onSubmit({
-        name: name.trim() || deriveName(url.trim()),
-        enabled: true,
-        transport: "http",
-        url: url.trim(),
-        hasAuthToken: Boolean(token.trim()),
-        authToken: token.trim() || undefined,
-        authHeader: headerName.trim() || "Authorization",
-        installedByAgent: false,
-      });
+      const result = await onSubmit(buildInput());
       if (!result.ok) {
         setError(result.error);
         return;
@@ -163,9 +197,12 @@ function McpForm({ onSubmit, onClose }: { onSubmit: CustomizePageProps["onAddCon
         <label className={styles.formField}><span>Auth token <small>(optional)</small></span><input type="password" value={token} placeholder="sk-…" onChange={(event) => setToken(event.target.value)} disabled={busy} /><em>Stored encrypted by the OS keychain.</em></label>
       </div>
       <button type="button" className={styles.advancedButton} onClick={() => setAdvancedOpen((value) => !value)} aria-expanded={advancedOpen}>{advancedOpen ? "Hide" : "Show"} advanced settings</button>
-      {advancedOpen && <label className={styles.formField}><span>Auth header name</span><input value={headerName} placeholder="Authorization" onChange={(event) => setHeaderName(event.target.value)} disabled={busy} /><em>Most servers use Authorization.</em></label>}
+      {advancedOpen && <>
+        <label className={styles.formField}><span>Auth header name</span><input value={headerName} placeholder="Authorization" onChange={(event) => setHeaderName(event.target.value)} disabled={busy} /><em>Most servers use Authorization.</em></label>
+        <label className={styles.formField}><span>Local server access</span><span><input type="checkbox" checked={allowLocal} onChange={(event) => setAllowLocal(event.target.checked)} disabled={busy} /> Allow localhost / 127.0.0.1</span><em>Enable only for a server you control on this computer.</em></label>
+      </>}
       <div className={styles.inlineFormActions}>
-        <button type="button" className={styles.secondaryButton} disabled={busy || !url.trim()} onClick={() => { const message = validateUrl(url); setTestMessage(message ?? "URL format looks valid. The real handshake and tool list run when you connect."); setError(message); }}>Test connection</button>
+        <button type="button" className={styles.secondaryButton} disabled={busy || !url.trim()} onClick={() => void handleTest()}>Test connection</button>
         <button type="button" className={styles.primaryButton} disabled={busy || !url.trim()} onClick={() => void handleSubmit()}>{busy ? <Loader2 size={14} className="kz-spin" /> : "Connect server"}</button>
       </div>
       {testMessage && <InlineNotice kind={error ? "error" : "info"}>{error ? <><AlertCircle size={14} />{testMessage}</> : <>{testMessage}</>}</InlineNotice>}
@@ -254,6 +291,7 @@ export function CustomizePage({
   onRemoveConnector,
   onRemovePlugin,
   onAddConnector,
+  onTestConnector,
   onInstallPlugin,
   onPickPluginZip,
   onBack,
@@ -290,7 +328,7 @@ export function CustomizePage({
           {tab === "skills" && <section className={styles.card}><div className={styles.listHeader}><div><strong>Available skills</strong><span>Skills are mode-filtered by the agent before invocation.</span></div><span className={styles.count}>{skills.length} total</span></div><div className={styles.extensionList}>{skills.map((skill) => <div className={styles.extensionRow} key={skill.id}><div className={styles.extensionIcon}><Sparkles size={14} /></div><div className={styles.extensionCopy}><strong>{skill.name}</strong><span>{skill.description}</span><small>{skill.source} · {skill.modes.join(" + ")}</small></div><Toggle checked={skill.enabled} label={`Enable ${skill.name}`} onChange={(value) => onToggleSkill(skill.id, value)} /></div>)}</div>{skills.length === 0 && <Empty icon={<Sparkles size={20} />} text="No skills installed yet. Install a plugin or add a skill from the chat add panel." />}</section>}
 
           {tab === "mcp" && <>
-            {mcpFormOpen && <McpForm onSubmit={onAddConnector} onClose={() => setMcpFormOpen(false)} />}
+            {mcpFormOpen && <McpForm onSubmit={onAddConnector} onTest={onTestConnector} onClose={() => setMcpFormOpen(false)} />}
             <section className={styles.card}><div className={styles.listHeader}><div><strong>Connected MCP servers</strong><span>Only enabled servers contribute tools to a turn.</span></div><button type="button" className={styles.secondaryButton} onClick={() => setMcpFormOpen((value) => !value)} aria-expanded={mcpFormOpen}><Plus size={14} /> {mcpFormOpen ? "Hide form" : "Add server"}</button></div><div className={styles.extensionList}>{connectors.map((server) => <div className={styles.extensionRow} key={server.id}><div className={`${styles.extensionIcon} ${server.status === "connected" ? styles.iconGood : ""}`}><Plug size={14} /></div><div className={styles.extensionCopy}><strong>{server.name}</strong><span>{server.url ?? server.command ?? "Local server"}</span><small>{server.status} · {server.toolCount} tools{server.hasAuthToken ? " · token stored" : ""}</small></div><div className={styles.rowActions}><Toggle checked={server.enabled} label={`Enable ${server.name}`} onChange={(value) => onToggleConnector(server.id, value)} /><button type="button" className={styles.iconButton} onClick={() => void onRemoveConnector(server.id)} aria-label={`Remove ${server.name}`}><Trash2 size={14} /></button></div></div>)}</div>{connectors.length === 0 && <Empty icon={<Plug size={20} />} text={mcpFormOpen ? "Add your first MCP server above." : "No MCP servers connected yet. Add one here."} />}</section>
           </>}
 

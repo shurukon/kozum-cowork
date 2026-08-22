@@ -1,0 +1,42 @@
+{
+  "ok": true,
+  "mcpServer": {
+    "name": "agent-proof",
+    "status": "connected",
+    "tools": [
+      "mcp__agent-proof__add"
+    ]
+  },
+  "agentLoop": {
+    "stopReason": "end_turn",
+    "iterations": 2,
+    "toolEvents": [
+      {
+        "type": "tool_start",
+        "name": "mcp_call"
+      },
+      {
+        "type": "tool_end",
+        "ok": true,
+        "content": "42"
+      }
+    ]
+  },
+  "mcpRpcMethodsSeen": [
+    "initialize",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call"
+  ],
+  "providerTurns": [
+    {
+      "messageCount": 2,
+      "hasToolResult": false
+    },
+    {
+      "messageCount": 4,
+      "hasToolResult": true
+    }
+  ],
+  "finalText": "The MCP tool returned 42 and the agent completed the task."
+}

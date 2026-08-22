@@ -28,7 +28,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { emptyModeState, applyEventToMode, type ModeState } from "../../src/renderer/store/sessionReducer.ts";
-import { resolveTargetMode } from "../../src/renderer/store/session.ts";
+import { eventBelongsToSession, resolveTargetMode, useSessionStore } from "../../src/renderer/store/session.ts";
 import type { AgentEvent, Mode, SessionStatus, TokenUsage } from "../../src/shared/types.ts";
 
 const USAGE: TokenUsage = { inputTokens: 10, outputTokens: 5 };
@@ -61,6 +61,76 @@ function drive(initial: { cowork: ModeState; code: ModeState }, events: AgentEve
   }
   return state;
 }
+
+describe("session event isolation", () => {
+  it("accepts events for the hydrated session and rejects events from another session", () => {
+    assert.equal(eventBelongsToSession("session-current", "session-current"), true);
+    assert.equal(eventBelongsToSession("session-current", "session-deleted"), false);
+  });
+
+  it("allows the first event while the mode has no hydrated session identity", () => {
+    assert.equal(eventBelongsToSession(null, "session-first-turn"), true);
+  });
+});
+
+describe("session store identity boundaries", () => {
+  it("clears the previous transcript and cards when a different session becomes active", () => {
+    const store = useSessionStore.getState();
+    store.clearMode("cowork");
+    store.setSessionIdentity("cowork", "session-old");
+    store.applyEvent({
+      type: "turn_start",
+      mode: "cowork",
+      sessionId: "session-old",
+      runId: "run-old",
+      messageId: "msg-old",
+      model: "test-model",
+    });
+    store.applyEvent({
+      type: "tool_start",
+      mode: "cowork",
+      sessionId: "session-old",
+      runId: "run-old",
+      toolUseId: "tool-old",
+      name: "read_file",
+      input: { path: "old.txt" },
+    });
+
+    useSessionStore.getState().setSessionIdentity("cowork", "session-new");
+    const next = useSessionStore.getState().cowork;
+    assert.equal(next.sessionId, "session-new");
+    assert.equal(next.messages.length, 0);
+    assert.equal(next.toolCards.size, 0);
+    assert.equal(next.seenEventIds.size, 0);
+  });
+
+  it("does not preserve live cards when hydration crosses a session boundary", () => {
+    const store = useSessionStore.getState();
+    store.clearMode("cowork");
+    store.setSessionIdentity("cowork", "session-old");
+    store.applyEvent({
+      type: "turn_start",
+      mode: "cowork",
+      sessionId: "session-old",
+      messageId: "msg-old",
+      model: "test-model",
+    });
+    store.applyEvent({
+      type: "tool_start",
+      mode: "cowork",
+      sessionId: "session-old",
+      toolUseId: "tool-old",
+      name: "read_file",
+      input: { path: "old.txt" },
+    });
+
+    store.setSessionMessages("cowork", [], "session-new");
+    const next = useSessionStore.getState().cowork;
+    assert.equal(next.sessionId, "session-new");
+    assert.equal(next.messages.length, 0);
+    assert.equal(next.toolCards.size, 0);
+  });
+});
 
 describe("session store routing — Cowork mode events land in cowork slice", () => {
   it("a Cowork turn streams into the cowork slice only (regression: pre-fix bug routed it to code)", () => {

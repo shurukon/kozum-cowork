@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kozum Preview Proof</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <nav class="nav"><div class="brand"><img src="assets/kozum-mark.svg" alt="Kozum mark"><span>Kozum</span></div><a href="#proof">How it works</a><button class="nav-btn" id="navAction">Start building</button></nav>
+    <section class="hero">
+      <div class="copy"><p class="eyebrow">LOCAL PREVIEW · REAL ASSETS</p><h1>Build boldly.<br><em>Preview honestly.</em></h1><p class="lede">A visual proof page rendered from one local HTML tree. The icons, styles, and interaction all arrive through relative assets.</p><div class="actions"><button class="primary" id="heroAction">Explore the workspace <span>→</span></button><a href="#proof">See the proof</a></div><p class="status" id="status" aria-live="polite">Ready for interaction</p></div>
+      <div class="visual" aria-label="Preview illustration"><div class="glow"></div><div class="orb orb-a"></div><div class="orb orb-b"></div><div class="card main-card"><div class="card-head"><span class="dot green"></span><span>workspace / preview</span><span class="dots">•••</span></div><div class="card-content"><img src="assets/compass.svg" alt="Compass icon"><div><strong>Everything in context</strong><p>Assets resolve from the same local origin.</p></div></div><div class="meter"><span></span></div></div><div class="float-card"><img src="assets/spark.svg" alt="Spark icon"><span>Interactive</span><b>100%</b></div></div>
+    </section>
+    <section class="proof" id="proof"><p class="eyebrow">WHAT THIS PROVES</p><div class="proof-grid"><article><img src="assets/layers.svg" alt="Layers icon"><h2>Relative assets</h2><p>SVG and CSS load through the local preview server.</p></article><article><img src="assets/bolt.svg" alt="Bolt icon"><h2>Safe interaction</h2><p>Inline UI behavior works inside the sandboxed frame.</p></article><article><img src="assets/check.svg" alt="Check icon"><h2>Clear fallback</h2><p>When live serving is unavailable, static preview remains honest.</p></article></div></section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

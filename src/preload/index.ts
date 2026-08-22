@@ -24,6 +24,7 @@ import type {
   AgentEvent,
   AgentTask,
   ScheduledTask,
+  McpConnectionTest,
   McpServerConfig,
   McpToolInfo,
   Plugin,
@@ -167,8 +168,11 @@ const api = {
 
   mcp: {
     list: (): Promise<McpServerConfig[]> => ipcRenderer.invoke("mcp:list"),
+    testConnection: (
+      config: Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount"> & { authToken?: string },
+    ): Promise<Result<McpConnectionTest>> => ipcRenderer.invoke("mcp:testConnection", config),
     add: (
-      config: Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount">,
+      config: Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount"> & { authToken?: string },
     ): Promise<Result<McpServerConfig>> => ipcRenderer.invoke("mcp:add", config),
     remove: (id: string): Promise<Result<void>> => ipcRenderer.invoke("mcp:remove", id),
     setEnabled: (id: string, enabled: boolean): Promise<Result<void>> =>
@@ -242,6 +246,10 @@ const api = {
     /** Open a preview file externally, reveal it, or launch it in the configured IDE. */
     open: (path: string, action: "external" | "reveal" | "ide" = "external"): Promise<Result<void>> =>
       ipcRenderer.invoke("preview:open", path, action),
+
+    /** Serve local HTML through the hardened loopback preview and navigate Chromium to it. */
+    openLiveHtml: (path: string): Promise<Result<{ url: string; path: string }>> =>
+      ipcRenderer.invoke("preview:openLiveHtml", path),
   },
 
   browser: {

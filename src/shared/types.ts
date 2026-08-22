@@ -463,6 +463,13 @@ export interface McpServerConfig {
 
 export type McpStatus = "connected" | "connecting" | "disconnected" | "error";
 
+/** Result of a non-persisting MCP initialize + tools/list handshake. */
+export interface McpConnectionTest {
+  transport: McpTransport;
+  toolCount: number;
+  toolNames: string[];
+}
+
 export interface McpToolInfo {
   serverId: string;
   serverName: string;

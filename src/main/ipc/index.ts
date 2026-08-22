@@ -33,6 +33,7 @@ import type { TaskPatch } from "../schedule/scheduler.ts";
 import type { ProjectStore } from "../store/projects.ts";
 import type { UpdateProjectPatch, CreateProjectInput } from "../store/projects.ts";
 import type { BrowserSurface, SurfaceRect } from "../browser/surface.ts";
+import type { LocalPreviewServer } from "../preview/server.ts";
 import type { SubagentManager } from "../agent/subagents.ts";
 
 /* ---------------------------------------------------------------- dialog facade --- */
@@ -99,6 +100,8 @@ export interface IpcDeps {
     width: number;
     height: number;
   }>;
+  /** Serves a user-owned HTML tree through a hardened loopback origin. */
+  previewServer?: LocalPreviewServer;
 }
 
 /** Wrap an async handler so a thrown error becomes {ok:false, error}. */
@@ -282,13 +285,17 @@ export function registerIpc(deps: IpcDeps): void {
   });
 
   handle(ipcMain, "sessions:archive", async (_e, sessionId) => {
-    const done = await deps.sessions.archive(String(sessionId));
+    const id = String(sessionId);
+    await deps.sessionManager.teardown(id);
+    const done = await deps.sessions.archive(id);
     if (!done) return err(`Session "${String(sessionId)}" not found`);
     return ok(undefined);
   });
 
   handle(ipcMain, "sessions:delete", async (_e, sessionId) => {
-    const done = await deps.sessions.delete(String(sessionId));
+    const id = String(sessionId);
+    await deps.sessionManager.teardown(id);
+    const done = await deps.sessions.delete(id);
     if (!done) return err(`Session "${String(sessionId)}" not found`);
     return ok(undefined);
   });
@@ -434,16 +441,35 @@ export function registerIpc(deps: IpcDeps): void {
     return deps.mcp.status();
   });
 
+  type McpInput = Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount"> & {
+    authToken?: string;
+  };
+
+  handle(ipcMain, "mcp:testConnection", async (_e, config) => {
+    const payload = config as McpInput;
+    const { authToken, ...serverConfig } = payload;
+    try {
+      return ok(await deps.mcp.testConnection(serverConfig, { authToken }));
+    } catch (cause) {
+      return err(cause instanceof Error ? cause.message : String(cause));
+    }
+  });
+
   handle(ipcMain, "mcp:add", async (_e, config) => {
     // The renderer may pass an optional `authToken` field that must never be
     // persisted in plain text and must never be returned to the renderer.
-    type AddPayload = Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount"> & {
-      authToken?: string;
-    };
-    const payload = config as AddPayload;
+    const payload = config as McpInput;
     // Extract and strip the raw token before building the persisted config.
     const { authToken, ...rest } = payload;
     const hasAuthToken = Boolean(authToken) || rest.hasAuthToken;
+
+    // A syntactically valid URL is not a connected MCP server. Require the
+    // actual initialize + tools/list handshake before persisting it.
+    try {
+      await deps.mcp.testConnection(rest, { authToken });
+    } catch (cause) {
+      return err(cause instanceof Error ? cause.message : String(cause));
+    }
 
     const full: McpServerConfig = {
       ...rest,
@@ -454,14 +480,22 @@ export function registerIpc(deps: IpcDeps): void {
       toolCount: 0,
     };
 
-    deps.mcp.add(full);
+    await deps.mcp.add(full);
 
-    // Connect, passing the raw token in memory only (never persisted).
-    await deps.mcp.connect(full.id, { authToken }).catch(() => undefined);
+    // Connect enabled servers, passing the raw token in memory only (never
+    // persisted). A deliberately disabled server is valid after handshake and
+    // can be enabled later from Customize.
+    if (full.enabled) {
+      await deps.mcp.connect(full.id, { authToken }).catch(() => undefined);
+    }
 
     const updated = deps.mcp.status().find((s) => s.id === full.id);
+    if (!updated || (full.enabled && updated.status !== "connected")) {
+      await deps.mcp.remove(full.id);
+      return err(updated?.statusMessage ?? "MCP server failed to connect after validation.");
+    }
     // The returned value must not carry authToken (it was never on McpServerConfig).
-    return ok(updated ?? full);
+    return ok(updated);
   });
 
   handle(ipcMain, "mcp:remove", async (_e, id) => {
@@ -471,7 +505,7 @@ export function registerIpc(deps: IpcDeps): void {
 
   handle(ipcMain, "mcp:setEnabled", async (_e, id, enabled) => {
     if (Boolean(enabled)) {
-      deps.mcp.enable(String(id));
+      await deps.mcp.enable(String(id));
       await deps.mcp.connect(String(id)).catch(() => undefined);
     } else {
       await deps.mcp.disable(String(id));
@@ -693,6 +727,27 @@ export function registerIpc(deps: IpcDeps): void {
     try {
       const s = await fsStat(resolved);
       return ok({ size: s.size, isDir: s.isDirectory() });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return err(msg);
+    }
+  });
+
+  handle(ipcMain, "preview:openLiveHtml", async (_e, rawPath) => {
+    if (!deps.previewServer) {
+      return err("live HTML preview is not available in this build.");
+    }
+    const path = String(rawPath ?? "");
+    if (!path) return err("path is required");
+    const resolved = await resolvePath(path, { workingFolder: null }).catch((e: unknown) => {
+      if (e instanceof PathError) return e;
+      throw e;
+    });
+    if (resolved instanceof PathError) return err(resolved.message);
+
+    try {
+      const handle = await deps.previewServer.open(resolved);
+      return ok(handle);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return err(msg);

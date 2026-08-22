@@ -132,6 +132,11 @@ export function App() {
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  // React state updates are asynchronous. Keep a synchronous identity for
+  // event callbacks and async hydration so an old session cannot bleed into a
+  // newly selected one during the render gap.
+  const activeSessionIdRef = useRef<string | null>(null);
+  activeSessionIdRef.current = activeSessionId;
   const inFlightSend = useRef<Record<Mode, string | null>>({ cowork: null, code: null });
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
 
@@ -168,6 +173,7 @@ export function App() {
   const applyEvent = useSessionStore((s) => s.applyEvent);
   const addUserMessage = useSessionStore((s) => s.addUserMessage);
   const clearMode = useSessionStore((s) => s.clearMode);
+  const setSessionIdentity = useSessionStore((s) => s.setSessionIdentity);
   const setSessionMessages = useSessionStore((s) => s.setSessionMessages);
 
   // Sessions are per-mode; remember which one each tab was last on so switching
@@ -179,6 +185,10 @@ export function App() {
 
   // Load transcript whenever activeSessionId changes
   useEffect(() => {
+    // Establish the identity before any async IPC call or replay can complete.
+    // This also clears the previous transcript immediately when switching to a
+    // different session, instead of briefly rendering the old conversation.
+    setSessionIdentity(mode, activeSessionId);
     if (!activeSessionId) {
       clearMode(mode);
       setLoadingSession(false);
@@ -189,10 +199,10 @@ export function App() {
     void (async () => {
       try {
         const msgs = await bridge().sessions.messages(activeSessionId);
-        if (cancelled) return;
-        if (msgs.length > 0) {
-          setSessionMessages(mode, msgs);
-        }
+        if (cancelled || activeSessionIdRef.current !== activeSessionId) return;
+        // Always replace the slice, including with an empty array. Otherwise a
+        // newly opened empty session inherits the previous transcript.
+        setSessionMessages(mode, msgs, activeSessionId);
 
         // INT-3: reattach to any in-flight run for this session and replay its
         // persisted events through applyEvent so a refresh-interrupted turn is
@@ -200,9 +210,9 @@ export function App() {
         // backend so the RightPanel doesn't show a stale "no tasks" state.
         try {
           const replay = await bridge().sessions.reattach(activeSessionId);
-          if (!cancelled && replay.events.length > 0) {
+          if (!cancelled && activeSessionIdRef.current === activeSessionId) {
             for (const ev of replay.events) {
-              applyEvent(ev);
+              if (ev.sessionId === activeSessionId) applyEvent(ev);
             }
           }
         } catch {
@@ -211,7 +221,7 @@ export function App() {
 
         try {
           const tasks = await bridge().sessions.tasks(activeSessionId);
-          if (!cancelled && tasks.length > 0) {
+          if (!cancelled && activeSessionIdRef.current === activeSessionId) {
             applyEvent({
               type: "task_update",
               mode,
@@ -231,7 +241,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, mode, clearMode, setSessionMessages, applyEvent]);
+  }, [activeSessionId, mode, clearMode, setSessionIdentity, setSessionMessages, applyEvent]);
 
   /* ------------------------------------------------------------ loading -- */
 
@@ -368,6 +378,15 @@ export function App() {
     let off: (() => void) | undefined;
     try {
       off = bridge().sessions.onEvent((e) => {
+        // Events are global on the IPC channel, but the visible transcript is
+        // per session. Keep background work for the other mode, while refusing
+        // stale events from another session in the currently visible mode.
+        const belongsToVisibleSession = e.mode === mode
+          ? e.sessionId === activeSessionIdRef.current
+          : e.mode === undefined
+            ? e.sessionId === activeSessionIdRef.current
+            : true;
+        if (!belongsToVisibleSession) return;
         applyEvent(e);
         if (e.type === "session_status" && e.status !== "running") {
           inFlightSend.current[e.mode] = null;
@@ -493,7 +512,7 @@ export function App() {
   /* ------------------------------------------------------------ actions -- */
 
   async function ensureSession(selectionOverride?: ModelSelection): Promise<string | null> {
-    if (activeSessionId) return activeSessionId;
+    if (activeSessionIdRef.current) return activeSessionIdRef.current;
     const requestedSelection = selectionOverride ?? selection;
     if (!requestedSelection) {
       setBanner("Choose a provider and model before starting a task.");
@@ -519,6 +538,8 @@ export function App() {
         [mode]: { selection: resolvedSelection },
       } as Partial<AppSettings>);
     }
+    activeSessionIdRef.current = res.value.id;
+    setSessionIdentity(mode, res.value.id);
     setActiveSessionId(res.value.id);
     lastSession.current[mode] = res.value.id;
     void reloadSessions(mode);
@@ -622,6 +643,8 @@ export function App() {
     }
     const nextSession = res.value;
     await reloadSessions(mode);
+    activeSessionIdRef.current = nextSession.id;
+    setSessionIdentity(mode, nextSession.id);
     setActiveSessionId(nextSession.id);
     lastSession.current[mode] = nextSession.id;
     clearMode(mode);
@@ -882,18 +905,24 @@ export function App() {
     }
     setNav(key);
     if (key === "new") {
-      setActiveSessionId(null);
+      activeSessionIdRef.current = null;
       lastSession.current[mode] = null;
+      setSessionIdentity(mode, null);
+      setActiveSessionId(null);
       clearMode(mode);
+      setPreviewTarget(null);
     }
   }
 
   function switchMode(m: Mode) {
-    lastSession.current[mode] = activeSessionId;
+    lastSession.current[mode] = activeSessionIdRef.current;
+    const nextSessionId = lastSession.current[m];
+    activeSessionIdRef.current = nextSessionId;
+    setSessionIdentity(m, nextSessionId);
     setMode(m);
     setNav("new");
     // Restore where this tab was; the other mode keeps running regardless.
-    setActiveSessionId(lastSession.current[m]);
+    setActiveSessionId(nextSessionId);
   }
 
   /* ------------------------------------------------- rules (memory) ------ */
@@ -906,7 +935,17 @@ export function App() {
   /* ------------------------------------------------ conversation actions - */
 
   async function handleConversationOpen(id: string) {
+    if (id !== activeSessionIdRef.current) {
+      // Establish the new identity before React renders or IPC hydration can
+      // complete, so an event for the prior session is rejected at the store.
+      activeSessionIdRef.current = id;
+      setSessionIdentity(mode, id);
+      setPreviewTarget(null);
+    } else {
+      activeSessionIdRef.current = id;
+    }
     setActiveSessionId(id);
+    lastSession.current[mode] = id;
     setNav("new");
   }
 
@@ -928,9 +967,12 @@ export function App() {
     }
     const newSession: Session = res.value;
     await reloadSessions(mode);
-    // Open the new branched session
-    setActiveSessionId(newSession.id);
+    // Open the new branched session. Establish the identity synchronously so
+    // live events cannot land in the previous session during IPC hydration.
+    activeSessionIdRef.current = newSession.id;
     lastSession.current[mode] = newSession.id;
+    setSessionIdentity(mode, newSession.id);
+    setActiveSessionId(newSession.id);
     // Clear message store for this mode so it reloads
     clearMode(mode);
     setNav("new");
@@ -944,8 +986,15 @@ export function App() {
       return;
     }
     await reloadSessions(mode);
-    if (activeSessionId === id) {
+    if (activeSessionIdRef.current === id) {
+      activeSessionIdRef.current = null;
+      lastSession.current[mode] = null;
+      setSessionIdentity(mode, null);
       setActiveSessionId(null);
+      clearMode(mode);
+      setPreviewTarget(null);
+    } else if (lastSession.current[mode] === id) {
+      lastSession.current[mode] = null;
     }
     pushToast("success", "Session archived.");
   }
@@ -957,8 +1006,15 @@ export function App() {
       return;
     }
     await reloadSessions(mode);
-    if (activeSessionId === id) {
+    if (activeSessionIdRef.current === id) {
+      activeSessionIdRef.current = null;
+      lastSession.current[mode] = null;
+      setSessionIdentity(mode, null);
       setActiveSessionId(null);
+      clearMode(mode);
+      setPreviewTarget(null);
+    } else if (lastSession.current[mode] === id) {
+      lastSession.current[mode] = null;
     }
     pushToast("success", "Session deleted.");
   }
@@ -1090,8 +1146,9 @@ export function App() {
 
   // ComposerBar remains shared, but Cowork receives only visual/slot props.
   const openFilePreview = useCallback((path: string) => {
-    const isArtifact = /\.(?:html?|xhtml)$/i.test(path);
-    setPreviewTarget(isArtifact ? { kind: "artifact", path } : { kind: "file", path });
+    // HTML files use the hardened loopback/live Chromium preview so relative
+    // assets and safe interactions render like the user's browser.
+    setPreviewTarget({ kind: "file", path });
   }, []);
 
   const composerBarShared = (
@@ -1141,10 +1198,7 @@ export function App() {
             accountLabel={settings?.general.userName || "You"}
             providerLabel={selection?.providerId || "No provider"}
             onAccountClick={openSettings}
-            onSelectRecent={(id) => {
-              setActiveSessionId(id);
-              setNav("new");
-            }}
+            onSelectRecent={(id) => void handleConversationOpen(id)}
             conversationCallbacks={{
               onOpen: (id) => void handleConversationOpen(id),
               onRename: (id, title) => void handleConversationRename(id, title),
@@ -1389,6 +1443,7 @@ export function App() {
               if (result.ok) await reloadExtensions();
               return result;
             }}
+            onTestConnector={(input) => bridge().mcp.testConnection(input)}
             onInstallPlugin={async (source) => {
               const result = source.kind === "zip"
                 ? await bridge().plugins.installFromZip(source.value)

@@ -158,7 +158,7 @@ function makeMcpInstall(manager: McpManager): Tool {
 
       let added = false;
       try {
-        manager.add(config);
+        await manager.add(config);
         added = true;
 
         await manager.connect(id, { authToken });

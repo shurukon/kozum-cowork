@@ -13,7 +13,7 @@
  */
 
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 import type { SkillFileMeta } from "../skills/index.ts";
 import type { SubagentFileMeta } from "../agent/subagents.ts";
@@ -49,6 +49,8 @@ export interface McpServerEntry {
   command?: string;
   args?: string[];
   env?: Record<string, string>;
+  /** Working directory for stdio servers. */
+  cwd?: string;
 }
 
 /* ------------------------------------------------------- main export --- */
@@ -67,38 +69,46 @@ export async function discoverContributions(pluginDir: string): Promise<Discover
     warnings: [],
   };
 
-  /* --------------------------------------------------- skills/ dir --- */
-  const skillsDir = join(pluginDir, "skills");
-  try {
-    const entries = await readdir(skillsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const skillPath = join(skillsDir, entry.name, "SKILL.md");
-      try {
-        const s = await stat(skillPath);
-        if (!s.isFile()) continue;
-        const text = await readFile(skillPath, "utf-8");
-        const meta = parseSkillFile(text, skillPath);
-        if (!meta.name) {
-          result.warnings.push({
-            path: skillPath,
-            reason: 'Missing required field "name" in SKILL.md frontmatter.',
-          });
-          continue;
-        }
-        result.skills.push(meta);
-      } catch (e) {
-        // File missing or unreadable — skip silently (SKILL.md just doesn't exist)
-        const msg = e instanceof Error ? e.message : String(e);
-        // Only warn if the file existed but failed to parse
-        const code = (e as NodeJS.ErrnoException).code;
-        if (code !== "ENOENT") {
-          result.warnings.push({ path: skillPath, reason: msg });
+  /* --------------------------------------------------- skills/ dirs --- */
+  // Claude plugins use both classic skills/ and newer .agents/skills layouts.
+  // OpenMontage additionally keeps its contributions under engine/.agents/skills.
+  // Scan only these explicit roots; do not recursively walk arbitrary files.
+  const skillRoots = [
+    join(pluginDir, "skills"),
+    join(pluginDir, ".agents", "skills"),
+    join(pluginDir, "engine", ".agents", "skills"),
+  ];
+  for (const skillsDir of skillRoots) {
+    try {
+      const entries = await readdir(skillsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const skillPath = join(skillsDir, entry.name, "SKILL.md");
+        try {
+          const s = await stat(skillPath);
+          if (!s.isFile()) continue;
+          const text = await readFile(skillPath, "utf-8");
+          const meta = parseSkillFile(text, skillPath);
+          if (!meta.name) {
+            result.warnings.push({
+              path: skillPath,
+              reason: 'Missing required field "name" in SKILL.md frontmatter.',
+            });
+            continue;
+          }
+          result.skills.push(meta);
+        } catch (e) {
+          // File missing or unreadable — skip silently (SKILL.md just doesn't exist)
+          const msg = e instanceof Error ? e.message : String(e);
+          const code = (e as NodeJS.ErrnoException).code;
+          if (code !== "ENOENT") {
+            result.warnings.push({ path: skillPath, reason: msg });
+          }
         }
       }
+    } catch {
+      // This explicit skills/ layout does not exist — that's fine.
     }
-  } catch {
-    // skills/ dir doesn't exist — that's fine
   }
 
   /* --------------------------------------------------- agents/ dir --- */
@@ -160,7 +170,7 @@ export async function discoverContributions(pluginDir: string): Promise<Discover
       if (typeof servers === "object" && servers !== null && !Array.isArray(servers)) {
         // Object map: { serverName: { transport, url/command, ... } }
         for (const [id, cfg] of Object.entries(servers as Record<string, unknown>)) {
-          const entry = parseMcpEntry(id, cfg, mcpPath, result.warnings);
+          const entry = parseMcpEntry(id, cfg, mcpPath, result.warnings, pluginDir);
           if (entry) result.mcpServers.push(entry);
         }
       } else if (Array.isArray(servers)) {
@@ -168,7 +178,7 @@ export async function discoverContributions(pluginDir: string): Promise<Discover
           if (typeof item === "object" && item !== null) {
             const cfg = item as Record<string, unknown>;
             const id = typeof cfg["id"] === "string" ? cfg["id"] : typeof cfg["name"] === "string" ? cfg["name"] : "unknown";
-            const entry = parseMcpEntry(id, item, mcpPath, result.warnings);
+            const entry = parseMcpEntry(id, item, mcpPath, result.warnings, pluginDir);
             if (entry) result.mcpServers.push(entry);
           }
         }
@@ -201,6 +211,7 @@ function parseMcpEntry(
   raw: unknown,
   sourcePath: string,
   warnings: DiscoveryWarning[],
+  pluginDir: string,
 ): McpServerEntry | null {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     warnings.push({ path: sourcePath, reason: `MCP server entry "${id}" is not an object.` });
@@ -210,12 +221,32 @@ function parseMcpEntry(
   const name = typeof cfg["name"] === "string" ? cfg["name"] : id;
   const transport = typeof cfg["transport"] === "string" ? cfg["transport"] : "stdio";
   const url = typeof cfg["url"] === "string" ? cfg["url"] : undefined;
-  const command = typeof cfg["command"] === "string" ? cfg["command"] : undefined;
-  const args = Array.isArray(cfg["args"]) ? cfg["args"].filter((a) => typeof a === "string") as string[] : undefined;
-  const env =
+  const commandRaw = typeof cfg["command"] === "string" ? cfg["command"] : undefined;
+  const argsRaw = Array.isArray(cfg["args"])
+    ? (cfg["args"].filter((a) => typeof a === "string") as string[])
+    : undefined;
+  const envRaw =
     cfg["env"] !== null && typeof cfg["env"] === "object" && !Array.isArray(cfg["env"])
       ? (cfg["env"] as Record<string, string>)
       : undefined;
+  const cwdRaw = typeof cfg["cwd"] === "string" ? cfg["cwd"] : undefined;
+  const command = commandRaw
+    ? expandPluginRoot(commandRaw, pluginDir, sourcePath, warnings)
+    : undefined;
+  const args = argsRaw?.map((arg) => expandPluginRoot(arg, pluginDir, sourcePath, warnings));
+  const env = envRaw
+    ? Object.fromEntries(
+        Object.entries(envRaw).map(([key, value]) => [
+          key,
+          typeof value === "string"
+            ? expandPluginRoot(value, pluginDir, sourcePath, warnings)
+            : value,
+        ]),
+      )
+    : undefined;
+  const cwd = cwdRaw
+    ? expandPluginRoot(cwdRaw, pluginDir, sourcePath, warnings)
+    : undefined;
 
   return {
     id,
@@ -225,5 +256,28 @@ function parseMcpEntry(
     ...(command ? { command } : {}),
     ...(args ? { args } : {}),
     ...(env ? { env } : {}),
+    ...(cwd ? { cwd } : {}),
   };
+}
+
+const CLAUDE_PLUGIN_ROOT_TOKEN = "${CLAUDE_PLUGIN_ROOT}";
+
+/** Resolve Claude's plugin-root token without turning arbitrary relative paths into executable paths. */
+function expandPluginRoot(
+  value: string,
+  pluginDir: string,
+  sourcePath: string,
+  warnings: DiscoveryWarning[],
+): string {
+  if (!value.includes(CLAUDE_PLUGIN_ROOT_TOKEN)) return value;
+  const expanded = value.split(CLAUDE_PLUGIN_ROOT_TOKEN).join(pluginDir);
+  const resolvedPath = resolve(expanded);
+  const rel = relative(pluginDir, resolvedPath);
+  if (rel === ".." || rel.startsWith("../") || rel.startsWith("..\\")) {
+    warnings.push({
+      path: sourcePath,
+      reason: `Expanded plugin path escapes the plugin directory: ${value}`,
+    });
+  }
+  return expanded;
 }

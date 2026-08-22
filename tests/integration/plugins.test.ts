@@ -575,6 +575,49 @@ describe("discoverContributions", () => {
     assert.match(result.warnings[0]!.reason, /name/i);
   });
 
+  it("discovers Claude plugin nested skills and expands CLAUDE_PLUGIN_ROOT safely", async () => {
+    const skillDir = join(tmpDir, "engine", ".agents", "skills", "nested-skill");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      "---\nname: Nested Skill\ndescription: Nested\n---\nNested content.",
+    );
+    await writeFile(
+      join(tmpDir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          openmontage: {
+            command: "${CLAUDE_PLUGIN_ROOT}/bin/openmontage-server.sh",
+            cwd: "${CLAUDE_PLUGIN_ROOT}/engine",
+            args: ["${CLAUDE_PLUGIN_ROOT}/engine"],
+          },
+        },
+      }),
+    );
+
+    const result = await discoverContributions(tmpDir);
+    assert.ok(result.skills.some((skill) => skill.name === "Nested Skill"));
+    assert.equal(result.mcpServers.length, 1);
+    assert.equal(result.mcpServers[0]!.command, join(tmpDir, "bin", "openmontage-server.sh"));
+    assert.equal(result.mcpServers[0]!.cwd, join(tmpDir, "engine"));
+    assert.deepEqual(result.mcpServers[0]!.args, [join(tmpDir, "engine")]);
+    assert.equal(result.warnings.length, 0);
+  });
+
+  it("warns when a plugin-root expansion escapes the plugin directory", async () => {
+    await writeFile(
+      join(tmpDir, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          unsafe: { command: "${CLAUDE_PLUGIN_ROOT}/../outside/server" },
+        },
+      }),
+    );
+    const result = await discoverContributions(tmpDir);
+    assert.equal(result.mcpServers.length, 1);
+    assert.ok(result.warnings.some((warning) => /escapes the plugin directory/i.test(warning.reason)));
+  });
+
   it("discovers commands/ directory", async () => {
     await mkdir(join(tmpDir, "commands"), { recursive: true });
     await writeFile(join(tmpDir, "commands", "cmd1.md"), "# Command 1");

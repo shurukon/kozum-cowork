@@ -23,15 +23,15 @@ export interface AskPayload {
 export class AskBroker {
   private pending = new Map<
     string,
-    { resolve: (values: string[]) => void; reject: (reason: unknown) => void }
+    { sessionId: string; resolve: (values: string[]) => void; reject: (reason: unknown) => void }
   >();
 
   /** Returns a Promise that resolves when the UI calls resolve(requestId, values). */
-  ask(_sessionId: string, _payload: AskPayload): { requestId: string; promise: Promise<string[]> } {
+  ask(sessionId: string, _payload: AskPayload): { requestId: string; promise: Promise<string[]> } {
     const requestId = `ask_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
 
     const promise = new Promise<string[]>((res, rej) => {
-      this.pending.set(requestId, { resolve: res, reject: rej });
+      this.pending.set(requestId, { sessionId, resolve: res, reject: rej });
     });
 
     return { requestId, promise };
@@ -46,29 +46,40 @@ export class AskBroker {
    * used there because it generates a fresh id that would never match the id
    * emitted to the UI.
    */
-  registerPending(requestId: string, _payload: AskPayload): Promise<string[]> {
+  registerPending(requestId: string, _payload: AskPayload, sessionId = ""): Promise<string[]> {
     return new Promise<string[]>((res, rej) => {
-      this.pending.set(requestId, { resolve: res, reject: rej });
+      this.pending.set(requestId, { sessionId, resolve: res, reject: rej });
     });
   }
 
-  resolve(requestId: string, values: string[]): boolean {
+  resolve(requestId: string, values: string[], sessionId?: string): boolean {
     const entry = this.pending.get(requestId);
     if (!entry) return false;
+    if (sessionId !== undefined && entry.sessionId !== sessionId) return false;
     this.pending.delete(requestId);
     entry.resolve(values);
     return true;
   }
 
-  reject(requestId: string, reason: string): boolean {
+  reject(requestId: string, reason: string, sessionId?: string): boolean {
     const entry = this.pending.get(requestId);
     if (!entry) return false;
+    if (sessionId !== undefined && entry.sessionId !== sessionId) return false;
     this.pending.delete(requestId);
     entry.reject(new Error(reason));
     return true;
   }
 
-  /** Clean up on session teardown. */
+  /** Clean up all pending requests owned by one session during teardown. */
+  rejectAllForSession(sessionId: string, reason: string): void {
+    for (const [id, entry] of this.pending) {
+      if (entry.sessionId !== sessionId) continue;
+      entry.reject(new Error(reason));
+      this.pending.delete(id);
+    }
+  }
+
+  /** Clean up every pending request, reserved for full application shutdown. */
   rejectAll(reason: string): void {
     for (const [id, entry] of this.pending) {
       entry.reject(new Error(reason));

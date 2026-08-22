@@ -64,4 +64,26 @@ describe("AskBroker.registerPending", () => {
     broker.resolve(requestId, ["yes"]);
     return promise.then((v) => assert.deepEqual(v, ["yes"]));
   });
+
+  it("rejectAllForSession only tears down requests owned by that session", async () => {
+    const broker = new AskBroker();
+    const deletedPromise = broker.registerPending("perm_deleted", PAYLOAD, "session_deleted");
+    const activePromise = broker.registerPending("perm_active", PAYLOAD, "session_active");
+
+    broker.rejectAllForSession("session_deleted", "Session was deleted.");
+    assert.equal(broker.resolve("perm_deleted", ["yes"]), false);
+    assert.equal(broker.resolve("perm_active", ["yes"]), true);
+
+    await assert.rejects(deletedPromise, /Session was deleted/);
+    assert.deepEqual(await activePromise, ["yes"]);
+  });
+
+  it("rejects a reply carrying the wrong sessionId", async () => {
+    const broker = new AskBroker();
+    const promise = broker.registerPending("perm_scoped", PAYLOAD, "session_owner");
+
+    assert.equal(broker.resolve("perm_scoped", ["yes"], "session_other"), false);
+    assert.equal(broker.resolve("perm_scoped", ["yes"], "session_owner"), true);
+    assert.deepEqual(await promise, ["yes"]);
+  });
 });

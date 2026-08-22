@@ -23,6 +23,7 @@ import type {
   AgentEvent,
   AgentTask,
   ScheduledTask,
+  McpConnectionTest,
   McpServerConfig,
   McpToolInfo,
   Plugin,
@@ -152,6 +153,11 @@ export interface KozumBridge {
 
   mcp: {
     list: () => Promise<McpServerConfig[]>;
+    testConnection: (
+      config: Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount"> & {
+        authToken?: string;
+      },
+    ) => Promise<Result<McpConnectionTest>>;
     add: (
       config: Omit<McpServerConfig, "id" | "createdAt" | "status" | "toolCount"> & {
         /** Raw token. Encrypted by the main process and never returned. */
@@ -227,6 +233,8 @@ export interface KozumBridge {
     stat: (path: string) => Promise<Result<{ size: number; isDir: boolean }>>;
     /** Open a file externally, reveal it in the file manager, or launch it in the IDE. */
     open: (path: string, action?: "external" | "reveal" | "ide") => Promise<Result<void>>;
+    /** Serve local HTML through the hardened loopback preview and navigate Chromium. */
+    openLiveHtml: (path: string) => Promise<Result<{ url: string; path: string }>>;
   };
 
   browser: {

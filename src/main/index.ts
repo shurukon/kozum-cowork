@@ -11,7 +11,7 @@ import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } 
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 
-import { settingsPath, keysPath, sessionsDir, memoryDir, pluginsDir, projectsPath } from "./store/paths.ts";
+import { settingsPath, keysPath, sessionsDir, memoryDir, pluginsDir, mcpPath, projectsPath } from "./store/paths.ts";
 import { ProjectStore } from "./store/projects.ts";
 import { SettingsStore } from "./store/settings.ts";
 import { SecretStore } from "./store/secrets.ts";
@@ -25,6 +25,7 @@ import { McpManager } from "./mcp/manager.ts";
 import { PluginManager } from "./plugins/manager.ts";
 import { BrowserEngine, ElectronBrowserBackend } from "./browser/engine.ts";
 import { BrowserSurface } from "./browser/surface.ts";
+import { LocalPreviewServer } from "./preview/server.ts";
 import { TaskStore } from "./tools/tasks.ts";
 import { AskBroker } from "./tools/ask.ts";
 import { SubagentManager } from "./agent/subagents.ts";
@@ -205,8 +206,9 @@ if (!app.requestSingleInstanceLock()) {
     );
 
     // ── mcp ─────────────────────────────────────────────────────────────────
-    const mcp = new McpManager();
+    const mcp = new McpManager(mcpPath(appPaths), secrets);
     try {
+      await mcp.load();
       await mcp.connectAll();
     } catch (e) {
       console.error("[boot] MCP connectAll failed:", e);
@@ -227,6 +229,7 @@ if (!app.requestSingleInstanceLock()) {
     const browserBackend = new ElectronBrowserBackend();
     const browser = new BrowserEngine(browserBackend);
     const browserSurface = new BrowserSurface();
+    const previewServer = new LocalPreviewServer();
 
     // ── event forwarding ─────────────────────────────────────────────────────
     const emitEvent = makeEmitEvent(() => mainWindow);
@@ -346,6 +349,11 @@ if (!app.requestSingleInstanceLock()) {
       getBrowserView: () => browserBackend.getWebContentsView(),
       ensureBrowserView: () => browserBackend.ensureWebContentsView(),
       getBrowserScreenshot: (opts) => browser.screenshot(opts),
+      previewServer,
+    });
+
+    app.once("before-quit", () => {
+      void previewServer.close();
     });
 
     // ── window chrome IPC ────────────────────────────────────────────────────

@@ -40,8 +40,11 @@ export interface SessionStore {
   /** Reset the entire state for a mode (new session). */
   clearMode: (mode: Mode) => void;
 
+  /** Set the session identity before asynchronous hydration or live events arrive. */
+  setSessionIdentity: (mode: Mode, sessionId: string | null) => void;
+
   /** Set explicit session messages for a mode (loaded from backend). */
-  setSessionMessages: (mode: Mode, messages: Message[]) => void;
+  setSessionMessages: (mode: Mode, messages: Message[], sessionId?: string | null) => void;
 
   /** Remove an answered question prompt from the given mode. */
   resolveQuestion: (mode: Mode, requestId: string) => void;
@@ -91,6 +94,15 @@ export function resolveTargetMode(
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────
+
+/**
+ * Return whether an inbound event belongs to the already hydrated session.
+ * A null state is intentionally permissive for the first turn_start; the
+ * caller will establish the identity from that event or from hydration.
+ */
+export function eventBelongsToSession(currentSessionId: string | null, eventSessionId: string): boolean {
+  return currentSessionId === null || currentSessionId === eventSessionId;
+}
 
 /**
  * Rebuild a `toolCards` map from persisted messages.
@@ -171,6 +183,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     set((prev) => {
       const current = prev[targetMode];
+      // IPC broadcasts events for all sessions on one channel. Once this mode
+      // has an identity, reject every event from another session before the
+      // reducer can mutate messages, cards, tasks, or prompts.
+      if (!eventBelongsToSession(current.sessionId, e.sessionId)) return prev;
       const seenEventIds = new Set(current.seenEventIds);
       if (e.eventId && seenEventIds.has(e.eventId)) return prev;
       if (e.eventId) seenEventIds.add(e.eventId);
@@ -190,10 +206,21 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set({ [mode]: emptyModeState() });
   },
 
-  setSessionMessages(mode: Mode, messages: Message[]) {
+  setSessionIdentity(mode: Mode, sessionId: string | null) {
     set((prev) => {
+      if (prev[mode].sessionId === sessionId) return prev;
+      const next = emptyModeState();
+      next.sessionId = sessionId;
+      return { [mode]: next };
+    });
+  },
+
+  setSessionMessages(mode: Mode, messages: Message[], sessionId?: string | null) {
+    set((prev) => {
+      const sessionChanged =
+        sessionId !== undefined && prev[mode].sessionId !== sessionId;
       const reconstructed = reconstructToolCards(messages);
-      const liveCards = prev[mode].toolCards;
+      const liveCards = sessionChanged ? new Map<string, ToolCard>() : prev[mode].toolCards;
       // Backend transcript hydration does not persist the rich `display`
       // payload. Preserve it from the live event card when the same tool call
       // is already known, while still taking the persisted final status.
@@ -211,6 +238,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         [mode]: {
           ...prev[mode],
           messages,
+          ...(sessionId !== undefined ? { sessionId } : {}),
           streamingMessageId: null,
           streamingText: "",
           streamingThinking: "",
@@ -221,11 +249,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           // drop them to avoid a stale dangling form.
           pendingQuestions: [],
           pendingPermissions: [],
-          // Preserve live event ids while the transcript is being reloaded. A
-          // replay can arrive after the live subscription during startup; clearing
-          // this set here would apply those events a second time. clearMode() is
-          // the explicit boundary that resets it for a genuinely new session.
-          seenEventIds: prev[mode].seenEventIds,
+          // Preserve live event ids while reloading the same session so a replay
+          // cannot apply an event twice. A different identity is a hard boundary:
+          // never let the previous session's dedupe set suppress or admit events.
+          seenEventIds: sessionChanged ? new Set<string>() : prev[mode].seenEventIds,
         },
       };
     });
