@@ -10,6 +10,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } from "electron";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 
 import { settingsPath, keysPath, sessionsDir, memoryDir, pluginsDir, mcpPath, projectsPath } from "./store/paths.ts";
 import { ProjectStore } from "./store/projects.ts";
@@ -144,6 +145,22 @@ if (!app.requestSingleInstanceLock()) {
       decryptString: (buf: Buffer) => safeStorage.decryptString(buf),
     });
 
+    // ── default workspace ───────────────────────────────────────────────────
+    // One shared machine folder backing both modes. Initialized once on first
+    // boot; changeable from Settings but never removable. The directory itself
+    // is created lazily on first use by the session manager.
+    try {
+      const current = await settings.get();
+      if (!current.general.defaultWorkspace) {
+        const fallback = join(app.getPath("documents"), "Kozum");
+        await settings.patch({
+          general: { ...current.general, defaultWorkspace: fallback },
+        });
+      }
+    } catch (e) {
+      console.error("[boot] Default workspace init failed:", e);
+    }
+
     // ── providers ───────────────────────────────────────────────────────────
     const registry = new ProviderRegistry(secrets, appPaths, async () => {
       const current = await settings.get();
@@ -167,12 +184,23 @@ if (!app.requestSingleInstanceLock()) {
     // SkillStore and its tools remain fully available, but bundled skills are
     // intentionally opt-in. A fresh Kozum install must start with an empty
     // Skills catalogue; user-provided skills in the legacy app-level directory
-    // are still discovered for backwards compatibility.
+    // are still discovered for backwards compatibility (tagged builtin so they
+    // cannot be removed), while the userData/skills root holds user-installed
+    // entries that Customize can delete.
     const skills = new SkillStore();
+    const userSkillsRoot = join(userDataPath, "skills");
+    skills.addUserRoot(userSkillsRoot);
     try {
       const legacySkillsDir = join(app.getAppPath(), "skills");
+      await mkdir(userSkillsRoot, { recursive: true });
+      const rootsToScan: Array<{ path: string; source: "builtin" | "user" }> = [
+        { path: userSkillsRoot, source: "user" },
+      ];
       if (existsSync(legacySkillsDir)) {
-        await skills.discover([legacySkillsDir]);
+        rootsToScan.push({ path: legacySkillsDir, source: "builtin" });
+      }
+      for (const { path: root, source } of rootsToScan) {
+        await skills.discover([root], source);
       }
     } catch (e) {
       console.error("[boot] Skill discovery failed:", e);
@@ -329,6 +357,7 @@ if (!app.requestSingleInstanceLock()) {
       mcp,
       plugins,
       skills,
+      userSkillsRoot,
       tasks,
       projects,
       memory,

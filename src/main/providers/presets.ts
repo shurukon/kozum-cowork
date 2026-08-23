@@ -1,10 +1,9 @@
 /**
  * Kozum Cowork — shipped provider presets.
  *
- * Every base URL here was verified against vendor documentation on 2026-07-28.
- * Where a vendor could not be verified the preset is still shipped (so the user
- * can point it somewhere valid) but `notes` says so plainly rather than
- * pretending the endpoint is known-good.
+ * Every base URL here was verified against vendor documentation. Where a
+ * vendor could not be fully verified the preset says so plainly in `notes`
+ * rather than pretending the endpoint is known-good.
  *
  * Adding a vendor is a data change, not a code change, unless it speaks a wire
  * protocol we do not already have an adapter for.
@@ -124,10 +123,10 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     baseUrl: "https://api.kilo.ai/api/gateway",
     authScheme: "bearer",
     modelsPath: "/models",
-    staticModels: ["kilo-auto/free"],
+    staticModels: ["kilo-auto/frontier", "kilo-auto/free"],
     docsUrl: "https://kilocode.ai/docs",
     notes:
-      "Note the non-standard /api/gateway prefix — there is no /v1. The catalogue endpoint needs no auth. The live catalogue uses kilo-auto/* ids, including kilo-auto/free for the free tier.",
+      "Note the non-standard /api/gateway prefix — there is no /v1. Catalogue re-verified live on 2026-08-23 (GET /models needs no auth and returns an OpenRouter-shaped {data:[…]} list led by kilo-auto/* ids).",
     builtIn: true,
   },
   {
@@ -137,22 +136,42 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     baseUrl: "https://pass.wafer.ai/v1",
     authScheme: "bearer",
     modelsPath: "/models",
+    staticModels: ["GLM-5.2", "Kimi-K3", "Kimi-K2.6", "Qwen3.5-397B-A17B", "DeepSeek-V4-Flash-0731-Fast"],
     docsUrl: "https://wafer.ai",
     notes:
-      "Open-weight models at high throughput (GLM, Kimi, MiniMax, DeepSeek, Qwen). Keys are prefixed wfr_. Send Wafer-ZDR: required for zero data retention. MiniMax-M3 is the vision-capable option.",
+      "Verified live 2026-08-23 — GET /v1/models returns an OpenAI-shaped catalogue (GLM, Kimi, Qwen, DeepSeek). Keys are prefixed wfr_. Send Wafer-ZDR: required for zero data retention; Kimi-K2.6 rejects ZDR requests.",
     builtIn: true,
   },
   {
     id: "opencode-zen",
     name: "OpenCode Zen",
-    protocol: "openai-responses",
+    // Default wire protocol: most of Zen's catalogue (GLM, Kimi, DeepSeek,
+    // MiniMax and every free model) speaks OpenAI Chat Completions.
+    protocol: "openai-chat",
     baseUrl: "https://opencode.ai/zen/v1",
     authScheme: "bearer",
-    modelsPath: null,
-    staticModels: ["gpt-5.2", "gpt-5.2-codex", "claude-opus-5", "claude-fable"],
+    modelsPath: "/models",
+    staticModels: [
+      "big-pickle",
+      "x-preview-f-free",
+      "minimax-m3",
+      "glm-5.2",
+      "kimi-k2.7-code",
+      "deepseek-v4-flash",
+      "gpt-5.6-luna",
+      "claude-haiku-4-5",
+    ],
     docsUrl: "https://opencode.ai/docs/zen",
+    // Verified against https://opencode.ai/docs/zen/ on 2026-08-23.
+    // One base URL, three documented endpoints — adapters append their own
+    // path segment (/chat/completions, /responses, /messages), so routing is
+    // purely adapter selection by model-id prefix.
+    protocolRoutes: {
+      "openai-responses": ["gpt-", "grok-", "muse-spark"],
+      "anthropic-messages": ["claude-", "qwen3"],
+    },
     notes:
-      "Split protocol: GPT ids use the Responses API at /responses, Claude ids use Anthropic Messages at /messages. No public catalogue endpoint, so the model list is curated.",
+      "Verified 2026-08-23 against vendor docs. Split protocol under one base URL: GPT/Grok/Muse models use Responses (/responses), Claude/Qwen ids use Anthropic Messages (/messages), GLM/Kimi/DeepSeek/MiniMax/free ids use Chat Completions (/chat/completions). Gemini ids are exposed only via Google-shaped routes and are not selectable here. Live catalogue at /models.",
     builtIn: true,
   },
   {
@@ -163,7 +182,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     authScheme: "bearer",
     modelsPath: "/models",
     notes:
-      "UNVERIFIED — no public documentation for this service could be found on 2026-07-28. The base URL is a best guess; confirm it and edit this provider before use.",
+      "PARTIALLY VERIFIED 2026-08-23 — the host answers GET /v1/models with 401 Unauthorized (live OpenAI-style endpoint requiring a key), but public documentation listing models or confirming the catalogue shape could not be found. Treat as standard OpenAI-compatible; edit this provider if your account's dashboard says otherwise.",
     builtIn: true,
   },
 
@@ -201,7 +220,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     staticModels: ["MiniMax-M3", "MiniMax-M2"],
     docsUrl: "https://platform.minimax.io/docs",
     notes:
-      "International host is api.minimaxi.chat (platform.minimax.io is the console, not the API). MiniMax-M3 is natively multimodal with a 1M context — a good default for computer use.",
+      "Host liveness verified 2026-08-23 (GET /v1/models answers 401 Unauthorized without a key, i.e. a live OpenAI-style endpoint). International host is api.minimaxi.chat (platform.minimax.io is the console, not the API). MiniMax-M3 is natively multimodal with a 1M context — a good default for computer use.",
     builtIn: true,
   },
   {

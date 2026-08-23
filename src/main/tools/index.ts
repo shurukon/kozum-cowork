@@ -96,7 +96,7 @@ export function buildToolRegistry(svc: ToolServices): ToolRegistry {
   // Extensibility. These two are the product's differentiator: the agent
   // installs its own connectors and plugins, with no manual file editing and
   // no restart.
-  registry.registerAll(makeMcpTools(svc.mcp));
+  registry.registerAll(makeMcpTools(svc.mcp, svc.ask));
   registry.registerAll(makePluginTools(svc.plugins));
 
   // Direct control surfaces.

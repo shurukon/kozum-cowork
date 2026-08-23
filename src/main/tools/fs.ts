@@ -1270,12 +1270,124 @@ if (!isMainThread && parentPort) {
 }
 
 /**
- * Run regex.test() against each line in `lines` inside a Worker thread with a
- * wall-clock budget. Returns an array of booleans (one per line), or throws
- * with a descriptive error if the budget is exceeded.
- *
- * Spawning a worker per-file is expensive; this is only called when we detect
- * that a naive in-thread test would be unsafe (i.e. always, for file_search).
+ * Set once a Worker spawn fails (e.g. ERR_WORKER_INVALID_EXEC_ARGV when the
+ * parent's Node flags are rejected by the worker runtime on some Windows
+ * Node/Electron builds). Subsequent searches skip straight to the in-thread
+ * fallback instead of paying a failed spawn per file.
+ */
+let workerUnavailable = false;
+
+/** Test hook: force the in-thread fallback as if Worker spawns had failed. */
+export function _setRegexWorkerUnavailableForTests(v: boolean): void {
+  workerUnavailable = v;
+}
+
+/**
+ * Capped in-thread regex evaluation — the fallback used when Worker threads
+ * cannot be spawned. Lines are pre-capped by the caller, which bounds (but
+ * does not eliminate) catastrophic-backtracking damage; a coarse budget check
+ * between lines keeps typical pathological patterns from running away.
+ */
+export function inThreadRegexTest(
+  pattern: string,
+  flags: string,
+  lines: string[],
+  budgetMs: number,
+): { matches: boolean[] } | { timedOut: true } {
+  const start = Date.now();
+  let re: RegExp;
+  try {
+    re = new RegExp(pattern, flags);
+  } catch {
+    return { matches: lines.map(() => false) };
+  }
+  const matches: boolean[] = new Array(lines.length);
+  for (let i = 0; i < lines.length; i++) {
+    if ((i & 127) === 0 && Date.now() - start > budgetMs) return { timedOut: true };
+    let hit = false;
+    try {
+      hit = re.test(lines[i]);
+    } catch {
+      hit = false;
+    }
+    matches[i] = hit;
+  }
+  return { matches };
+}
+
+/**
+ * Attempt one Worker-thread regex pass. Resolves:
+ *   - { matches }          on success,
+ *   - { timedOut: true }   when the wall-clock budget is exceeded,
+ *   - null                 when the worker could not be spawned at all
+ *                          (exec argv rejection, load failure), signalling the
+ *                          caller to fall back to in-thread evaluation.
+ */
+function tryWorkerRegexTestLines(
+  pattern: string,
+  flags: string,
+  cappedLines: string[],
+  budgetMs: number,
+): Promise<{ matches: boolean[] } | { timedOut: true } | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let worker: Worker;
+    try {
+      // Explicit execArgv override: without it workers inherit parent Node
+      // options such as --experimental-strip-types, which this Node/Electron
+      // build rejects inside worker runtimes (ERR_WORKER_INVALID_EXEC_ARGV).
+      // The built app runs compiled .js and needs no flag either way.
+      worker = new Worker(new URL(import.meta.url), {
+        workerData: { pattern, flags, lines: cappedLines },
+        execArgv: [],
+      });
+    } catch {
+      resolve(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      worker.terminate().catch(() => undefined);
+      resolve({ timedOut: true });
+    }, budgetMs);
+
+    worker.on("message", (msg: { matches: boolean[] } | { error: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      worker.terminate().catch(() => undefined);
+      if ("error" in msg) {
+        resolve(inThreadRegexTest(pattern, flags, cappedLines, budgetMs));
+      } else {
+        resolve(msg);
+      }
+    });
+
+    worker.on("error", () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      worker.terminate().catch(() => undefined);
+      resolve(null);
+    });
+
+    worker.on("exit", () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(null);
+    });
+  });
+}
+
+/**
+ * Run regex.test() against each line in `lines`, preferring a Worker thread
+ * with a wall-clock budget so catastrophic patterns cannot block the main
+ * thread. If workers are unavailable on this runtime (spawn failure), fall
+ * back to capped in-thread evaluation so file_search degrades gracefully
+ * instead of dying with ERR_WORKER_INVALID_EXEC_ARGV.
  */
 async function regexTestLines(
   pattern: string,
@@ -1288,34 +1400,10 @@ async function regexTestLines(
   const MAX_WORKER_LINE_LEN = 2048;
   const cappedLines = lines.map((l) => l.slice(0, MAX_WORKER_LINE_LEN));
 
-  return new Promise((resolve) => {
-    // Worker threads inherit the parent Node options. Passing
-    // --experimental-strip-types explicitly is rejected by some Node 22
-    // worker runtimes (ERR_WORKER_INVALID_EXEC_ARGV), while inheritance
-    // already lets the .ts module load in development. The built app uses
-    // compiled .js and likewise needs no explicit flag.
-    const worker = new Worker(new URL(import.meta.url), {
-      workerData: { pattern, flags, lines: cappedLines },
-    });
-
-    const timer = setTimeout(() => {
-      worker.terminate().catch(() => undefined);
-      resolve({ timedOut: true });
-    }, budgetMs);
-
-    worker.on("message", (msg: { matches: boolean[] } | { error: string }) => {
-      clearTimeout(timer);
-      if ("error" in msg) {
-        resolve({ matches: cappedLines.map(() => false) });
-      } else {
-        resolve(msg);
-      }
-    });
-
-    worker.on("error", () => {
-      clearTimeout(timer);
-      worker.terminate().catch(() => undefined);
-      resolve({ timedOut: true });
-    });
-  });
+  if (!workerUnavailable) {
+    const result = await tryWorkerRegexTestLines(pattern, flags, cappedLines, budgetMs);
+    if (result !== null) return result;
+    workerUnavailable = true;
+  }
+  return inThreadRegexTest(pattern, flags, cappedLines, budgetMs);
 }

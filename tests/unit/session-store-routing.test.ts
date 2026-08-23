@@ -29,7 +29,7 @@ import assert from "node:assert/strict";
 
 import { emptyModeState, applyEventToMode, type ModeState } from "../../src/renderer/store/sessionReducer.ts";
 import { eventBelongsToSession, resolveTargetMode, useSessionStore } from "../../src/renderer/store/session.ts";
-import type { AgentEvent, Mode, SessionStatus, TokenUsage } from "../../src/shared/types.ts";
+import type { AgentEvent, Message, Mode, SessionStatus, TokenUsage } from "../../src/shared/types.ts";
 
 const USAGE: TokenUsage = { inputTokens: 10, outputTokens: 5 };
 
@@ -129,6 +129,75 @@ describe("session store identity boundaries", () => {
     assert.equal(next.sessionId, "session-new");
     assert.equal(next.messages.length, 0);
     assert.equal(next.toolCards.size, 0);
+  });
+});
+
+describe("first-message hydration race (regression: first user turn vanished in BOTH modes)", () => {
+  const optimisticFirst = (): Message => ({
+    id: "local-turn-1",
+    role: "user",
+    content: [{ type: "text", text: "Hello agent" }],
+    createdAt: Date.now(),
+  });
+
+  it("keeps the optimistic first user message when the fresh session's history comes back empty", () => {
+    for (const mode of ["cowork", "code"] as Mode[]) {
+      const store = useSessionStore.getState();
+      store.clearMode(mode);
+      // ensureSession(): identity set BEFORE the optimistic append…
+      store.setSessionIdentity(mode, `session-first-${mode}`);
+      // …then App adds the local copy and the backend send starts.
+      store.addUserMessage(mode, optimisticFirst());
+      assert.equal(useSessionStore.getState()[mode].messages.length, 1);
+
+      // Hydration effect fires: backend persists turns only AFTER the run
+      // finishes, so messages() resolves [] — it must NOT wipe the local turn.
+      useSessionStore.getState().setSessionMessages(mode, [], `session-first-${mode}`);
+      const after = useSessionStore.getState()[mode];
+      assert.equal(after.messages.length, 1, `${mode}: first message must survive hydration`);
+      assert.equal(after.messages[0]!.id, "local-turn-1");
+      assert.equal(after.messages[0]!.role, "user");
+    }
+  });
+
+  it("dedupes once the persisted twin arrives on a later reload", () => {
+    const store = useSessionStore.getState();
+    store.clearMode("cowork");
+    store.setSessionIdentity("cowork", "session-dedupe");
+    store.addUserMessage("cowork", optimisticFirst());
+
+    const persisted: Message[] = [
+      {
+        id: "persisted-1",
+        role: "user",
+        content: [{ type: "text", text: "Hello agent" }],
+        createdAt: 1,
+      },
+      {
+        id: "persisted-2",
+        role: "assistant",
+        content: [{ type: "text", text: "Hi!" }],
+        createdAt: 2,
+      },
+    ];
+    useSessionStore.getState().setSessionMessages("cowork", persisted, "session-dedupe");
+
+    const after = useSessionStore.getState().cowork;
+    assert.deepEqual(
+      after.messages.map((m) => m.id),
+      ["persisted-1", "persisted-2"],
+      "the local twin must be dropped when its persisted counterpart exists",
+    );
+  });
+
+  it("never drags optimistic drafts across a session boundary", () => {
+    const store = useSessionStore.getState();
+    store.clearMode("cowork");
+    store.setSessionIdentity("cowork", "session-a");
+    store.addUserMessage("cowork", optimisticFirst());
+
+    useSessionStore.getState().setSessionMessages("cowork", [], "session-b");
+    assert.equal(useSessionStore.getState().cowork.messages.length, 0);
   });
 });
 

@@ -77,12 +77,24 @@ export interface KozumBridge {
     listKeys: (providerId: string) => Promise<ApiKeyEntry[]>;
     /** Probe connectivity and update key.status. */
     testKey: (keyId: string) => Promise<Result<void>>;
-    /** Fetch models from the provider's catalogue endpoint. */
-    refreshModels: (providerId: string) => Promise<Result<ModelInfo[]>>;
-    /** All cached ModelInfo records for a provider. */
+    /**
+     * Fetch models from the provider's catalogue endpoint. Never empties the
+     * list: on failure `warning` carries the reason and static models are
+     * returned so the dropdown stays populated.
+     */
+    refreshModels: (
+      providerId: string,
+    ) => Promise<Result<{ models: ModelInfo[]; warning: string | null }>>;
+    /** All cached ModelInfo records for a provider (falls back to static list). */
     listModels: (providerId: string) => Promise<ModelInfo[]>;
-    /** Register a new custom OpenAI-compatible provider. */
-    addCustom: (input: { name: string; baseUrl: string }) => Promise<Result<ProviderPreset>>;
+    /** Register a new custom provider, optionally with inline key + model IDs. */
+    addCustom: (input: {
+      name: string;
+      baseUrl: string;
+      protocol?: "openai-chat" | "openai-responses" | "anthropic-messages";
+      modelIds?: string[];
+      apiKey?: string;
+    }) => Promise<Result<ProviderPreset>>;
     /** Remove a previously registered custom provider. */
     removeCustom: (id: string) => Promise<Result<void>>;
     /** Patch fields on a custom provider. */
@@ -167,6 +179,14 @@ export interface KozumBridge {
     remove: (id: string) => Promise<Result<void>>;
     setEnabled: (id: string, enabled: boolean) => Promise<Result<void>>;
     tools: (serverId: string) => Promise<McpToolInfo[]>;
+    /** Replace a connector's per-tool execution policy (merged server-side). */
+    setToolPolicy: (
+      serverId: string,
+      policy: {
+        default: "allow" | "deny" | "ask";
+        tools?: Record<string, "allow" | "deny" | "ask">;
+      },
+    ) => Promise<Result<McpServerConfig>>;
   };
 
   plugins: {
@@ -181,6 +201,10 @@ export interface KozumBridge {
   skills: {
     list: () => Promise<Skill[]>;
     setEnabled: (id: string, enabled: boolean) => Promise<Result<void>>;
+    /** Install a skill folder/SKILL.md/.md into the userData root, then rescan. */
+    add: (sourcePath: string) => Promise<Result<Skill[]>>;
+    /** Remove a user-installed skill; bundled/legacy entries are refused. */
+    remove: (id: string) => Promise<Result<void>>;
   };
 
   subagents: {

@@ -7,7 +7,7 @@
  * Tool names are namespaced: mcp__<serverName>__<toolName>
  */
 
-import type { McpConnectionTest, McpServerConfig, McpStatus, McpToolInfo } from "../../shared/types.ts";
+import type { McpConnectionTest, McpPolicyAction, McpServerConfig, McpStatus, McpToolInfo, McpToolPolicy } from "../../shared/types.ts";
 import { McpClient } from "./client.ts";
 import type { McpToolDefinition } from "./client.ts";
 import { createTransport } from "./transport.ts";
@@ -128,12 +128,46 @@ export class McpManager {
       throw new Error(`MCP server "${config.id}" is already registered`);
     }
     this.servers.set(config.id, {
-      config: { ...config, status: "disconnected", toolCount: 0 },
+      // Newly added servers ask for every tool until the user opts out.
+      config: { ...config, toolPolicy: config.toolPolicy ?? { default: "ask" }, status: "disconnected", toolCount: 0 },
       client: null,
       tools: [],
       status: "disconnected",
     });
     await this.persist();
+  }
+
+  /**
+   * Replace a server's tool policy and persist it. No reconnect is required —
+   * the policy is evaluated per call inside the mcp_call gate.
+   */
+  async setToolPolicy(id: string, policy: McpToolPolicy): Promise<McpServerConfig | null> {
+    await this.ensureLoaded();
+    const entry = this.servers.get(id);
+    if (!entry) return null;
+    const merged: McpToolPolicy = {
+      default: policy.default ?? entry.config.toolPolicy?.default ?? "ask",
+      ...(policy.tools !== undefined ? { tools: { ...policy.tools } } : {}),
+    };
+    entry.config = { ...entry.config, toolPolicy: merged };
+    await this.persist();
+    return this.status().find((s) => s.id === id) ?? null;
+  }
+
+  /**
+   * Effective policy action for one namespaced tool name
+   * (`mcp__<server>__<tool>`). Per-tool overrides win over the default.
+   * Unknown servers resolve to "ask" (fail closed).
+   */
+  effectiveToolAction(serverId: string, namespacedName: string): McpPolicyAction {
+    const entry = this.servers.get(serverId);
+    if (!entry) return "ask";
+    const policy = entry.config.toolPolicy;
+    if (!policy) return "ask";
+    const bare = namespacedName.startsWith(`mcp__${entry.config.name}__`)
+      ? namespacedName.slice(`mcp__${entry.config.name}__`.length)
+      : namespacedName;
+    return policy.tools?.[bare] ?? policy.default;
   }
 
   /** Remove a server and close its connection. */

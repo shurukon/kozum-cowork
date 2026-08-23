@@ -48,6 +48,33 @@
   font-weight: var(--fw-semibold);
 }
 
+/* Sticky "Action required" safety-net strip (pending prompts without a
+   transcript anchor). Sits directly above the composer so it is impossible
+   to miss, matching the inlineError visual language. */
+.actionRequired {
+  width: min(100%, 860px);
+  margin: 0 auto;
+  padding: 0 28px 10px;
+  flex-shrink: 0;
+}
+
+.actionRequiredTitle {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--warning, #d97706);
+  margin-bottom: 6px;
+}
+
+.actionRequiredStack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
 .emptyHint {
   width: min(100%, 560px);
   margin: clamp(80px, 16vh, 170px) auto 0;

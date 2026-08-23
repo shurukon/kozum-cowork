@@ -52,6 +52,8 @@ export interface PendingQuestion {
   options: PendingQuestionOption[];
   multiSelect: boolean;
   allowFreeform?: boolean;
+  /** The tool_use id whose card should host the inline form, if known. */
+  toolUseId?: string;
   /** The assistant message id this question is attached to, if known. */
   messageId?: string;
 }
@@ -78,6 +80,8 @@ export interface ModeState {
   streamingMessageId: string | null;
   streamingText: string;
   streamingThinking: string;
+  /** toolUseId of the most recent tool_start; used to anchor inline prompts to their card. */
+  lastToolUseId: string | null;
   toolCards: Map<string, ToolCard>;
   tasks: AgentTask[];
   error: string | null;

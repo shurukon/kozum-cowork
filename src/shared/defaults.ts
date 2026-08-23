@@ -25,8 +25,10 @@ const COWORK_DEFAULTS: ModeSettings = {
   maxTokens: 8192,
   temperature: 1,
   maxIterations: 60,
-  // Claude Cowork applies file edits inline; shell/process actions can still ask.
-  permissionMode: "accept_edits",
+  // Cowork's two postures are Auto approve (bypass_permissions) and Ask for
+  // dangerous actions (ask_dangerous). ask_dangerous is the default: only
+  // irreversible/destructive tools prompt.
+  permissionMode: "ask_dangerous",
   enabledToolNames: null,
 };
 
@@ -61,6 +63,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
       cowork: null,
       code: null,
     },
+    /**
+     * One shared workspace folder backing BOTH modes whenever no project or
+     * folder override is selected. Main initializes it to
+     * Documents/Kozum on first boot and creates it lazily on first use.
+     * Changeable from Settings; never removable.
+     */
+    defaultWorkspace: null,
     rules: "",
     autoOpenPreviews: true,
     autoOpenBrowserPreview: true,

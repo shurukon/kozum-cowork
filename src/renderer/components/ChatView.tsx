@@ -1,8 +1,10 @@
 /**
  * Kozum Cowork — chat transcript + composer.
  *
- * Composes: Message list (with kz-send-ack and thinking animation) + ComposerBar
- * (with AddMenu and SelectorBar). Manages auto-scroll and the jump-to-latest pill.
+ * Composes: Message list (with kz-send-ack and thinking animation) + AskDock
+ * (the single fixed panel above the composer for pending asks/permissions) +
+ * ComposerBar (with AddMenu and SelectorBar). Manages auto-scroll and the
+ * jump-to-latest pill.
  *
  * Props are a superset of the old interface to remain wirable by App.tsx:
  * - The old onAttach: () => void is replaced by onAttach: (kind) => void
@@ -10,8 +12,11 @@
  * - onPickModel is removed — model selection is now inline in SelectorBar.
  * - selection, presets, keysByProvider, modelsByProvider, onSelectionChange,
  *   onRefreshModels are new (passed through to ComposerBar → SelectorBar).
- * - permissionSlot is new (Code mode injects <PermissionPicker />).
+ * - permissionSlot is passed through in BOTH modes now (Cowork gets its own
+ *   two-posture picker).
  * - onOpenFile is new (forwarded to ToolCard file chips).
+ * - Pending prompts render exclusively in AskDock — never inline in the
+ *   transcript.
  */
 
 import {
@@ -35,6 +40,7 @@ import type {
 import { reconstructToolCards, useSessionStore } from "../store/session.ts";
 import { Message } from "./Message.tsx";
 import { ComposerBar } from "./ComposerBar.tsx";
+import { AskDock } from "./AskDock.tsx";
 import type { AddMenuKind } from "./AddMenu.tsx";
 import type { PreviewTarget } from "./PreviewPanel.tsx";
 import styles from "./ChatView.module.css";
@@ -67,6 +73,8 @@ export interface ChatViewProps {
 
   /** Optional Cowork-only project/folder picker rendered in the composer. */
   projectSlot?: ReactNode;
+
+  /** Extension catalogues and actions for the in-chat QuickPanel. */
 
   /** Extension catalogues and actions for the in-chat QuickPanel. */
   skills?: Skill[];
@@ -136,7 +144,7 @@ export function ChatView({
   composerDraft = null,
 }: ChatViewProps) {
   const modeState = useSessionStore((s) => s[mode]);
-  const { messages, streamingMessageId, toolCards, pendingQuestions, pendingPermissions } = modeState;
+  const { messages, streamingMessageId, toolCards } = modeState;
   const transcriptToolCards = reconstructToolCards(messages);
   const visibleToolCards = new Map(transcriptToolCards);
   for (const [toolUseId, card] of toolCards) visibleToolCards.set(toolUseId, card);
@@ -157,6 +165,13 @@ export function ChatView({
   const latestAssistantMessageId = [...messages]
     .reverse()
     .find((message) => message.role === "assistant")?.id;
+
+  // Pending prompts live ONLY in the AskDock above the composer. The store's
+  // pending arrays (anchored by the reducer) are the single source of truth;
+  // the dock is always visible, so a prompt can never be missed even when its
+  // transcript anchor scrolled away.
+  const pendingPermissions = modeState.pendingPermissions;
+  const pendingQuestions = modeState.pendingQuestions;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -232,13 +247,9 @@ export function ChatView({
               }
               onOpenFile={onOpenFile}
               onPreview={onPreview}
-              onReply={onReply}
-              onResolveQuestion={onResolveQuestion}
               onCopyMessage={onCopyMessage}
               onEditMessage={onEditMessage}
               onRetryMessage={onRetryMessage}
-              pendingQuestions={pendingQuestions}
-              pendingPermissions={pendingPermissions}
             />
           ))}
           {(modeState.error || inlineError) && (
@@ -261,6 +272,23 @@ export function ChatView({
           <span>Latest</span>
         </button>
       )}
+
+      {/* AskDock — the single fixed panel above the composer for pending
+          asks and permissions. One card at a time (FIFO) with an "n of m"
+          counter; answers reuse the same onReply path as before, plus an
+          optimistic local resolve so the dock advances immediately. */}
+      <AskDock
+        permissions={pendingPermissions}
+        questions={pendingQuestions}
+        onPermissionDecision={(requestId, decision) => {
+          onReply?.(requestId, [decision]);
+          useSessionStore.getState().resolvePermission(mode, requestId);
+        }}
+        onQuestionAnswer={(requestId, values) => {
+          onReply?.(requestId, values);
+          onResolveQuestion?.(requestId);
+        }}
+      />
 
       {/* Composer */}
       <ComposerBar

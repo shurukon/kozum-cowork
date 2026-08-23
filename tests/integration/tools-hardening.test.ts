@@ -121,6 +121,10 @@ describe("H4 — symlinks are not followed in file_search, glob_match, directory
   let workDir: string;
   let outside: string;
   let secretPath: string;
+  // Creating file/directory symlinks on Windows requires elevated rights or
+  // Developer Mode; when the OS refuses (EPERM) the property under test is
+  // environment-blocked, so the subtests skip instead of failing.
+  let symlinksAvailable = true;
 
   beforeEach(async () => {
     workDir = await mkdtemp(join(tmpdir(), "harden-sym-"));
@@ -128,10 +132,20 @@ describe("H4 — symlinks are not followed in file_search, glob_match, directory
     secretPath = join(outside, "secret.key");
     await writeFile(secretPath, "SECRET_CONTENT_1234567890");
     await writeFile(join(workDir, "normal.txt"), "normal content");
-    // Create a symlink inside the workspace pointing to a file outside it.
-    await symlink(secretPath, join(workDir, "link-to-secret.txt"));
-    // Create a symlink inside the workspace pointing to a directory outside it.
-    await symlink(outside, join(workDir, "link-to-outside"));
+    try {
+      // Create a symlink inside the workspace pointing to a file outside it.
+      await symlink(secretPath, join(workDir, "link-to-secret.txt"));
+      // Create a symlink inside the workspace pointing to a directory outside it.
+      await symlink(outside, join(workDir, "link-to-outside"));
+      symlinksAvailable = true;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === "EPERM" || code === "EACCES" || code === "ENOTSUP") {
+        symlinksAvailable = false;
+        return;
+      }
+      throw e;
+    }
   });
 
   afterEach(async () => {
@@ -139,7 +153,11 @@ describe("H4 — symlinks are not followed in file_search, glob_match, directory
     await rm(outside, { recursive: true, force: true });
   });
 
-  it("file_search does NOT read through symlinks", async () => {
+  it("file_search does NOT read through symlinks", async (t) => {
+    if (!symlinksAvailable) {
+      t.skip("symlink creation requires privileges on this platform");
+      return;
+    }
     const ctx = makeCtx({ workingFolder: workDir });
     const r = await registry.execute(
       "file_search",
@@ -154,7 +172,11 @@ describe("H4 — symlinks are not followed in file_search, glob_match, directory
     );
   });
 
-  it("glob_match does NOT enumerate through symlinks to outside files", async () => {
+  it("glob_match does NOT enumerate through symlinks to outside files", async (t) => {
+    if (!symlinksAvailable) {
+      t.skip("symlink creation requires privileges on this platform");
+      return;
+    }
     const ctx = makeCtx({ workingFolder: workDir });
     const r = await registry.execute(
       "glob_match",
@@ -173,7 +195,11 @@ describe("H4 — symlinks are not followed in file_search, glob_match, directory
     );
   });
 
-  it("directory_list shows symlinks as [lnk] but does not follow them", async () => {
+  it("directory_list shows symlinks as [lnk] but does not follow them", async (t) => {
+    if (!symlinksAvailable) {
+      t.skip("symlink creation requires privileges on this platform");
+      return;
+    }
     const ctx = makeCtx({ workingFolder: workDir });
     const r = await registry.execute(
       "directory_list",
@@ -486,6 +512,9 @@ describe("M3 — UNC and device paths rejected by resolvePath", () => {
     );
   });
 
+  // On Windows, "/root/evil.sh" canonicalises to "<cwd-drive>:\root\evil.sh",
+  // which is an ordinary user-writable folder — the POSIX system-directory
+  // expectation only applies where that layout exists.
   it("rejects /home/alice/.bashrc write", async () => {
     await assert.rejects(
       () => resolvePath("/home/alice/.bashrc", { workingFolder: null, forWrite: true }),
@@ -493,14 +522,14 @@ describe("M3 — UNC and device paths rejected by resolvePath", () => {
     );
   });
 
-  it("rejects /root write", async () => {
+  it("rejects /root write", { skip: process.platform === "win32" }, async () => {
     await assert.rejects(
       () => resolvePath("/root/evil.sh", { workingFolder: null, forWrite: true }),
       PathError,
     );
   });
 
-  it("rejects /usr/local/bin write", async () => {
+  it("rejects /usr/local/bin write", { skip: process.platform === "win32" }, async () => {
     await assert.rejects(
       () => resolvePath("/usr/local/bin/hijack", { workingFolder: null, forWrite: true }),
       PathError,

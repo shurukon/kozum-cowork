@@ -204,15 +204,15 @@ describe("removed surfaces stay removed", () => {
 
   it("RTL direction and Arabic locale are confined to useDir/dir", () => {
     for (const { path, text } of SOURCES) {
+      // Normalise so Windows-style source paths match the same owners.
+      const normalized = path.replace(/\\/g, "/");
       const isDirOwner =
-        path.endsWith("hooks/useDir.ts") ||
-        path.endsWith("hooks\\useDir.ts") ||
-        path.endsWith("lib/dir.ts") ||
-        path.endsWith("lib\\dir.ts");
+        normalized.endsWith("hooks/useDir.ts") ||
+        normalized.endsWith("lib/dir.ts");
       const isLocaleOwner =
         isDirOwner ||
-        path.endsWith("pages/SettingsPage.tsx") ||
-        path.includes("/i18n/");
+        normalized.endsWith("pages/SettingsPage.tsx") ||
+        normalized.includes("/i18n/");
       assert.ok(
         !/documentElement\.dir\s*=/.test(text) || isDirOwner,
         `${path} sets documentElement.dir outside the dedicated useDir hook`,

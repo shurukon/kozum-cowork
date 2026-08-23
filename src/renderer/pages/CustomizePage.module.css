@@ -104,3 +104,57 @@
 .inlineNoticeError { border-color:rgba(255,117,132,.42); color:#ffc0c8; background:rgba(255,100,120,.1); }
 .inlineNoticeInfo { border-color:var(--glass-border-blue); color:var(--text-secondary); background:var(--accent-softer); }
 @media (max-width:620px) { .formGrid { grid-template-columns:1fr; }.formField:nth-child(3) { grid-column:auto; }.inlineFormActions { align-items:stretch; flex-direction:column; }.inlineFormActions button { width:100%; } }
+
+/* ── MCP per-tool policy detail (Task 6) ───────────────────────────────── */
+
+.serverExpand {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 30px;
+  justify-content: center;
+  border: 1px solid rgba(160,184,205,.12);
+  border-radius: 6px;
+  color: #8396a4;
+  background: transparent;
+  cursor: pointer;
+}
+.serverExpand:hover { color: var(--text-primary); background: var(--bg-hover); }
+.expandChevron { transition: transform .15s ease; }
+.expandChevronOpen { transform: rotate(90deg); }
+
+.serverDetail {
+  margin: -7px 0 7px;
+  padding: 10px 12px;
+  border: 1px solid rgba(160,184,205,.12);
+  border-radius: 8px;
+  background: rgba(0,0,0,.16);
+  display: grid;
+  gap: 8px;
+}
+.detailHeader { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.statusGoodText { color: #80dfac; font-size: 11px; }
+.statusMutedText { color: #8aa0ae; font-size: 11px; }
+.detailHint { color: #7e93a1; font-size: 11px; margin-inline-start: auto; }
+.bulkActions { display: flex; gap: 4px; }
+.toolsLoading { display: flex; align-items: center; gap: 6px; color: #7e93a1; font-size: 11px; padding: 6px 2px; }
+.toolPolicyList { display: grid; gap: 5px; max-height: 260px; overflow-y: auto; }
+.toolPolicyRow { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; background: rgba(160,184,205,.05); }
+.toolPolicyRow:hover { background: rgba(160,184,205,.09); }
+.toolPolicyCopy { min-width: 0; flex: 1; display: grid; gap: 1px; }
+.toolPolicyCopy strong { color: #d7e7ed; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toolPolicyCopy small { color: #6f8492; font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toolPolicyRow select {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(160,184,205,.18);
+  background: #17222b;
+  color: var(--text-primary, #d7e7ed);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}

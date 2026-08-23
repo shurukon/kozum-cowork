@@ -5,11 +5,13 @@
  * Read-only tools remain available in every mode; mutating tools either run,
  * request an inline approval, or return a structured denial to the model.
  *
- *   bypass_permissions — run every exposed tool without asking.
+ *   bypass_permissions — run every exposed tool without asking (Cowork: Auto approve).
  *   plan               — allow inspection and planning, but refuse mutating tools.
  *   accept_edits      — apply filesystem edits automatically; ask for commands,
  *                       processes, browser interactions, connectors and host control.
  *   ask_permission    — ask before every mutating tool.
+ *   ask_dangerous     — ask only for irreversible/destructive tools (Cowork default);
+ *                       shell, computer control, browser and web pass without asking.
  */
 
 import type { PermissionMode, ToolResult } from "../../shared/types.ts";
@@ -57,6 +59,26 @@ const MUTATING_SYSTEM_TOOLS = new Set([
 
 /** Scheduled tasks change unattended future execution. */
 const MUTATING_TASK_TOOLS = new Set([
+  "schedule_create",
+  "schedule_update",
+  "schedule_delete",
+  "schedule_run_now",
+]);
+
+/**
+ * Irreversible/destructive operations — the ONLY tools `ask_dangerous` asks
+ * about (Cowork's "Ask for dangerous actions" posture). Deliberately narrow:
+ * shell commands, computer control, browser and web tools pass without asking.
+ * Tune this one constant rather than adding new modes.
+ *
+ * `file_move` is included because it can silently overwrite an existing target.
+ */
+export const DANGEROUS_TOOLS = new Set([
+  "file_delete",
+  "directory_delete",
+  "file_move",
+  "process_kill",
+  "memory_delete",
   "schedule_create",
   "schedule_update",
   "schedule_delete",
@@ -115,6 +137,7 @@ export async function checkPermission(opts: PermissionGateOpts): Promise<Permiss
   const allowed = { allowed: true, blockedMessage: null } as const;
 
   if (!isMutating(toolName, toolGroup) || permissionMode === "bypass_permissions") return allowed;
+  // Session-scoped "allow always" decisions are honored before any mode logic.
   if (opts.sessionAllowedTools?.has(toolName)) return allowed;
 
   if (permissionMode === "plan") {
@@ -125,6 +148,11 @@ export async function checkPermission(opts: PermissionGateOpts): Promise<Permiss
         "Planning and read-only inspection remain available; ask the user to change the Code permission mode before applying changes.",
     };
   }
+
+  // Cowork's "Ask for dangerous actions": only irreversible/destructive tools
+  // ask; everything else (shell, computer, browser, web, edits) runs silently.
+  const needsAsk = permissionMode === "ask_dangerous" ? DANGEROUS_TOOLS.has(toolName) : true;
+  if (!needsAsk) return allowed;
 
   // accept_edits auto-approves filesystem edits but still protects commands,
   // process control, host/browser actions, connectors, plugins and persistence.

@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FolderOpen } from "lucide-react";
+import { ChevronDown, FolderOpen, X } from "lucide-react";
 
 import type {
   ApiKeyEntry,
@@ -47,7 +47,7 @@ import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { CustomizePage } from "./pages/CustomizePage.tsx";
 import type { CustomizeTab } from "./pages/CustomizePage.tsx";
 import { FirstRun } from "./components/FirstRun.tsx";
-import { PermissionPicker } from "./components/PermissionPicker.tsx";
+import { PermissionPicker, COWORK_OPTIONS } from "./components/PermissionPicker.tsx";
 import { Scheduled } from "./pages/Scheduled.tsx";
 import { Projects } from "./pages/Projects.tsx";
 import { ToastRegion } from "./components/Toast.tsx";
@@ -274,7 +274,7 @@ export function App() {
           // not a reason to show FirstRun. Refresh once so gateways such as
           // Kilo can resolve their current catalogue after a restart.
           const refreshed = await bridge().providers.refreshModels(p.id);
-          next[p.id] = refreshed.ok ? refreshed.value : cached;
+          next[p.id] = refreshed.ok ? refreshed.value.models : cached;
         } catch {
           next[p.id] = [];
         }
@@ -710,7 +710,9 @@ export function App() {
   }
 
   /**
-   * Refresh models for a provider, update local cache, and return.
+   * Refresh models for a provider, update local cache, and return. A failed
+   * live refresh is surfaced as a toast while the built-in static list keeps
+   * the dropdown populated.
    */
   async function handleRefreshModels(providerId: string): Promise<ModelInfo[]> {
     const res = await bridge().providers.refreshModels(providerId);
@@ -718,8 +720,14 @@ export function App() {
       setBanner(res.error);
       return [];
     }
-    setModelsByProvider((prev) => ({ ...prev, [providerId]: res.value }));
-    return res.value;
+    if (res.value.warning) {
+      pushToast(
+        "error",
+        `Refresh failed: ${res.value.warning} — showing built-in list`,
+      );
+    }
+    setModelsByProvider((prev) => ({ ...prev, [providerId]: res.value.models }));
+    return res.value.models;
   }
 
   /**
@@ -741,7 +749,7 @@ export function App() {
     // one render behind when a custom provider was just created.
     const models = await bridge().providers.refreshModels(providerId);
     if (models.ok) {
-      setModelsByProvider((prev) => ({ ...prev, [providerId]: models.value }));
+      setModelsByProvider((prev) => ({ ...prev, [providerId]: models.value.models }));
     }
   }
   async function handleRemoveKey(keyId: string) {
@@ -764,15 +772,38 @@ export function App() {
     await reloadKeys(presets);
     const models = await bridge().providers.refreshModels(providerId);
     if (models.ok) {
-      setModelsByProvider((prev) => ({ ...prev, [providerId]: models.value }));
+      setModelsByProvider((prev) => ({ ...prev, [providerId]: models.value.models }));
     }
     return null;
   }
-  async function handleAddCustomProvider(name: string, baseUrl: string): Promise<void> {
-    const res = await bridge().providers.addCustom({ name, baseUrl });
+  /**
+   * Custom provider creation: name + base URL + protocol, optional inline API
+   * key and comma/newline-separated model IDs (stored as the preset's static
+   * fallback list). The addKey→refreshModels chain keeps populating the model
+   * dropdown immediately after the provider exists.
+   */
+  async function handleAddCustomProvider(input: {
+    name: string;
+    baseUrl: string;
+    protocol?: "openai-chat" | "openai-responses" | "anthropic-messages";
+    modelIds?: string[];
+    apiKey?: string;
+  }): Promise<void> {
+    const res = await bridge().providers.addCustom(input);
     if (!res.ok) throw new Error(res.error);
     await reloadPresets();
-    pushToast("success", `Custom provider "${name}" added.`);
+    if (input.apiKey && input.apiKey.trim()) {
+      const models = await bridge().providers.refreshModels(res.value.id);
+      if (models.ok) {
+        setModelsByProvider((prev) => ({ ...prev, [res.value.id]: models.value.models }));
+        if (models.value.warning) {
+          pushToast("error", `Refresh failed: ${models.value.warning} — showing entered models`);
+        }
+      } else {
+        pushToast("error", models.error);
+      }
+    }
+    pushToast("success", `Custom provider "${input.name}" added.`);
   }
 
   async function handleRemoveCustomProvider(id: string) {
@@ -816,6 +847,47 @@ export function App() {
   }
 
   /**
+   * Detach a mode's folder override (the × affordance). Sessions fall back to
+   * the shared default workspace, which is changeable but never removable.
+   */
+  async function detachWorkingFolder(target: Mode) {
+    if (!settings) return;
+    try {
+      await patchSettings({
+        general: {
+          ...settings.general,
+          defaultFolders: {
+            ...settings.general.defaultFolders,
+            [target]: null,
+          },
+        },
+      });
+      if (target === "code") setCodeFolders([]);
+      pushToast("info", "Detached — using the default workspace.");
+    } catch (e) {
+      setBanner(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /**
+   * Settings.onPickWorkspaceFolder — picks the shared default workspace used
+   * by both modes. Changeable from Settings; there is deliberately no clear
+   * control.
+   */
+  async function pickDefaultWorkspace() {
+    try {
+      const dir = await bridge().dialog.selectFolder();
+      if (!dir || !settings) return;
+      await patchSettings({
+        general: { ...settings.general, defaultWorkspace: dir },
+      });
+      pushToast("success", `Default workspace set to ${dir}`);
+    } catch (e) {
+      setBanner(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /**
    * Settings.onPickFolder — opens the native folder picker and saves to
    * settings.general.defaultFolders[pickedMode].
    */
@@ -852,18 +924,19 @@ export function App() {
     }
   }
 
-  async function setPermissionMode(pm: PermissionMode) {
+  async function setPermissionMode(target: Mode, pm: PermissionMode) {
     if (!settings) return;
-    if (activeSessionId) {
-      // In a session: update via bridge
-      const res = await bridge().sessions.setPermissionMode(activeSessionId, pm);
+    // In a live session of that mode: update via bridge first.
+    const sessionIdForMode = target === mode ? activeSessionId : null;
+    if (sessionIdForMode) {
+      const res = await bridge().sessions.setPermissionMode(sessionIdForMode, pm);
       if (!res.ok) {
         setBanner(res.error);
         return;
       }
     }
     // Also persist to settings for future sessions
-    await patchSettings({ code: { ...settings.code, permissionMode: pm } });
+    await patchSettings({ [target]: { ...settings[target], permissionMode: pm } });
   }
 
   function openSettings() {
@@ -1038,8 +1111,10 @@ export function App() {
     return s;
   }, [modeState.status, activeSessionId]);
 
-  // Current session's working folder (or mode default)
-  const sessionWorkingFolder = settings?.general.defaultFolders[mode] ?? null;
+  // Current session's working folder (or mode default, or shared workspace)
+  const folderOverride = settings?.general.defaultFolders[mode] ?? null;
+  const sharedWorkspace = settings?.general.defaultWorkspace ?? null;
+  const sessionWorkingFolder = folderOverride ?? sharedWorkspace;
 
   // Only surface skills enabled for the active mode. The skills subsystem may
   // auto-invoke them, so the renderer does not invent per-skill events.
@@ -1121,27 +1196,60 @@ export function App() {
     },
   });
 
-  // PermissionPicker for Code mode
+  // Permission pickers — BOTH modes now expose one in the composer slot.
+  // Code keeps its four-mode picker; Cowork gets its own two-posture picker
+  // (Auto approve / Ask for dangerous actions).
   const codePermissionPicker = settings ? (
     <PermissionPicker
       value={settings.code.permissionMode}
-      onChange={(pm) => void setPermissionMode(pm)}
+      onChange={(pm) => void setPermissionMode("code", pm)}
     />
   ) : undefined;
 
+  const coworkPermissionPicker = settings ? (
+    <PermissionPicker
+      value={settings.cowork.permissionMode}
+      onChange={(pm) => void setPermissionMode("cowork", pm)}
+      options={COWORK_OPTIONS}
+    />
+  ) : undefined;
+
+  // Cowork project slot: a split control — the main button opens the folder
+  // picker, and an × detaches the override back to the default workspace.
+  const coworkFolderOverride = settings?.general.defaultFolders?.cowork ?? null;
+  const defaultWorkspace = sharedWorkspace;
+  const workspaceBasename = (p: string | null | undefined): string =>
+    p ? p.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? p : "";
+  const projectSlotLabel = coworkFolderOverride
+    ? coworkFolderOverride
+    : defaultWorkspace
+      ? `Default workspace (${workspaceBasename(defaultWorkspace)})`
+      : "Choose project";
+
   const coworkProjectSlot = mode === "cowork" ? (
-    <button
-      type="button"
-      onClick={() => void pickWorkingFolder()}
-      aria-label="Choose project folder"
-      title={settings?.general.defaultFolders?.cowork ?? "Choose project"}
-    >
-      <FolderOpen size={14} aria-hidden="true" />
-      <span className="kz-truncate">
-        {settings?.general.defaultFolders?.cowork ?? "Choose project"}
-      </span>
-      <ChevronDown size={13} aria-hidden="true" />
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => void pickWorkingFolder()}
+        aria-label="Choose project folder"
+        title={coworkFolderOverride ?? defaultWorkspace ?? "Choose project"}
+      >
+        <FolderOpen size={14} aria-hidden="true" />
+        <span className="kz-truncate">{projectSlotLabel}</span>
+        <ChevronDown size={13} aria-hidden="true" />
+      </button>
+      {coworkFolderOverride && (
+        <button
+          type="button"
+          className="kz-slot-detach"
+          onClick={() => void detachWorkingFolder("cowork")}
+          aria-label="Detach — use default workspace"
+          title="Detach — use default workspace"
+        >
+          <X size={12} aria-hidden="true" />
+        </button>
+      )}
+    </>
   ) : undefined;
 
   // ComposerBar remains shared, but Cowork receives only visual/slot props.
@@ -1163,7 +1271,7 @@ export function App() {
       modelsByProvider={modelsByProvider}
       onSelectionChange={(next) => void handleSelectionChange(next)}
       onRefreshModels={(pid) => handleRefreshModels(pid)}
-      permissionSlot={mode === "code" ? codePermissionPicker : undefined}
+      permissionSlot={mode === "code" ? codePermissionPicker : coworkPermissionPicker}
       projectSlot={coworkProjectSlot}
       skills={skills}
       connectors={connectors}
@@ -1225,7 +1333,10 @@ export function App() {
                 onRefreshModels={async (pid) => {
                   const res = await bridge().providers.refreshModels(pid);
                   if (!res.ok) throw new Error(res.error);
-                  return res.value;
+                  if (res.value.warning) {
+                    pushToast("error", `Refresh failed: ${res.value.warning} — showing built-in list`);
+                  }
+                  return res.value.models;
                 }}
                 onChooseModel={(p, m) => void chooseModel(p, m)}
                 onSkip={() => setSkippedSetup(true)}
@@ -1249,7 +1360,7 @@ export function App() {
                       modelsByProvider={modelsByProvider}
                       onSelectionChange={(next) => void handleSelectionChange(next)}
                       onRefreshModels={(pid) => handleRefreshModels(pid)}
-                      permissionSlot={mode === "code" ? codePermissionPicker : undefined}
+                      permissionSlot={mode === "code" ? codePermissionPicker : coworkPermissionPicker}
                       projectSlot={coworkProjectSlot}
                       skills={skills}
                       connectors={connectors}
@@ -1270,12 +1381,22 @@ export function App() {
                   )}
                 </ErrorBoundary>
               </div>
-            ) : mode === "code" ? (
+            )             : mode === "code" ? (
               <CodeHome
                 userName={settings?.general.userName ?? ""}
                 folders={codeFolders}
                 onAddFolder={() => void handleAddCodeFolder()}
                 onOpenFolder={(path) => setPreviewTarget({ kind: "project", path })}
+                onRemoveFolder={(path) => {
+                  // Detaching a code folders-list entry clears the override so
+                  // sessions fall back to the shared default workspace.
+                  if (settings?.general.defaultFolders.code === path) {
+                    void detachWorkingFolder("code");
+                    return;
+                  }
+                  setCodeFolders((prev) => prev.filter((f) => f !== path));
+                }}
+                defaultWorkspace={defaultWorkspace}
                 composerSlot={composerBarShared}
               />
             ) : (
@@ -1283,7 +1404,7 @@ export function App() {
                 userName={settings?.general.userName ?? ""}
                 composerSlot={composerBarShared}
                 onPickFolder={() => void pickWorkingFolder()}
-                folderLabel={settings?.general.defaultFolders?.cowork ?? null}
+                folderLabel={coworkFolderOverride}
               />
             ))}
 
@@ -1410,9 +1531,10 @@ export function App() {
             onSave={(patch) => void patchSettings(patch)}
             onAddKey={(pid, rawKey, meta) => void handleAddKey(pid, rawKey, meta)}
             onRemoveKey={(keyId) => void handleRemoveKey(keyId)}
-            onAddCustomProvider={(name, baseUrl) => handleAddCustomProvider(name, baseUrl)}
+            onAddCustomProvider={(input) => handleAddCustomProvider(input)}
             onRemoveCustomProvider={(id) => void handleRemoveCustomProvider(id)}
             onPickFolder={(m) => void handlePickFolder(m)}
+            onPickWorkspaceFolder={() => void pickDefaultWorkspace()}
             onBack={() => setSettingsOpen(false)}
           />
         </div>
@@ -1428,6 +1550,32 @@ export function App() {
             onToggleSkill={(id, enabled) => void toggle(() => bridge().skills.setEnabled(id, enabled))}
             onToggleConnector={(id, enabled) => void toggle(() => bridge().mcp.setEnabled(id, enabled))}
             onTogglePlugin={(id, enabled) => void toggle(() => bridge().plugins.setEnabled(id, enabled))}
+            onAddSkill={async (sourcePath) => {
+              const res = await bridge().skills.add(sourcePath);
+              if (res.ok) await reloadExtensions();
+              else pushToast("error", res.error);
+              return res;
+            }}
+            onRemoveSkill={async (id) => {
+              const res = await bridge().skills.remove(id);
+              if (!res.ok) pushToast("error", res.error);
+              await reloadExtensions();
+            }}
+            onPickSkillSource={async () => {
+              try {
+                const files = await bridge().dialog.selectFiles();
+                return files[0] ?? null;
+              } catch {
+                return null;
+              }
+            }}
+            onLoadConnectorTools={(serverId) => bridge().mcp.tools(serverId)}
+            onSetConnectorToolPolicy={async (serverId, policy) => {
+              const res = await bridge().mcp.setToolPolicy(serverId, policy);
+              if (res.ok) await reloadExtensions();
+              else pushToast("error", res.error);
+              return res;
+            }}
             onRemoveConnector={async (id) => {
               const res = await bridge().mcp.remove(id);
               if (!res.ok) setBanner(res.error);

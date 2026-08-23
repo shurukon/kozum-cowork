@@ -66,6 +66,27 @@ export class ProviderRegistry {
     }
   }
 
+  /**
+   * Adapter for a specific model on a preset. Presets with `protocolRoutes`
+   * (split-protocol gateways such as OpenCode Zen) route each model id to the
+   * wire protocol its vendor documented; everything else uses the preset's
+   * default protocol. All routed protocols share the same baseUrl because
+   * adapters append their own path segments (/chat/completions, /responses,
+   * /messages).
+   */
+  adapterForModel(preset: ProviderPreset, modelId: string): ProviderAdapter {
+    const routes = preset.protocolRoutes;
+    if (routes) {
+      for (const [protocol, prefixes] of Object.entries(routes) as Array<[string, string[] | undefined]>) {
+        if (!prefixes) continue;
+        if (prefixes.some((p) => modelId === p || modelId.startsWith(p))) {
+          return this.adapterFor(protocol);
+        }
+      }
+    }
+    return this.adapterFor(preset.protocol);
+  }
+
   /** Resolve a valid keyId for a provider, falling back to the first available key. */
   async resolveKeyId(providerId: string, keyId: string | null): Promise<string | null> {
     if (keyId) {
@@ -100,14 +121,28 @@ export class ProviderRegistry {
   }
 
   /**
-   * Fetch models from the provider catalogue. Falls back to staticModels when
-   * the adapter returns null. Caches result to disk.
+   * Fetch models from the provider catalogue, reporting a typed warning when
+   * the live fetch failed and static fallbacks were used instead.
+   *
+   * Errors are no longer swallowed silently: `warning` carries the reason so
+   * the renderer can toast "Refresh failed: <reason> — showing built-in list".
+   * The model list itself always falls back (catalogue → staticModels → cached)
+   * so a dropdown is never emptied by an unreachable vendor.
    */
   async refreshModels(providerId: string, keyId: string): Promise<ModelInfo[]> {
+    const { models } = await this.refreshModelsDetailed(providerId, keyId);
+    return models;
+  }
+
+  async refreshModelsDetailed(
+    providerId: string,
+    keyId: string,
+  ): Promise<{ models: ModelInfo[]; warning: string | null }> {
     const preset = await this.presetFor(providerId);
     if (!preset) throw new Error(`Unknown provider: "${providerId}"`);
 
     let models: ModelInfo[] | null = null;
+    let warning: string | null = null;
 
     // Only attempt live fetch if there's a catalogue endpoint and a key
     if (preset.modelsPath !== null) {
@@ -115,13 +150,17 @@ export class ProviderRegistry {
         const adapter = this.adapterFor(preset.protocol);
         const ctx = await this.contextFor(providerId, keyId);
         models = await adapter.listModels(ctx);
-      } catch {
-        // Fall through to static models
+      } catch (e) {
+        // Fall through to static models, but surface WHY upstream.
+        warning = e instanceof Error ? e.message : String(e);
         models = null;
       }
     }
 
-    if (models === null) {
+    if (models === null || models.length === 0) {
+      if (models !== null && models.length === 0 && !warning) {
+        warning = "the provider catalogue returned no models";
+      }
       // Use static models from preset
       const now = Date.now();
       models = (preset.staticModels ?? []).map((id) => {
@@ -141,13 +180,28 @@ export class ProviderRegistry {
     const cachePath = modelsFilePath(this.appPaths, providerId);
     await writeJson(cachePath, models).catch(() => undefined);
 
-    return models;
+    return { models, warning };
   }
 
-  /** Read cached ModelInfo records for a provider. */
+  /** Read cached ModelInfo records for a provider, falling back to the preset's static list so dropdowns populate without a key or a refresh. */
   async listModels(providerId: string): Promise<ModelInfo[]> {
     const cachePath = modelsFilePath(this.appPaths, providerId);
-    return readJson<ModelInfo[]>(cachePath, []);
+    const cached = await readJson<ModelInfo[]>(cachePath, []);
+    if (cached.length > 0) return cached;
+
+    const preset = await this.presetFor(providerId);
+    const now = Date.now();
+    return (preset?.staticModels ?? []).map((id) => {
+      const { capabilities, inferred } = resolveCapabilities(id, providerId);
+      return {
+        id,
+        displayName: id,
+        providerId,
+        capabilities,
+        fetchedAt: now,
+        capabilitiesInferred: inferred,
+      } satisfies ModelInfo;
+    });
   }
 
   /**

@@ -100,6 +100,10 @@
 .plusWrap {
   position: relative;
   flex: 0 0 auto;
+  /* Keep the upward popover above every later sibling (SelectorBar popovers,
+     send button) in BOTH shells — Code mode has no shell overrides, so this
+     shared rule is what guarantees identical "+" behaviour there. */
+  z-index: var(--z-dropdown);
 }
 
 /* ── Plus button ───────────────────────────────────────────────────────── */
@@ -296,6 +300,35 @@
 }
 
 :global(.kz-cowork-shell) .projectSlot > button:hover {
+  color: #faf9f5;
+  background: #343431;
+}
+
+/* Detach (×) affordance beside the project slot — shared by both shells so
+   Code folder chips and the Cowork project control behave identically. */
+.projectSlot > :global(.kz-slot-detach) {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 28px;
+  margin-inline-start: -6px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.projectSlot > :global(.kz-slot-detach):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+:global(.kz-cowork-shell) .projectSlot > :global(.kz-slot-detach) {
+  color: #87867f;
+  background: transparent;
+  border-color: transparent;
+}
+
+:global(.kz-cowork-shell) .projectSlot > :global(.kz-slot-detach):hover {
   color: #faf9f5;
   background: #343431;
 }

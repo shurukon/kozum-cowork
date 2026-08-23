@@ -78,13 +78,19 @@ const api = {
       ipcRenderer.invoke("providers:listKeys", providerId),
     testKey: (keyId: string): Promise<Result<void>> =>
       ipcRenderer.invoke("providers:testKey", keyId),
-    refreshModels: (providerId: string): Promise<Result<ModelInfo[]>> =>
+    refreshModels: (
+      providerId: string,
+    ): Promise<Result<{ models: ModelInfo[]; warning: string | null }>> =>
       ipcRenderer.invoke("providers:refreshModels", providerId),
     listModels: (providerId: string): Promise<ModelInfo[]> =>
       ipcRenderer.invoke("providers:listModels", providerId),
     addCustom: (input: {
       name: string;
       baseUrl: string;
+      protocol?: "openai-chat" | "openai-responses" | "anthropic-messages";
+      modelIds?: string[];
+      /** Raw key registered for the new provider in the same call. */
+      apiKey?: string;
     }): Promise<Result<ProviderPreset>> =>
       ipcRenderer.invoke("providers:addCustom", input),
     removeCustom: (id: string): Promise<Result<void>> =>
@@ -179,6 +185,12 @@ const api = {
       ipcRenderer.invoke("mcp:setEnabled", id, enabled),
     tools: (serverId: string): Promise<McpToolInfo[]> =>
       ipcRenderer.invoke("mcp:tools", serverId),
+    /** Replace a connector's per-tool execution policy (merged server-side). */
+    setToolPolicy: (
+      serverId: string,
+      policy: { default: "allow" | "deny" | "ask"; tools?: Record<string, "allow" | "deny" | "ask"> },
+    ): Promise<Result<McpServerConfig>> =>
+      ipcRenderer.invoke("mcp:setToolPolicy", serverId, policy),
   },
 
   plugins: {
@@ -196,6 +208,12 @@ const api = {
     list: (): Promise<Skill[]> => ipcRenderer.invoke("skills:list"),
     setEnabled: (id: string, enabled: boolean): Promise<Result<void>> =>
       ipcRenderer.invoke("skills:setEnabled", id, enabled),
+    /** Install a skill folder/SKILL.md/.md into the userData root, then rescan. */
+    add: (sourcePath: string): Promise<Result<Skill[]>> =>
+      ipcRenderer.invoke("skills:add", sourcePath),
+    /** Remove a user-installed skill (bundled/legacy entries are refused). */
+    remove: (id: string): Promise<Result<void>> =>
+      ipcRenderer.invoke("skills:remove", id),
   },
 
   subagents: {

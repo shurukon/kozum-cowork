@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react";
-import { AlertCircle, ArrowLeft, Check, Code2, FileArchive, Github, Loader2, Package, Plug, Plus, Sparkles, Trash2 } from "lucide-react";
-import type { McpServerConfig, Mode, Plugin, Result, Skill } from "@shared/types.ts";
+import { useEffect, useState, type ReactNode } from "react";
+import { AlertCircle, ArrowLeft, Check, ChevronRight, Code2, FileArchive, Github, Loader2, Package, Plug, Plus, Settings2, Sparkles, Trash2 } from "lucide-react";
+import type { McpPolicyAction, McpServerConfig, McpToolInfo, Mode, Plugin, Result, Skill } from "@shared/types.ts";
 import styles from "./CustomizePage.module.css";
 import logoUrl from "../assets/kozum-logo.png";
 
@@ -19,6 +19,19 @@ export interface CustomizePageProps {
   onToggleSkill: (id: string, enabled: boolean) => void;
   onToggleConnector: (id: string, enabled: boolean) => void;
   onTogglePlugin: (id: string, enabled: boolean) => void;
+  /** Install a skill from a picked folder/SKILL.md/.md into the user root. */
+  onAddSkill: (sourcePath: string) => Promise<Result<Skill[]>>;
+  /** Remove a user-installed skill (bundled/legacy entries are refused). */
+  onRemoveSkill: (id: string) => void | Promise<void>;
+  /** Open a native picker and return one source path (or null). */
+  onPickSkillSource: () => Promise<string | null>;
+  /** Namespaced tool list for one connector (connects lazily if needed). */
+  onLoadConnectorTools: (serverId: string) => Promise<McpToolInfo[]>;
+  /** Merge + persist a connector's per-tool execution policy. */
+  onSetConnectorToolPolicy: (
+    serverId: string,
+    policy: { default: McpPolicyAction; tools?: Record<string, McpPolicyAction> },
+  ) => Promise<Result<McpServerConfig>>;
   onRemoveConnector: (id: string) => void | Promise<void>;
   onRemovePlugin: (id: string) => void | Promise<void>;
   onAddConnector: (input: McpAddInput) => Promise<Result<McpServerConfig>>;
@@ -85,6 +98,126 @@ function Empty({ icon, text }: { icon: ReactNode; text: string }) {
 
 function InlineNotice({ kind, children }: { kind: "success" | "error" | "info"; children: ReactNode }) {
   return <div className={`${styles.inlineNotice} ${styles[`inlineNotice${kind[0].toUpperCase()}${kind.slice(1)}`]}`} role={kind === "error" ? "alert" : undefined}>{children}</div>;
+}
+
+/* ------------------------------------------------- MCP server detail view */
+
+const POLICY_ACTIONS: McpPolicyAction[] = ["allow", "deny", "ask"];
+
+/**
+ * Expanded per-server view: status plus a per-tool policy table with bulk
+ * Allow all / Deny all / Ask for all headers. Policies persist through the
+ * mcp:setToolPolicy IPC and survive app restarts.
+ */
+function McpServerDetail({
+  server,
+  onLoadTools,
+  onSetPolicy,
+}: {
+  server: McpServerConfig;
+  onLoadTools: CustomizePageProps["onLoadConnectorTools"];
+  onSetPolicy: CustomizePageProps["onSetConnectorToolPolicy"];
+}) {
+  const [tools, setTools] = useState<McpToolInfo[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  // Local optimistic policy state, seeded from the persisted config.
+  const [policy, setPolicy] = useState<{ default: McpPolicyAction; tools: Record<string, McpPolicyAction> }>(() => ({
+    default: server.toolPolicy?.default ?? "ask",
+    tools: { ...(server.toolPolicy?.tools ?? {}) },
+  }));
+
+  // Load the tool catalogue once per expanded server.
+  useEffect(() => {
+    let cancelled = false;
+    onLoadTools(server.id)
+      .then((list) => {
+        if (!cancelled) setTools(list);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setLoadError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [server.id]);
+
+  async function bulk(action: McpPolicyAction) {
+    setPolicy({ default: action, tools: {} });
+    setSaving(true);
+    try {
+      await onSetPolicy(server.id, { default: action, tools: {} });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setTool(name: string, action: McpPolicyAction) {
+    const bare = name.startsWith(`mcp__${server.name}__`)
+      ? name.slice(`mcp__${server.name}__`.length)
+      : name;
+    const next = { ...policy, tools: { ...policy.tools, [bare]: action } };
+    setPolicy(next);
+    setSaving(true);
+    try {
+      await onSetPolicy(server.id, next);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className={styles.serverDetail}>
+      <div className={styles.detailHeader}>
+        <span className={server.status === "connected" ? styles.statusGoodText : styles.statusMutedText}>
+          {server.status}{server.toolCount > 0 ? ` · ${server.toolCount} tools` : ""}
+        </span>
+        <span className={styles.detailHint}>
+          Default: <strong>{policy.default}</strong>{saving ? " · saving…" : ""}
+        </span>
+        <div className={styles.bulkActions}>
+          <button type="button" className={styles.textButton} onClick={() => void bulk("allow")}>Allow all</button>
+          <button type="button" className={styles.textButton} onClick={() => void bulk("deny")}>Deny all</button>
+          <button type="button" className={styles.textButton} onClick={() => void bulk("ask")}>Ask for all</button>
+        </div>
+      </div>
+
+      {loadError && <InlineNotice kind="error"><AlertCircle size={14} />{loadError}</InlineNotice>}
+
+      {!tools && !loadError && (
+        <div className={styles.toolsLoading}><Loader2 size={13} className="kz-spin" /> Loading tools…</div>
+      )}
+
+      {tools && tools.length === 0 && <div className={styles.toolsLoading}>No tools exposed by this server.</div>}
+
+      {tools && tools.length > 0 && (
+        <div className={styles.toolPolicyList}>
+          {tools.map((tool) => {
+            const bare = tool.name.startsWith(`mcp__${server.name}__`)
+              ? tool.name.slice(`mcp__${server.name}__`.length)
+              : tool.name;
+            const current = policy.tools[bare] ?? policy.default;
+            return (
+              <div className={styles.toolPolicyRow} key={tool.name}>
+                <div className={styles.toolPolicyCopy}>
+                  <strong>{bare}</strong>
+                  {tool.description && <small>{tool.description}</small>}
+                </div>
+                <select
+                  aria-label={`Policy for ${bare}`}
+                  value={current}
+                  onChange={(event) => void setTool(tool.name, event.target.value as McpPolicyAction)}
+                >
+                  {POLICY_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function McpForm({ onSubmit, onTest, onClose }: { onSubmit: CustomizePageProps["onAddConnector"]; onTest: CustomizePageProps["onTestConnector"]; onClose: () => void }) {
@@ -288,6 +421,11 @@ export function CustomizePage({
   onToggleSkill,
   onToggleConnector,
   onTogglePlugin,
+  onAddSkill,
+  onRemoveSkill,
+  onPickSkillSource,
+  onLoadConnectorTools,
+  onSetConnectorToolPolicy,
   onRemoveConnector,
   onRemovePlugin,
   onAddConnector,
@@ -301,9 +439,22 @@ export function CustomizePage({
   const [mode, setMode] = useState<Mode>("cowork");
   const [mcpFormOpen, setMcpFormOpen] = useState(false);
   const [pluginFormOpen, setPluginFormOpen] = useState(false);
+  const [expandedServerId, setExpandedServerId] = useState<string | null>(null);
+  const [addingSkills, setAddingSkills] = useState(false);
   const enabledSkills = skills.filter((skill) => skill.enabled).length;
   const enabledConnectors = connectors.filter((server) => server.enabled).length;
   const enabledPlugins = plugins.filter((plugin) => plugin.enabled).length;
+
+  async function addSkill() {
+    setAddingSkills(true);
+    try {
+      const sourcePath = await onPickSkillSource();
+      if (!sourcePath) return;
+      await onAddSkill(sourcePath);
+    } finally {
+      setAddingSkills(false);
+    }
+  }
 
   return (
     <div className={styles.page}>
@@ -325,11 +476,11 @@ export function CustomizePage({
         <div className={styles.content}>
           <Header tab={tab} />
 
-          {tab === "skills" && <section className={styles.card}><div className={styles.listHeader}><div><strong>Available skills</strong><span>Skills are mode-filtered by the agent before invocation.</span></div><span className={styles.count}>{skills.length} total</span></div><div className={styles.extensionList}>{skills.map((skill) => <div className={styles.extensionRow} key={skill.id}><div className={styles.extensionIcon}><Sparkles size={14} /></div><div className={styles.extensionCopy}><strong>{skill.name}</strong><span>{skill.description}</span><small>{skill.source} · {skill.modes.join(" + ")}</small></div><Toggle checked={skill.enabled} label={`Enable ${skill.name}`} onChange={(value) => onToggleSkill(skill.id, value)} /></div>)}</div>{skills.length === 0 && <Empty icon={<Sparkles size={20} />} text="No skills installed yet. Install a plugin or add a skill from the chat add panel." />}</section>}
+          {tab === "skills" && <section className={styles.card}><div className={styles.listHeader}><div><strong>Available skills</strong><span>Skills are mode-filtered by the agent before invocation.</span></div><div className={styles.rowActions}><button type="button" className={styles.secondaryButton} disabled={addingSkills} onClick={() => void addSkill()}><Plus size={14} /> {addingSkills ? "Adding…" : "Add skill"}</button><span className={styles.count}>{skills.length} total</span></div></div><div className={styles.extensionList}>{skills.map((skill) => <div className={styles.extensionRow} key={skill.id}><div className={styles.extensionIcon}><Sparkles size={14} /></div><div className={styles.extensionCopy}><strong>{skill.name}</strong><span>{skill.description}</span><small>{skill.source} · {skill.modes.join(" + ")}</small></div><div className={styles.rowActions}><Toggle checked={skill.enabled} label={`Enable ${skill.name}`} onChange={(value) => onToggleSkill(skill.id, value)} />{skill.source === "user" && <button type="button" className={styles.iconButton} onClick={() => void onRemoveSkill(skill.id)} aria-label={`Remove ${skill.name}`} title="Remove this user-added skill"><Trash2 size={14} /></button>}</div></div>)}</div>{skills.length === 0 && <Empty icon={<Sparkles size={20} />} text="No skills installed yet. Add a SKILL.md folder or file, or install a plugin." />}</section>}
 
           {tab === "mcp" && <>
             {mcpFormOpen && <McpForm onSubmit={onAddConnector} onTest={onTestConnector} onClose={() => setMcpFormOpen(false)} />}
-            <section className={styles.card}><div className={styles.listHeader}><div><strong>Connected MCP servers</strong><span>Only enabled servers contribute tools to a turn.</span></div><button type="button" className={styles.secondaryButton} onClick={() => setMcpFormOpen((value) => !value)} aria-expanded={mcpFormOpen}><Plus size={14} /> {mcpFormOpen ? "Hide form" : "Add server"}</button></div><div className={styles.extensionList}>{connectors.map((server) => <div className={styles.extensionRow} key={server.id}><div className={`${styles.extensionIcon} ${server.status === "connected" ? styles.iconGood : ""}`}><Plug size={14} /></div><div className={styles.extensionCopy}><strong>{server.name}</strong><span>{server.url ?? server.command ?? "Local server"}</span><small>{server.status} · {server.toolCount} tools{server.hasAuthToken ? " · token stored" : ""}</small></div><div className={styles.rowActions}><Toggle checked={server.enabled} label={`Enable ${server.name}`} onChange={(value) => onToggleConnector(server.id, value)} /><button type="button" className={styles.iconButton} onClick={() => void onRemoveConnector(server.id)} aria-label={`Remove ${server.name}`}><Trash2 size={14} /></button></div></div>)}</div>{connectors.length === 0 && <Empty icon={<Plug size={20} />} text={mcpFormOpen ? "Add your first MCP server above." : "No MCP servers connected yet. Add one here."} />}</section>
+            <section className={styles.card}><div className={styles.listHeader}><div><strong>Connected MCP servers</strong><span>Only enabled servers contribute tools to a turn. Click a server to set per-tool policies.</span></div><button type="button" className={styles.secondaryButton} onClick={() => setMcpFormOpen((value) => !value)} aria-expanded={mcpFormOpen}><Plus size={14} /> {mcpFormOpen ? "Hide form" : "Add server"}</button></div><div className={styles.extensionList}>{connectors.map((server) => <div key={server.id}><div className={styles.extensionRow}><button type="button" className={styles.serverExpand} onClick={() => setExpandedServerId((current) => (current === server.id ? null : server.id))} aria-expanded={expandedServerId === server.id} title="Show tool policies"><ChevronRight size={13} className={`${styles.expandChevron} ${expandedServerId === server.id ? styles.expandChevronOpen : ""}`} /><Settings2 size={13} /></button><div className={`${styles.extensionIcon} ${server.status === "connected" ? styles.iconGood : ""}`}><Plug size={14} /></div><div className={styles.extensionCopy}><strong>{server.name}</strong><span>{server.url ?? server.command ?? "Local server"}</span><small>{server.status} · {server.toolCount} tools · default {server.toolPolicy?.default ?? "ask"}{server.hasAuthToken ? " · token stored" : ""}</small></div><div className={styles.rowActions}><Toggle checked={server.enabled} label={`Enable ${server.name}`} onChange={(value) => onToggleConnector(server.id, value)} /><button type="button" className={styles.iconButton} onClick={() => void onRemoveConnector(server.id)} aria-label={`Remove ${server.name}`}><Trash2 size={14} /></button></div></div>{expandedServerId === server.id && <McpServerDetail server={server} onLoadTools={onLoadConnectorTools} onSetPolicy={onSetConnectorToolPolicy} />}</div>)}</div>{connectors.length === 0 && <Empty icon={<Plug size={20} />} text={mcpFormOpen ? "Add your first MCP server above." : "No MCP servers connected yet. Add one here."} />}</section>
           </>}
 
           {tab === "plugins" && <>

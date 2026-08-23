@@ -97,6 +97,14 @@ export interface ProviderPreset {
   requiresRegion?: boolean;
   /** Headers always sent to this vendor (e.g. anthropic-version). */
   defaultHeaders?: Record<string, string>;
+  /**
+   * Per-model protocol routing for gateways that expose several wire
+   * protocols under one base URL (e.g. OpenCode Zen). Keys are protocols;
+   * values are model-id prefixes routed to them. A model matching no prefix
+   * uses the preset's own `protocol`. Verified against vendor docs only —
+   * do not add routes without one.
+   */
+  protocolRoutes?: Partial<Record<ProviderProtocol, string[]>>;
   notes?: string;
   builtIn: boolean;
 }
@@ -336,7 +344,9 @@ export type PermissionMode =
   | "bypass_permissions"
   | "plan"
   | "accept_edits"
-  | "ask_permission";
+  | "ask_permission"
+  /** Cowork posture: run everything except irreversible/destructive tools. */
+  | "ask_dangerous";
 
 export interface Project {
   id: string;
@@ -428,6 +438,20 @@ export interface AgentTask {
 
 export type McpTransport = "http" | "sse" | "stdio";
 
+/** Per-tool execution policy for a connector. */
+export type McpPolicyAction = "allow" | "deny" | "ask";
+
+/**
+ * Tool-level gate for an MCP server. `default` applies to every tool that has
+ * no explicit entry in `tools`. Newly added servers default to `{default:
+ * "ask"}` so nothing executes without the user's blessing until they opt out.
+ */
+export interface McpToolPolicy {
+  default: McpPolicyAction;
+  /** Per-tool overrides keyed by the BARE tool name (no mcp__server__ prefix). */
+  tools?: Record<string, McpPolicyAction>;
+}
+
 /**
  * MCP server config. The add-flow is deliberately claude.ai-shaped: a URL and
  * an optional token is the whole required surface. stdio lives behind an
@@ -459,6 +483,8 @@ export interface McpServerConfig {
    * Required for local development MCP servers; false by default.
    */
   allowLocal?: boolean;
+  /** Per-tool execution policy; manager.add defaults it to {default:"ask"}. */
+  toolPolicy?: McpToolPolicy;
 }
 
 export type McpStatus = "connected" | "connecting" | "disconnected" | "error";
@@ -629,6 +655,12 @@ export interface AppSettings {
       cowork: string | null;
       code: string | null;
     };
+    /**
+     * One shared workspace for both modes, used when no project/mode folder
+     * is selected. Initialized by main to Documents/Kozum on first boot;
+     * changeable from Settings, never removable.
+     */
+    defaultWorkspace: string | null;
     /** Standing instructions injected into every session's system prompt. */
     rules: string;
     /** When true, deliverable-producing tools auto-open the PreviewPanel after tool_end. */

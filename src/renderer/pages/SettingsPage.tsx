@@ -36,9 +36,18 @@ export interface SettingsPageProps {
   onSave: (patch: Partial<AppSettings>) => void;
   onAddKey: (providerId: string, rawKey: string, meta?: Record<string, string>) => void;
   onRemoveKey: (keyId: string) => void;
-  onAddCustomProvider: (name: string, baseUrl: string) => Promise<void>;
+  onAddCustomProvider: (input: {
+    name: string;
+    baseUrl: string;
+    protocol?: "openai-chat" | "openai-responses" | "anthropic-messages";
+    /** Comma/newline-separated model IDs stored as the preset's static list. */
+    modelIds?: string[];
+    apiKey?: string;
+  }) => Promise<void>;
   onRemoveCustomProvider: (id: string) => void;
   onPickFolder: (mode: "cowork" | "code") => void;
+  /** Pick the shared default workspace (changeable, never removable). */
+  onPickWorkspaceFolder: () => void;
   onBack: () => void;
 }
 
@@ -109,6 +118,9 @@ function ProvidersSection({
   const [customOpen, setCustomOpen] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
+  const [customKey, setCustomKey] = useState("");
+  const [customModels, setCustomModels] = useState("");
+  const [customProtocol, setCustomProtocol] = useState<"openai-chat" | "openai-responses" | "anthropic-messages">("openai-chat");
   const [savingCustom, setSavingCustom] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -128,9 +140,18 @@ function ProvidersSection({
     setSavingCustom(true);
     setError(null);
     try {
-      await onAddCustomProvider(name, url);
+      await onAddCustomProvider({
+        name,
+        baseUrl: url,
+        protocol: customProtocol,
+        modelIds: customModels.split(/[,\n]/).map((m) => m.trim()).filter(Boolean),
+        apiKey: customKey.trim() || undefined,
+      });
       setCustomName("");
       setCustomUrl("");
+      setCustomKey("");
+      setCustomModels("");
+      setCustomProtocol("openai-chat");
       setCustomOpen(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -154,11 +175,25 @@ function ProvidersSection({
       </div>
       {customOpen && (
         <div className={styles.inlineCard}>
-          <div className={styles.inlineTitle}>Custom OpenAI-compatible provider</div>
+          <div className={styles.inlineTitle}>Custom provider</div>
           <div className={styles.inlineGrid}>
             <input className={styles.input} placeholder="Provider name" value={customName} onChange={(event) => setCustomName(event.target.value)} />
             <input className={styles.input} placeholder="https://api.example.com/v1" value={customUrl} onChange={(event) => setCustomUrl(event.target.value)} />
+            <select className={styles.input} value={customProtocol} onChange={(event) => setCustomProtocol(event.target.value as typeof customProtocol)} aria-label="Wire protocol">
+              <option value="openai-chat">OpenAI Chat Completions</option>
+              <option value="openai-responses">OpenAI Responses</option>
+              <option value="anthropic-messages">Anthropic Messages</option>
+            </select>
+            <input className={styles.input} type="password" placeholder="API key (optional — can be added later)" value={customKey} onChange={(event) => setCustomKey(event.target.value)} />
           </div>
+          <textarea
+            className={styles.textarea}
+            rows={2}
+            placeholder="Model IDs, comma or newline separated (e.g. my-model, my-model-mini). Used as the fallback list when /models is unreachable."
+            value={customModels}
+            onChange={(event) => setCustomModels(event.target.value)}
+            aria-label="Model IDs"
+          />
           {error && <p className={styles.error}>{error}</p>}
           <div className={styles.inlineActions}>
             <button type="button" className={styles.ghostButton} onClick={() => setCustomOpen(false)}>Cancel</button>
@@ -229,8 +264,9 @@ function SettingsSection({
   onRulesBlur,
   onSave,
   onPickFolder,
+  onPickWorkspaceFolder,
   ...providerProps
-}: { section: Section; settings: AppSettings; rules: string; onRulesChange: (value: string) => void; onRulesBlur: () => void; onSave: (patch: Partial<AppSettings>) => void; onPickFolder: (mode: "cowork" | "code") => void } & Pick<SettingsPageProps, "presets" | "keys" | "onAddKey" | "onRemoveKey" | "onAddCustomProvider" | "onRemoveCustomProvider">) {
+}: { section: Section; settings: AppSettings; rules: string; onRulesChange: (value: string) => void; onRulesBlur: () => void; onSave: (patch: Partial<AppSettings>) => void; onPickFolder: (mode: "cowork" | "code") => void; onPickWorkspaceFolder: () => void } & Pick<SettingsPageProps, "presets" | "keys" | "onAddKey" | "onRemoveKey" | "onAddCustomProvider" | "onRemoveCustomProvider">) {
   const general = settings.general;
   const patchGeneral = (patch: Partial<AppSettings["general"]>) => onSave({ general: { ...general, ...patch } });
 
@@ -250,6 +286,7 @@ function SettingsSection({
     return <>
       <SectionHeader eyebrow="Workspace" title="Preferences" description="Control the visual language and behaviour of the Kozum workspace." />
       <div className={styles.card}>
+        <Field label="Default workspace" hint="Used by Cowork and Code whenever no project or folder is selected. Changeable, never removable."><div className={styles.folderRow}><span>{settings.general.defaultWorkspace ?? "Not set"}</span><button type="button" className={styles.secondaryButton} onClick={onPickWorkspaceFolder}>Change folder</button></div></Field>
         <Field label="Theme"><select className={styles.input} value={general.appearance} onChange={(event) => patchGeneral({ appearance: event.target.value as AppSettings["general"]["appearance"] })}><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></Field>
         <Field label="Language"><select className={styles.input} value={general.language} onChange={(event) => patchGeneral({ language: event.target.value as "en" | "ar" })}><option value="en">English</option><option value="ar">العربية</option></select></Field>
         <Field label="Chat font"><select className={styles.input} value={general.chatFont} onChange={(event) => patchGeneral({ chatFont: event.target.value as AppSettings["general"]["chatFont"] })}><option value="sans">DM Sans</option><option value="serif">Serif</option><option value="mono">JetBrains Mono</option></select></Field>
@@ -326,7 +363,7 @@ export function SettingsPage(props: SettingsPageProps) {
       <main className={styles.main}>
         <div className={styles.topBar}><span className={styles.breadcrumb}>Settings <span>/</span> {NAV.find((item) => item.id === section)?.label}</span><button type="button" className={styles.iconButton} onClick={props.onBack} aria-label="Close settings"><X size={17} /></button></div>
         <div className={styles.content}>
-          <SettingsSection section={section} settings={props.settings} rules={props.rules} onRulesChange={props.onRulesChange} onRulesBlur={props.onRulesBlur} onSave={props.onSave} onPickFolder={props.onPickFolder} presets={props.presets} keys={props.keys} onAddKey={props.onAddKey} onRemoveKey={props.onRemoveKey} onAddCustomProvider={props.onAddCustomProvider} onRemoveCustomProvider={props.onRemoveCustomProvider} />
+          <SettingsSection section={section} settings={props.settings} rules={props.rules} onRulesChange={props.onRulesChange} onRulesBlur={props.onRulesBlur} onSave={props.onSave} onPickFolder={props.onPickFolder} onPickWorkspaceFolder={props.onPickWorkspaceFolder} presets={props.presets} keys={props.keys} onAddKey={props.onAddKey} onRemoveKey={props.onRemoveKey} onAddCustomProvider={props.onAddCustomProvider} onRemoveCustomProvider={props.onRemoveCustomProvider} />
         </div>
       </main>
     </div>

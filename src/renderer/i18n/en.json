@@ -198,7 +198,21 @@
     "modeBypassPermissionsDesc": "Run mutating actions without confirmations. Use only in trusted projects.",
     "modePlanDesc": "Inspect and plan without applying mutating actions.",
     "modeAcceptEditsDesc": "File edits apply automatically; shell and host actions still ask.",
-    "modeAskPermissionDesc": "Confirm every mutating action before it runs."
+    "modeAskPermissionDesc": "Confirm every mutating action before it runs.",
+    "coworkAutoApprove": "Auto approve",
+    "coworkAutoApproveDesc": "Run everything without confirmations. Use only in trusted workspaces.",
+    "coworkAskDangerous": "Ask for dangerous actions",
+    "coworkAskDangerousDesc": "Ask only before irreversible or destructive actions; everything else runs automatically."
+  },
+  "askDock": {
+    "title": "Action required",
+    "needsApproval": "needs your approval",
+    "allowOnce": "Allow once",
+    "allowAlways": "Allow always this session",
+    "queued_one": "{{count}} more queued",
+    "queued_other": "{{count}} more queued",
+    "expandInput": "Show full input",
+    "collapseInput": "Collapse input"
   },
   "home": {
     "greeting": "Good evening",

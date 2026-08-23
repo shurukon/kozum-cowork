@@ -10,6 +10,9 @@
  *   light-ring feedback the user was missing.
  * - Thinking block live and settled states stay inline in the transcript with
  *   a quiet status treatment; no separate thinking window or overlay is used.
+ * - Pending questions/permissions are NOT rendered here anymore — the AskDock
+ *   above the composer is their single surface. Tool cards simply show their
+ *   running state while awaiting approval.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -20,10 +23,8 @@ import type {
   Mode,
 } from "@shared/types.ts";
 import { useTranslation } from "react-i18next";
-import type { ToolCard as ToolCardType, PendingQuestion, PendingPermission } from "../store/session.ts";
+import type { ToolCard as ToolCardType } from "../store/session.ts";
 import { ToolCard } from "./ToolCard.tsx";
-import { QuestionFormView } from "./QuestionFormView.tsx";
-import { PermissionBanner } from "./PermissionBanner.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { ToolGlyph } from "./ToolGlyph.tsx";
 import styles from "./Message.module.css";
@@ -110,18 +111,10 @@ interface Props {
   toolCards: Map<string, ToolCardType>;
   /** Tool cards that have no persisted tool_use block; supplied once by ChatView. */
   orphanToolCards?: ToolCardType[];
-  /** Pending question prompts whose messageId === this message's id. */
-  pendingQuestions?: PendingQuestion[];
-  /** Pending permission prompts whose messageId === this message's id. */
-  pendingPermissions?: PendingPermission[];
   /** Optional: emit when a file chip is clicked in a ToolCard */
   onOpenFile?: (path: string) => void;
   /** Optional: open a preview for an image, file, URL, or browser result. */
   onPreview?: (target: import("./PreviewPanel.tsx").PreviewTarget) => void;
-  /** Reply to a pending question / permission from the browser IPC. */
-  onReply?: (requestId: string, answer: string[]) => void;
-  /** Resolve a pending question in the local store (collapses the form). */
-  onResolveQuestion?: (requestId: string) => void;
   /** Copy a user message's text without opening a popup. */
   onCopyMessage?: (text: string) => void;
   /** Replace a user turn by branching before it and pre-filling the composer. */
@@ -140,12 +133,8 @@ export function Message({
   isStreaming,
   toolCards,
   orphanToolCards = [],
-  pendingQuestions,
-  pendingPermissions,
   onOpenFile,
   onPreview,
-  onReply,
-  onResolveQuestion,
   onCopyMessage,
   onEditMessage,
   onRetryMessage,
@@ -262,13 +251,7 @@ export function Message({
     .map((b) => (b.type === "text" ? b.text : ""))
     .join("");
 
-  // Pending questions/permissions anchored to THIS message (matched by id).
-  const myQuestions = (pendingQuestions ?? []).filter(
-    (q) => q.messageId === message.id,
-  );
-  const myPermissions = (pendingPermissions ?? []).filter(
-    (p) => p.messageId === message.id,
-  );
+  // Pending questions/permissions render in the AskDock, not here.
 
   // P1-1: show a subtle badge when the message was produced by a subagent.
   const isSubagentMessage = Boolean(message.runId);
@@ -276,15 +259,10 @@ export function Message({
   // this from the global toolCards map here: every later assistant message would
   // otherwise render the same live card again (the visible task duplication bug).
   const unreflectedToolCards = orphanToolCards;
-  const unmatchedPermissions = myPermissions.filter(
-    (p) => !toolUseBlocks.some((b) => b.type === "tool_use" && b.id === p.toolUseId),
-  );
   const hasActivity =
     thinkingBlocks.length > 0 ||
     toolUseBlocks.length > 0 ||
-    unreflectedToolCards.length > 0 ||
-    myQuestions.length > 0 ||
-    unmatchedPermissions.length > 0;
+    unreflectedToolCards.length > 0;
 
   return (
     <div className={`${styles.assistantRow} ${mode === "cowork" ? styles.coworkAssistantRow : ""} kz-anim-rise`}>
@@ -326,8 +304,6 @@ export function Message({
                     inline
                     onOpenFile={onOpenFile}
                     onPreview={onPreview}
-                    pendingPermissions={myPermissions.filter((p) => p.toolUseId === b.id)}
-                    onReply={onReply}
                   />
                 </div>
               </div>
@@ -345,33 +321,7 @@ export function Message({
                   inline
                   onOpenFile={onOpenFile}
                   onPreview={onPreview}
-                  pendingPermissions={myPermissions.filter((p) => p.toolUseId === card.toolUseId)}
-                  onReply={onReply}
                 />
-              </div>
-            </div>
-          ))}
-
-          {myQuestions.map((q) => (
-            <div className={styles.activityStep} key={q.requestId}>
-              <div className={styles.activityMarker} aria-hidden="true"><span className={styles.activityQuestion}>?</span></div>
-              <div className={styles.activityContent}>
-                <QuestionFormView
-                  question={q}
-                  onAnswer={(values) => {
-                    onReply?.(q.requestId, values);
-                    onResolveQuestion?.(q.requestId);
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-
-          {unmatchedPermissions.map((p) => (
-            <div className={styles.activityStep} key={p.requestId}>
-              <div className={styles.activityMarker} aria-hidden="true"><span className={styles.activityQuestion}>!</span></div>
-              <div className={styles.activityContent}>
-                <PendingPermissionInline permission={p} onReply={onReply} />
               </div>
             </div>
           ))}
@@ -418,25 +368,3 @@ export function Message({
   );
 }
 
-// ── PendingPermissionInline fallback ─────────────────────────────────────────
-//
-// Rendered only when a permission_request event's toolUseId did not match any
-// tool card's id (e.g. the tool_use block for that tool was already pruned).
-// Uses the same PermissionBanner component the ToolCard renders for the matched
-// case, so the visuals stay consistent across both paths.
-
-function PendingPermissionInline({
-  permission,
-  onReply,
-}: {
-  permission: PendingPermission;
-  onReply?: (requestId: string, answer: string[]) => void;
-}) {
-  return (
-    <PermissionBanner
-      reason={permission.reason}
-      toolName={permission.toolName}
-      onDecision={(decision) => onReply?.(permission.requestId, [decision])}
-    />
-  );
-}

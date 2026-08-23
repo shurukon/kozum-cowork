@@ -196,6 +196,107 @@ describe("permission answer normalisation", () => {
       assert.equal(decision.allowed, false);
     });
   }
+  // The exact strings the renderer's PermissionBanner sends back.
+  it("treats the banner's allow_once verbatim as approval", async () => {
+    const decision = await checkPermission(makeOpts("shell_exec", "shell", "ask_permission", "allow_once"));
+    assert.equal(decision.allowed, true);
+  });
+  it("treats the banner's allow_always verbatim as approval + remember", async () => {
+    let remembered = 0;
+    const decision = await checkPermission({
+      ...makeOpts("shell_exec", "shell", "ask_permission", "allow_always"),
+      rememberTool: () => { remembered += 1; },
+    });
+    assert.equal(decision.allowed, true);
+    assert.equal(remembered, 1);
+  });
+  it("normalises case and spacing variants", async () => {
+    for (const answer of ["ALLOW_ONCE", "Allow Once", "ALLOW_ALWAYS", "Always"]) {
+      const decision = await checkPermission(
+        makeOpts("shell_exec", "shell", "ask_permission", answer as Answer),
+      );
+      assert.equal(decision.allowed, true, `"${answer}" should approve`);
+    }
+  });
+  it("treats an unknown answer as denial, never as approval", async () => {
+    const decision = await checkPermission(
+      makeOpts("shell_exec", "shell", "ask_permission", "banana" as Answer),
+    );
+    assert.equal(decision.allowed, false);
+  });
+});
+
+describe("ask_dangerous — Cowork's 'Ask for dangerous actions'", () => {
+  it("asks for every tool in DANGEROUS_TOOLS and allows on approval", async () => {
+    for (const [toolName, toolGroup] of [
+      ["file_delete", "filesystem"],
+      ["directory_delete", "filesystem"],
+      ["file_move", "filesystem"],
+      ["process_kill", "process"],
+      ["memory_delete", "system"],
+      ["schedule_create", "task"],
+      ["schedule_update", "task"],
+      ["schedule_delete", "task"],
+      ["schedule_run_now", "task"],
+    ]) {
+      let asked = 0;
+      const decision = await checkPermission({
+        ...makeOpts(toolName, toolGroup, "ask_dangerous", "yes"),
+        requestPermission: async () => { asked += 1; return ["yes"]; },
+      });
+      assert.equal(decision.allowed, true, `${toolName} should run after approval`);
+      assert.equal(asked, 1, `${toolName} must ask exactly once`);
+    }
+  });
+
+  it("blocks a dangerous tool when the user denies", async () => {
+    const decision = await checkPermission(
+      makeOpts("directory_delete", "filesystem", "ask_dangerous", "deny"),
+    );
+    assert.equal(decision.allowed, false);
+    assert.ok(decision.blockedMessage);
+  });
+
+  it("runs shell, computer, browser, web and file writes silently (dangerous ≠ these)", async () => {
+    for (const [toolName, toolGroup] of [
+      ["shell_exec", "shell"],
+      ["computer_click", "computer"],
+      ["browser_navigate", "browser"],
+      ["web_fetch", "web"],
+      ["web_search", "web"],
+      ["file_write", "filesystem"],
+      ["memory_write", "system"],
+      ["project_kb_build", "system"],
+    ]) {
+      let asked = 0;
+      const decision = await checkPermission({
+        ...makeOpts(toolName, toolGroup, "ask_dangerous"),
+        requestPermission: async () => { asked += 1; return ["deny"]; },
+      });
+      assert.equal(decision.allowed, true, `${toolName} should pass without asking`);
+      assert.equal(asked, 0, `${toolName} must not prompt in ask_dangerous`);
+    }
+  });
+
+  it("keeps read-only tools available without asking", async () => {
+    for (const [toolName, toolGroup] of [["file_read", "filesystem"], ["browser_get_content", "browser"]]) {
+      const decision = await checkPermission(makeOpts(toolName, toolGroup, "ask_dangerous"));
+      assert.equal(decision.allowed, true);
+    }
+  });
+
+  it("honors the session allow-always cache before mode logic", async () => {
+    const allowedTools = new Set<string>(["file_delete"]);
+    let asked = 0;
+    const decision = await checkPermission({
+      ...makeOpts("file_delete", "filesystem", "ask_dangerous"),
+      sessionAllowedTools: allowedTools,
+      rememberTool: (toolName) => allowedTools.add(toolName),
+      requestPermission: async () => { asked += 1; return ["deny"]; },
+    });
+    assert.equal(decision.allowed, true);
+    assert.equal(asked, 0, "a session-scoped allow must suppress the prompt");
+  });
 });
 
 describe("blockedResult helper", () => {

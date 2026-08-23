@@ -193,7 +193,10 @@ describe("real shell tool", () => {
   it("runs a real command in the session workspace and returns stdout", async () => {
     const result = await registry.execute(
       "shell_exec",
-      { command: "printf 'kozum-shell-ok'", shell: "bash", timeoutSeconds: 5 },
+      {
+        command: process.platform === "win32" ? "echo kozum-shell-ok" : "printf 'kozum-shell-ok'",
+        timeoutSeconds: 5,
+      },
       ctx(),
     );
     assert.ok(result.ok, result.error);

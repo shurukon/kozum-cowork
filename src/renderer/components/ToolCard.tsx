@@ -28,11 +28,10 @@ import {
   FileText,
 } from "lucide-react";
 import type { ToolDisplay } from "@shared/types.ts";
-import type { ToolCard as ToolCardType, PendingPermission } from "../store/session.ts";
+import type { ToolCard as ToolCardType } from "../store/session.ts";
 import { toolIcon } from "../lib/toolIcons.ts";
 import { toolCategory } from "../lib/toolCategory.ts";
 import styles from "./ToolCard.module.css";
-import { PermissionBanner } from "./PermissionBanner.tsx";
 import { ToolGlyph } from "./ToolGlyph.tsx";
 
 // ── Diff renderer ──────────────────────────────────────────────────────────
@@ -267,10 +266,6 @@ export interface ToolCardProps {
   card: ToolCardType;
   /** Called when the user clicks a file chip in the expanded detail. */
   onOpenFile?: (path: string) => void;
-  /** Pending permission prompts anchored to this card's toolUseId (manual mode). */
-  pendingPermissions?: PendingPermission[];
-  /** Reply to a pending permission via the browser IPC. */
-  onReply?: (requestId: string, answer: string[]) => void;
   /** Open the preview panel (used by thumbnail clicks). */
   onPreview?: (target: PreviewTarget) => void;
   /** Render as an inline activity row inside the assistant timeline. */
@@ -279,7 +274,7 @@ export interface ToolCardProps {
 
 const MAX_THUMBNAILS = 12;
 
-export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPreview, inline = false }: ToolCardProps) {
+export function ToolCard({ card, onOpenFile, onPreview, inline = false }: ToolCardProps) {
   const { t } = useTranslation();
   // Cowork activity rows stay compact while live so the timeline remains
   // readable. Code mode keeps the existing expanded-running/error behavior;
@@ -379,20 +374,9 @@ export function ToolCard({ card, onOpenFile, pendingPermissions, onReply, onPrev
         )}
       </button>
 
-      {/* Inline permission banner (manual mode) — rendered above the detail so
-          it stays visible whether the card is collapsed or expanded (§3.1). */}
-      {pendingPermissions && pendingPermissions.length > 0 && (
-        <div className={styles.permissionStack}>
-          {pendingPermissions.map((p) => (
-            <PermissionBanner
-              key={p.requestId}
-              reason={p.reason}
-              toolName={p.toolName}
-              onDecision={(decision) => onReply?.(p.requestId, [decision])}
-            />
-          ))}
-        </div>
-      )}
+      {/* Pending permission prompts render in the AskDock above the composer,
+          never inline here — the card simply shows its running state while
+          awaiting approval. */}
 
       {expanded && hasDetail && (
         <div className={styles.detail}>

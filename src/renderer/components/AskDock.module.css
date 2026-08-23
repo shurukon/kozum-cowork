@@ -1,0 +1,178 @@
+/*
+ * AskDock — neutral ask/permission panel above the composer.
+ *
+ * Deliberately NO blue/accent colors anywhere: neutral card surfaces
+ * (--bg-card / --border-subtle) with a subtle danger outline reserved for
+ * Deny. Works in both the Cowork and Code shells.
+ */
+
+.dock {
+  width: min(100%, 860px);
+  margin: 0 auto;
+  padding: 0 28px 10px;
+  flex-shrink: 0;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.headerLabel {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.counter {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-medium);
+  font-family: var(--font-mono);
+}
+
+.queueNote {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shield {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.title {
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  line-height: var(--lh-snug);
+}
+
+.title strong {
+  font-weight: var(--fw-semibold);
+}
+
+.reason {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+}
+
+/* Compact input preview: monospace, capped at ~3 lines until expanded. */
+.previewToggle {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  text-align: start;
+  background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 7px 9px;
+  cursor: pointer;
+}
+
+.previewFull {
+  display: block;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.previewToggle pre,
+.previewFull {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Full-width stacked option rows (Claude-style). */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.rowBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  transition: background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.allowOnce {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+}
+
+.allowOnce:hover {
+  background: var(--bg-hover);
+}
+
+.allowAlways {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.allowAlways:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.deny {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--error) 38%, transparent);
+  color: var(--error);
+}
+
+.deny:hover {
+  background: var(--error-soft);
+}
+
+.questionWrap {
+  /* QuestionFormView already renders full-width selectable rows; keep the
+     dock's neutral chrome around it without restyling its internals. */
+  --qfv-surface: var(--bg-card);
+}
+
+@media (max-width: 720px) {
+  .dock { padding-inline: 16px; }
+}

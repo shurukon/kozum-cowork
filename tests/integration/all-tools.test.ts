@@ -11,7 +11,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
+import AdmZip from "adm-zip";
 
 import { buildToolRegistry } from "../../src/main/tools/index.ts";
 import type { ToolContext } from "../../src/main/tools/registry.ts";
@@ -123,7 +124,10 @@ before(async () => {
     JSON.stringify({ name: "all-tools-plugin", description: "Integration plugin", version: "1.0.0" }),
     "utf8",
   );
-  execFileSync("zip", ["-qr", join(root, "all-tools-plugin.zip"), "."], { cwd: pluginSource });
+  // adm-zip instead of the `zip` CLI — Windows has no zip binary by default.
+  const zip = new AdmZip();
+  zip.addLocalFolder(pluginSource);
+  zip.writeZip(join(root, "all-tools-plugin.zip"));
 });
 
 after(async () => {
@@ -140,7 +144,12 @@ describe("complete production registry coverage", () => {
 
   it("executes every tool with real inputs or an explicit capability boundary", async () => {
     const state = { jobId: "", killJobId: "", memoryId: "", taskId: "", scheduleId: "", agentId: "", pluginId: "" };
-    const killJob = await execute("shell_exec_bg", { command: "sleep 30", label: "kill test" });
+    const killJob = await execute("shell_exec_bg", {
+      // Long enough that the job cannot complete before the kill step below,
+      // even when the full-matrix tool sweep runs slowly under load.
+      command: process.platform === "win32" ? "ping -n 601 127.0.0.1 > NUL" : "sleep 600",
+      label: "kill test",
+    });
     state.killJobId = id(killJob, /Started background job\s+([\w-]+)/i);
     assert.ok(state.killJobId, text(killJob));
 
@@ -162,7 +171,7 @@ describe("complete production registry coverage", () => {
         glob_match: { pattern: "**/*.txt", root: "." },
         env_get: { name: "PATH" },
         env_set: { name: "KOZUM_SMOKE_VAR", value: "ok" },
-        shell_exec: { command: "printf 'shell smoke\\n'" },
+        shell_exec: { command: process.platform === "win32" ? "echo shell smoke" : "printf 'shell smoke\\n'" },
         shell_exec_bg: { command: "printf 'background smoke\\n'" },
         shell_job_list: { includeResolved: true },
         shell_job_status: { jobId: state.jobId, wait: 5 },

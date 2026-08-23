@@ -14,7 +14,7 @@
  */
 
 import type { ReactNode } from "react";
-import { FolderOpen, Plus } from "lucide-react";
+import { FolderOpen, Plus, X } from "lucide-react";
 import styles from "./CodeHome.module.css";
 
 // ── Props ─────────────────────────────────────────────────────────────────
@@ -27,6 +27,10 @@ export interface CodeHomeProps {
   onAddFolder: () => void;
   /** Called when the user clicks an existing folder chip. */
   onOpenFolder: (path: string) => void;
+  /** Detach a folder override so sessions fall back to the default workspace. */
+  onRemoveFolder?: (path: string) => void;
+  /** Shared default-workspace path shown when no override is set. */
+  defaultWorkspace?: string | null;
   /** The full composer bar — owned by App/ComposerBar, slotted in here. */
   composerSlot: ReactNode;
 }
@@ -45,6 +49,8 @@ export function CodeHome({
   folders,
   onAddFolder,
   onOpenFolder,
+  onRemoveFolder,
+  defaultWorkspace,
   composerSlot,
 }: CodeHomeProps) {
   const heading = userName
@@ -74,19 +80,37 @@ export function CodeHome({
             Local
           </span>
 
-          {/* One chip per open folder */}
+          {/* One chip per open folder, with a detach affordance so sessions
+              fall back to the shared default workspace (never removable). */}
           {folders.map((path) => (
-            <button
-              key={path}
-              className={styles.chipFolder}
-              role="listitem"
-              title={path}
-              onClick={() => onOpenFolder(path)}
-              aria-label={`Open folder ${folderName(path)}`}
-            >
-              {folderName(path)}
-            </button>
+            <span key={path} className={styles.chipGroup} role="listitem">
+              <button
+                className={styles.chipFolder}
+                title={path}
+                onClick={() => onOpenFolder(path)}
+                aria-label={`Open folder ${folderName(path)}`}
+              >
+                {folderName(path)}
+              </button>
+              {onRemoveFolder && (
+                <button
+                  className={styles.chipDetach}
+                  onClick={() => onRemoveFolder(path)}
+                  aria-label={`Detach folder ${folderName(path)} — use default workspace`}
+                  title="Detach — use default workspace"
+                >
+                  <X size={11} aria-hidden />
+                </button>
+              )}
+            </span>
           ))}
+
+          {/* Default-workspace chip when no override is attached */}
+          {folders.length === 0 && defaultWorkspace && (
+            <span className={`${styles.chipFolder} ${styles.chipMuted}`} role="listitem" title={defaultWorkspace}>
+              {folderName(defaultWorkspace)}
+            </span>
+          )}
 
           {/* Add another folder */}
           <button

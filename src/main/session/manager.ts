@@ -35,6 +35,9 @@ import { PROVIDER_PRESETS } from "../providers/presets.ts";
 import type { ToolContext } from "../tools/registry.ts";
 import { resolveCapabilities } from "../providers/capabilities.ts";
 import { checkPermission, blockedResult } from "../tools/permissions.ts";
+import { PermissionQueue } from "./permissions-queue.ts";
+import { resolveWorkingFolder, ensureWorkspaceDir } from "./workspace.ts";
+import { mkdir } from "node:fs/promises";
 
 /* --------------------------------------------------------- per session --- */
 
@@ -65,6 +68,8 @@ export class SessionManager {
   private completedTurns = new Map<string, number>();
   /** Sessions being archived/deleted; late loop callbacks must become no-ops. */
   private retiredSessions = new Set<string>();
+  /** Serializes permission prompting per session; tool execution stays concurrent. */
+  private readonly permissionQueue = new PermissionQueue();
   /** Sidecar writes already accepted before retirement; teardown waits for them. */
   private pendingRunWrites = new Map<string, Set<Promise<void>>>();
   private readonly completedTurnTtlMs = 10 * 60_000;
@@ -274,8 +279,8 @@ export class SessionManager {
       const preset = await this.registry.presetFor(providerId);
       if (!preset) throw new Error(`Unknown provider: "${providerId}"`);
 
-      // Get adapter
-      const adapter = this.registry.adapterFor(preset.protocol);
+      // Get adapter — split-protocol gateways route per model id.
+      const adapter = this.registry.adapterForModel(preset, modelId);
 
       // Build provider context
       const ctx = await this.registry.contextFor(providerId, resolvedKeyId);
@@ -305,9 +310,18 @@ export class SessionManager {
 
       const visionCapable = looksVisionCapable(modelId, providerId);
 
-      // Resolve working folder: session's own folder, then mode default, then cwd.
-      const modeDefaultFolder = appSettings.general.defaultFolders[session.mode] ?? null;
-      const resolvedWorkingFolder = session.workingFolder ?? modeDefaultFolder;
+      // Resolve working folder: session's own folder, then mode default, then
+      // the shared default workspace, then cwd. The default workspace is
+      // created lazily on first use so a fresh install never errors.
+      const resolution = resolveWorkingFolder({
+        sessionFolder: session.workingFolder,
+        modeDefault: appSettings.general.defaultFolders[session.mode] ?? null,
+        defaultWorkspace: appSettings.general.defaultWorkspace ?? null,
+      });
+      if (resolution.isWorkspaceFallback && resolution.folder) {
+        await ensureWorkspaceDir(resolution.folder, mkdir).catch(() => undefined);
+      }
+      const resolvedWorkingFolder = resolution.folder;
 
       const promptCtx: PromptContext = {
         userName: appSettings.general.userName,
@@ -360,6 +374,7 @@ export class SessionManager {
       // Wrap with permission gate.
       const permissionMode: PermissionMode = session.permissionMode;
       const askBroker = this.ask;
+      const permissionQueue = this.permissionQueue;
       const emitForPermission = this.emitEvent.bind(this);
       const sessionAllowedTools = this.sessionAllowedTools;
       const emitSessionEvent = this.emitEvent.bind(this);
@@ -399,50 +414,59 @@ export class SessionManager {
             sessionAllowedTools: allowedTools,
             rememberTool: (toolName) => allowedTools.add(toolName),
             requestPermission: async (requestId: string, reason: string) => {
-              // Register the SAME requestId before emitting the event. A fast renderer
-              // reply must never arrive before the broker has a pending resolver.
-              const promise = askBroker.registerPending(requestId, {
-                question: reason,
-                options: [
-                  { label: "Allow once", value: "allow_once" },
-                  { label: "Allow always", value: "allow_always" },
-                  { label: "Deny", value: "deny" },
-                ],
-                multiSelect: false,
-              }, opts.sessionId);
-              emitStatus("waiting_input");
-              emitForPermission(opts.sessionId, {
-                type: "permission_request",
-                mode: session.mode,
-                sessionId: opts.sessionId,
-                requestId,
-                toolName: name,
-                input,
-                reason,
-                ...(currentRunId ? { runId: currentRunId } : {}),
-              });
-              // Wait for the user to reply via AskBroker
-              return new Promise<string[]>((resolve, reject) => {
-                void promise.then((answers) => {
-                  emitStatus("running");
-                  resolve(answers);
-                }).catch((error) => {
-                  emitStatus("running");
-                  reject(error);
+              // Serialize prompting per session: each permission_request is
+              // emitted only after the previous one for this session resolved
+              // or rejected, so the renderer's Ask Dock always shows exactly
+              // one actionable card. Tool execution itself stays concurrent.
+              return permissionQueue.run(opts.sessionId, async () => {
+                // A cancel that arrived while this prompt waited in the queue
+                // must not surface a new card after teardown.
+                if (opts.signal.aborted) throw new Error("Cancelled");
+                // Register the SAME requestId before emitting the event. A fast renderer
+                // reply must never arrive before the broker has a pending resolver.
+                const promise = askBroker.registerPending(requestId, {
+                  question: reason,
+                  options: [
+                    { label: "Allow once", value: "allow_once" },
+                    { label: "Allow always", value: "allow_always" },
+                    { label: "Deny", value: "deny" },
+                  ],
+                  multiSelect: false,
+                }, opts.sessionId);
+                emitStatus("waiting_input");
+                emitForPermission(opts.sessionId, {
+                  type: "permission_request",
+                  mode: session.mode,
+                  sessionId: opts.sessionId,
+                  requestId,
+                  toolName: name,
+                  input,
+                  reason,
+                  ...(currentRunId ? { runId: currentRunId } : {}),
                 });
+                // Wait for the user to reply via AskBroker
+                return new Promise<string[]>((resolve, reject) => {
+                  void promise.then((answers) => {
+                    emitStatus("running");
+                    resolve(answers);
+                  }).catch((error) => {
+                    emitStatus("running");
+                    reject(error);
+                  });
 
-                // Abort support: reject through the broker as well as the local
-                // promise, otherwise the request would remain in the broker map
-                // and a late renderer reply could resolve stale work.
-                const onAbort = () => {
-                  askBroker.reject(requestId, "Cancelled");
-                  reject(new Error("Cancelled"));
-                };
-                if (opts.signal.aborted) {
-                  onAbort();
-                  return;
-                }
-                opts.signal.addEventListener("abort", onAbort, { once: true });
+                  // Abort support: reject through the broker as well as the local
+                  // promise, otherwise the request would remain in the broker map
+                  // and a late renderer reply could resolve stale work.
+                  const onAbort = () => {
+                    askBroker.reject(requestId, "Cancelled");
+                    reject(new Error("Cancelled"));
+                  };
+                  if (opts.signal.aborted) {
+                    onAbort();
+                    return;
+                  }
+                  opts.signal.addEventListener("abort", onAbort, { once: true });
+                });
               });
             },
           });

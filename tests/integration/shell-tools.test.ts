@@ -35,6 +35,14 @@ after(async () => {
   if (tmpDir) await rm(tmpDir, { recursive: true, force: true });
 });
 
+/* ----------------------------------------------------- platform helpers --- */
+
+const IS_WIN = process.platform === "win32";
+const SH = IS_WIN ? "cmd" : "bash";
+/** Cross-platform "sleep N seconds": ping-based wait on Windows. */
+const sleepCmd = (seconds: number): string =>
+  IS_WIN ? `ping -n ${seconds + 1} 127.0.0.1 > NUL` : `sleep ${seconds}`;
+
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
     sessionId: "test",
@@ -62,7 +70,7 @@ async function exec(
 
 describe("shell_exec", () => {
   it("echo returns correct stdout and exit 0", async () => {
-    const r = await exec("shell_exec", { command: "echo hello_world", shell: "bash" });
+    const r = await exec("shell_exec", { command: "echo hello_world", shell: SH });
     assert.ok(r.ok, `Expected ok, got: ${r.error}`);
     assert.match(r.content, /hello_world/);
     assert.match(r.content, /exit code: 0/);
@@ -73,7 +81,7 @@ describe("shell_exec", () => {
   });
 
   it("non-zero exit is reported without crashing", async () => {
-    const r = await exec("shell_exec", { command: "exit 42", shell: "bash" });
+    const r = await exec("shell_exec", { command: "exit 42", shell: SH });
     // The tool should succeed (ok:true) but report exit code 42
     assert.ok(r.ok, "tool should not crash on non-zero exit");
     assert.match(r.content, /42/);
@@ -86,7 +94,6 @@ describe("shell_exec", () => {
     const start = Date.now();
     const r = await exec("shell_exec", {
       command: "npm run dev -- --host 127.0.0.1",
-      shell: "bash",
       timeoutSeconds: 30,
     });
     const elapsed = Date.now() - start;
@@ -97,11 +104,11 @@ describe("shell_exec", () => {
 
   it("timeout kills a sleep and returns partial output", async () => {
     // Use a command that prints something before sleeping
-    const command = "echo partial_output && sleep 30";
+    const command = `echo partial_output && ${sleepCmd(30)}`;
     const start = Date.now();
     const r = await exec("shell_exec", {
       command,
-      shell: "bash",
+      shell: SH,
       timeoutSeconds: 1,
     });
     const elapsed = Date.now() - start;
@@ -117,7 +124,7 @@ describe("shell_exec", () => {
     // With noTimeout, a very short command should succeed even with timeout=1ms
     const r = await exec("shell_exec", {
       command: "echo no_timeout_test",
-      shell: "bash",
+      shell: SH,
       timeout: 1, // 1ms would normally kill it
       noTimeout: true,
     });
@@ -128,7 +135,7 @@ describe("shell_exec", () => {
   it("noTimeout takes precedence over timeoutSeconds", async () => {
     const r = await exec("shell_exec", {
       command: "echo precedence_test",
-      shell: "bash",
+      shell: SH,
       timeoutSeconds: 0.001, // would normally timeout immediately
       noTimeout: true,
     });
@@ -140,7 +147,7 @@ describe("shell_exec", () => {
     // timeoutSeconds=5 beats timeout=1 (1ms), command should succeed
     const r = await exec("shell_exec", {
       command: "echo ts_precedence",
-      shell: "bash",
+      shell: SH,
       timeout: 1, // 1ms
       timeoutSeconds: 5, // 5s — wins
     });
@@ -154,9 +161,10 @@ describe("shell_exec", () => {
     const { mkdir } = await import("node:fs/promises");
     await mkdir(subdir, { recursive: true });
 
+    // bash pwd / cmd cd (with no args) both print the current directory.
     const r = await exec("shell_exec", {
-      command: "pwd",
-      shell: "bash",
+      command: IS_WIN ? "cd" : "pwd",
+      shell: SH,
       cwd: subdir,
     });
     assert.ok(r.ok);
@@ -165,8 +173,8 @@ describe("shell_exec", () => {
 
   it("env vars are passed to the child", async () => {
     const r = await exec("shell_exec", {
-      command: "echo $MY_TEST_VAR",
-      shell: "bash",
+      command: IS_WIN ? "echo %MY_TEST_VAR%" : "echo $MY_TEST_VAR",
+      shell: SH,
       env: { MY_TEST_VAR: "env_var_value" },
     });
     assert.ok(r.ok);
@@ -177,7 +185,7 @@ describe("shell_exec", () => {
     const ctrl = new AbortController();
     const execP = exec(
       "shell_exec",
-      { command: "sleep 30", shell: "bash", noTimeout: true },
+      { command: sleepCmd(30), shell: SH, noTimeout: true },
       { signal: ctrl.signal },
     );
     // Give the process a moment to start, then abort
@@ -200,8 +208,8 @@ describe("background jobs", () => {
   it("shell_exec_bg returns a jobId immediately", async () => {
     const start = Date.now();
     const r = await exec("shell_exec_bg", {
-      command: "sleep 10",
-      shell: "bash",
+      command: sleepCmd(10),
+      shell: SH,
     });
     const elapsed = Date.now() - start;
     assert.ok(r.ok, `Expected ok, got: ${r.error}`);
@@ -219,8 +227,8 @@ describe("background jobs", () => {
 
   it("shell_job_status returns running then completed", async () => {
     const bgR = await exec("shell_exec_bg", {
-      command: "sleep 1",
-      shell: "bash",
+      command: sleepCmd(1),
+      shell: SH,
     });
     assert.ok(bgR.ok);
     const match = bgR.content.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
@@ -239,8 +247,8 @@ describe("background jobs", () => {
 
   it("shell_job_result with wait blocks until done and returns full output", async () => {
     const bgR = await exec("shell_exec_bg", {
-      command: "echo job_output_123 && sleep 0.5",
-      shell: "bash",
+      command: `echo job_output_123 && ${sleepCmd(1)}`,
+      shell: SH,
     });
     assert.ok(bgR.ok);
     const match = bgR.content.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
@@ -254,8 +262,8 @@ describe("background jobs", () => {
 
   it("shell_job_list includes the job", async () => {
     const bgR = await exec("shell_exec_bg", {
-      command: "sleep 2",
-      shell: "bash",
+      command: sleepCmd(2),
+      shell: SH,
       label: "test_list_job",
     });
     assert.ok(bgR.ok);
@@ -272,8 +280,8 @@ describe("background jobs", () => {
 
   it("shell_job_kill terminates a long job", async () => {
     const bgR = await exec("shell_exec_bg", {
-      command: "sleep 60",
-      shell: "bash",
+      command: sleepCmd(60),
+      shell: SH,
     });
     assert.ok(bgR.ok);
     const match = bgR.content.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
@@ -291,8 +299,8 @@ describe("background jobs", () => {
 
   it("shell_job_clear refuses while running, succeeds after kill", async () => {
     const bgR = await exec("shell_exec_bg", {
-      command: "sleep 60",
-      shell: "bash",
+      command: sleepCmd(60),
+      shell: SH,
     });
     assert.ok(bgR.ok);
     const match = bgR.content.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
@@ -377,10 +385,14 @@ describe("system_info", () => {
     assert.match(r.content, /Node:/);
   });
 
-  it("reports linux platform on this container", async () => {
+  it(`reports the running platform (${process.platform})`, async () => {
     const r = await exec("system_info", {});
     assert.ok(r.ok);
-    assert.match(r.content, /linux/i);
+    if (IS_WIN) {
+      assert.match(r.content, /win32|windows/i);
+    } else {
+      assert.match(r.content, /linux/i);
+    }
   });
 });
 
@@ -391,8 +403,8 @@ describe("shell_exec cwd and file interaction", () => {
     await writeFile(join(tmpDir, "input.txt"), "from_file_content", "utf8");
 
     const r = await exec("shell_exec", {
-      command: "cat input.txt",
-      shell: "bash",
+      command: IS_WIN ? "type input.txt" : "cat input.txt",
+      shell: SH,
       cwd: tmpDir,
     });
     assert.ok(r.ok);

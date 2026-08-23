@@ -73,7 +73,8 @@ export function makeRealRunner(deps: SubagentRunnerDeps): AgentRunner {
     const preset = await deps.registry.presetFor(providerId);
     if (!preset) throw new Error(`Subagent run aborted: unknown provider "${providerId}".`);
 
-    const adapter = deps.registry.adapterFor(preset.protocol);
+    // Split-protocol gateways route per model id, same as the main loop.
+    const adapter = deps.registry.adapterForModel(preset, modelId);
     const ctx = await deps.registry.contextFor(providerId, resolvedKeyId);
 
     const history: Message[] = [

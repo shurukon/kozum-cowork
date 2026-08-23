@@ -198,7 +198,21 @@
     "modeBypassPermissionsDesc": "تشغيل الإجراءات المُغيّرة دون تأكيد. استخدمه فقط في المشاريع الموثوقة.",
     "modePlanDesc": "فحص وتخطيط دون تطبيق الإجراءات المُغيّرة.",
     "modeAcceptEditsDesc": "تُطبق تعديلات الملفات تلقائيًا؛ أوامر shell وإجراءات الجهاز تطلب التأكيد.",
-    "modeAskPermissionDesc": "طلب التأكيد قبل كل إجراء مُغيّر."
+    "modeAskPermissionDesc": "طلب التأكيد قبل كل إجراء مُغيّر.",
+    "coworkAutoApprove": "موافقة تلقائية",
+    "coworkAutoApproveDesc": "تشغيل كل شيء دون تأكيد. استخدمه فقط في مساحات العمل الموثوقة.",
+    "coworkAskDangerous": "اسأل قبل الإجراءات الخطرة",
+    "coworkAskDangerousDesc": "السؤال فقط قبل الإجراءات غير القابلة للتراجع أو المدمرة؛ وكل شيء آخر يعمل تلقائيًا."
+  },
+  "askDock": {
+    "title": "مطلوب إجراء",
+    "needsApproval": "يحتاج موافقتك",
+    "allowOnce": "سماح مرة واحدة",
+    "allowAlways": "سماح دائمًا لهذه الجلسة",
+    "queued_one": "{{count}} إضافية في الانتظار",
+    "queued_other": "{{count}} إضافية في الانتظار",
+    "expandInput": "عرض الإدخال الكامل",
+    "collapseInput": "طي الإدخال"
   },
   "home": {
     "greeting": "مساء الخير",

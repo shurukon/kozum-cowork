@@ -32,6 +32,17 @@ function dedupeTasks(tasks: AgentTask[]): AgentTask[] {
   return Array.from(byId.values());
 }
 
+/**
+ * Latest assistant message of the current run — the anchor for inline prompts
+ * when no turn is actively streaming (providers emit turn_end before the
+ * separate tool_start/permission flow, leaving streamingMessageId null).
+ */
+function latestAssistantMessageId(mode: ModeState): string | undefined {
+  return [...mode.messages]
+    .reverse()
+    .find((msg) => msg.role === "assistant")?.id;
+}
+
 export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
   // A new turn establishes the active run. Any later event carrying a
   // different run id belongs to an older/late turn and must not mutate the UI.
@@ -145,7 +156,7 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
           })
         : mode.messages;
 
-      return { ...mode, messages, toolCards: cards };
+      return { ...mode, messages, toolCards: cards, lastToolUseId: e.toolUseId };
     }
 
     case "tool_progress": {
@@ -192,6 +203,7 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
         streamingMessageId: null,
         streamingText: "",
         streamingThinking: "",
+        lastToolUseId: null,
         toolCards,
       };
     }
@@ -203,6 +215,7 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
         streamingMessageId: null,
         streamingText: "",
         streamingThinking: "",
+        lastToolUseId: null,
         error: e.message,
         pendingQuestions: [],
         pendingPermissions: [],
@@ -220,6 +233,7 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
               streamingMessageId: null,
               streamingText: "",
               streamingThinking: "",
+              lastToolUseId: null,
             }
           : {}),
         // Drop any unanswered question/permission prompts when the turn ends:
@@ -310,9 +324,15 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
         toolName: e.toolName,
         input: e.input,
         reason: e.reason,
-        // Attach to the currently-streaming assistant message so Message.tsx can
-        // host the inline banner; the backend event does not carry ids itself.
-        messageId: mode.streamingMessageId ?? undefined,
+        // Anchor to the tool card this request belongs to (the executor emits
+        // tool_start before running the tool, so lastToolUseId is the calling
+        // tool) and to a message that actually exists in the transcript.
+        // streamingMessageId is null whenever a tool runs after its turn's
+        // text completed, so fall back to the latest assistant message —
+        // without this the banner matched nothing and never rendered, hanging
+        // the tool until its 120s timeout.
+        ...(mode.lastToolUseId ? { toolUseId: mode.lastToolUseId } : {}),
+        messageId: mode.streamingMessageId ?? latestAssistantMessageId(mode),
       };
       return {
         ...mode,
@@ -327,7 +347,8 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
         options: e.options,
         multiSelect: e.multiSelect,
         ...(e.allowFreeform ? { allowFreeform: true } : {}),
-        messageId: mode.streamingMessageId ?? undefined,
+        ...(mode.lastToolUseId ? { toolUseId: mode.lastToolUseId } : {}),
+        messageId: mode.streamingMessageId ?? latestAssistantMessageId(mode),
       };
       return {
         ...mode,
@@ -352,6 +373,7 @@ export function emptyModeState(): ModeState {
     streamingMessageId: null,
     streamingText: "",
     streamingThinking: "",
+    lastToolUseId: null,
     toolCards: new Map(),
     tasks: [],
     error: null,

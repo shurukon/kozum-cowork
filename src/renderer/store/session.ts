@@ -173,6 +173,13 @@ export function reconstructToolCards(messages: Message[]): Map<string, ToolCard>
   return cards;
 }
 
+/** Joined text of a message's text blocks — used for optimistic-dedupe. */
+function messageText(message: Message): string {
+  return message.content
+    .map((b) => (b.type === "text" ? b.text : ""))
+    .join("\n");
+}
+
 export const useSessionStore = create<SessionStore>((set, get) => ({
   cowork: emptyModeState(),
   code: emptyModeState(),
@@ -219,7 +226,31 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set((prev) => {
       const sessionChanged =
         sessionId !== undefined && prev[mode].sessionId !== sessionId;
-      const reconstructed = reconstructToolCards(messages);
+
+      // First-turn hydration race: the backend persists the user turn only
+      // after the whole run finishes (manager.runLoop → appendMessages), so a
+      // brand-new session's history fetch can come back EMPTY while the
+      // optimistic `local-` copy of the first message is already on screen.
+      // Replacing the slice wholesale used to erase it — the reported
+      // "first user message never appears" bug in BOTH modes. Keep any
+      // optimistic user turns that the persisted list does not reflect yet
+      // (deduped by text so a later reload with the persisted twin shows one
+      // copy), and prepend them because they are earlier turns.
+      const persistedUserTexts = new Set(
+        messages.filter((m) => m.role === "user").map(messageText),
+      );
+      const keptOptimistic = sessionChanged
+        ? []
+        : prev[mode].messages.filter(
+            (m) =>
+              m.role === "user" &&
+              m.id.startsWith("local-") &&
+              !persistedUserTexts.has(messageText(m)),
+          );
+      const mergedMessages =
+        keptOptimistic.length > 0 ? [...keptOptimistic, ...messages] : messages;
+
+      const reconstructed = reconstructToolCards(mergedMessages);
       const liveCards = sessionChanged ? new Map<string, ToolCard>() : prev[mode].toolCards;
       // Backend transcript hydration does not persist the rich `display`
       // payload. Preserve it from the live event card when the same tool call
@@ -237,7 +268,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return {
         [mode]: {
           ...prev[mode],
-          messages,
+          messages: mergedMessages,
           ...(sessionId !== undefined ? { sessionId } : {}),
           streamingMessageId: null,
           streamingText: "",

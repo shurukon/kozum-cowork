@@ -28,6 +28,7 @@ import type { Scheduler } from "../schedule/scheduler.ts";
 import type { McpManager } from "../mcp/manager.ts";
 import type { PluginManager } from "../plugins/manager.ts";
 import type { SkillStore } from "../skills/index.ts";
+import { installSkillSource } from "../skills/index.ts";
 import type { TaskStore } from "../tools/tasks.ts";
 import type { TaskPatch } from "../schedule/scheduler.ts";
 import type { ProjectStore } from "../store/projects.ts";
@@ -75,6 +76,8 @@ export interface IpcDeps {
   mcp: McpManager;
   plugins: PluginManager;
   skills: SkillStore;
+  /** userData/skills root — where user-added skills are installed. */
+  userSkillsRoot?: string;
   tasks: TaskStore;
   projects: ProjectStore;
   memory: MemoryVault;
@@ -189,26 +192,63 @@ export function registerIpc(deps: IpcDeps): void {
   });
 
   handle(ipcMain, "providers:addCustom", async (_e, input) => {
-    const payload = input as { name?: unknown; baseUrl?: unknown };
+    const payload = input as {
+      name?: unknown;
+      baseUrl?: unknown;
+      protocol?: unknown;
+      modelIds?: unknown;
+      apiKey?: unknown;
+    };
     const name = String(payload.name ?? "").trim();
     const baseUrl = String(payload.baseUrl ?? "").trim();
     if (!name) return err("name is required");
     if (!baseUrl) return err("baseUrl is required");
 
+    const protocols = ["openai-chat", "openai-responses", "anthropic-messages"] as const;
+    type CustomProtocol = (typeof protocols)[number];
+    const requested = String(payload.protocol ?? "openai-chat") as CustomProtocol;
+    const protocol: CustomProtocol = protocols.includes(requested) ? requested : "openai-chat";
+
+    // Model IDs entered by the user become the preset's shipped fallback list;
+    // /models is still attempted live when reachable.
+    const modelIds = Array.isArray(payload.modelIds)
+      ? payload.modelIds.map((m) => String(m).trim()).filter(Boolean)
+      : String(payload.modelIds ?? "")
+          .split(/[,\n]/)
+          .map((m) => m.trim())
+          .filter(Boolean);
+
     const id = `custom_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
     const preset: ProviderPreset = {
       id,
       name,
-      protocol: "openai-chat",
+      protocol,
       baseUrl,
-      authScheme: "bearer",
+      authScheme: protocol === "anthropic-messages" ? "x-api-key" : "bearer",
       modelsPath: "/models",
+      ...(modelIds.length > 0 ? { staticModels: modelIds } : {}),
       builtIn: false,
     };
 
     const settings = await deps.settings.get();
     const existing = Array.isArray(settings.customProviders) ? settings.customProviders : [];
     await deps.settings.patch({ customProviders: [...existing, preset] });
+
+    // Optional inline API key: register it so the add→refresh→dropdown chain
+    // works without a separate trip to the key form.
+    const apiKey = String(payload.apiKey ?? "").trim();
+    if (apiKey) {
+      try {
+        await deps.secrets.add(id, "Key 1", apiKey);
+      } catch (e) {
+        return err(
+          `Provider saved but the API key could not be stored: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      }
+    }
+
     return ok(preset);
   });
 
@@ -253,8 +293,12 @@ export function registerIpc(deps: IpcDeps): void {
     if (keys.length === 0) {
       return err(`No API key configured for provider "${String(providerId)}"`);
     }
-    const models = await deps.registry.refreshModels(String(providerId), keys[0]!.id);
-    return ok(models);
+    const { models, warning } = await deps.registry.refreshModelsDetailed(
+      String(providerId),
+      keys[0]!.id,
+    );
+    // Typed fallback signal — the renderer toasts this instead of failing.
+    return ok({ models, warning });
   });
 
   handle(ipcMain, "providers:listModels", async (_e, providerId) => {
@@ -517,6 +561,31 @@ export function registerIpc(deps: IpcDeps): void {
     return deps.mcp.allTools().filter((t) => t.serverId === String(serverId));
   });
 
+  handle(ipcMain, "mcp:setToolPolicy", async (_e, serverId, policy) => {
+    const raw = policy as { default?: unknown; tools?: unknown } | null;
+    if (!raw || (raw.default !== "allow" && raw.default !== "deny" && raw.default !== "ask")) {
+      return err("policy.default must be one of allow|deny|ask");
+    }
+    let tools: Record<string, "allow" | "deny" | "ask"> | undefined;
+    if (raw.tools !== undefined && raw.tools !== null) {
+      if (typeof raw.tools !== "object" || Array.isArray(raw.tools)) {
+        return err("policy.tools must be an object keyed by tool name");
+      }
+      tools = {};
+      for (const [tool, action] of Object.entries(raw.tools as Record<string, unknown>)) {
+        if (action === "allow" || action === "deny" || action === "ask") {
+          tools[tool] = action;
+        }
+      }
+    }
+    const updated = await deps.mcp.setToolPolicy(String(serverId), {
+      default: raw.default as "allow" | "deny" | "ask",
+      ...(tools !== undefined ? { tools } : {}),
+    });
+    if (!updated) return err(`MCP server "${String(serverId)}" not found`);
+    return ok(updated);
+  });
+
   /* ---------------------------------------------------------- plugins --- */
 
   handle(ipcMain, "plugins:list", async () => {
@@ -607,24 +676,53 @@ export function registerIpc(deps: IpcDeps): void {
 
   /* ----------------------------------------------------------- skills --- */
 
+  const toSkillView = (s: ReturnType<SkillStore["list"]>[number]) => ({
+    id: s.id,
+    name: s.name,
+    description: s.description,
+    ...(s.whenToUse ? { whenToUse: s.whenToUse } : {}),
+    path: s.path,
+    source: s.source,
+    ...(s.pluginId ? { pluginId: s.pluginId } : {}),
+    enabled: s.enabled,
+    modes: s.modes,
+    ...(s.allowedTools ? { allowedTools: s.allowedTools } : {}),
+  });
+
   handle(ipcMain, "skills:list", async () => {
-    return deps.skills.list().map((s) => ({
-      id: s.id,
-      name: s.name,
-      description: s.description,
-      ...(s.whenToUse ? { whenToUse: s.whenToUse } : {}),
-      path: s.path,
-      source: s.source,
-      ...(s.pluginId ? { pluginId: s.pluginId } : {}),
-      enabled: s.enabled,
-      modes: s.modes,
-      ...(s.allowedTools ? { allowedTools: s.allowedTools } : {}),
-    }));
+    return deps.skills.list().map(toSkillView);
   });
 
   handle(ipcMain, "skills:setEnabled", async (_e, id, enabled) => {
     const changed = deps.skills.setEnabled(String(id), Boolean(enabled));
     return changed ? ok(undefined) : err(`Skill not found: ${String(id)}`);
+  });
+
+  /**
+   * Install a skill from a user-selected folder (containing SKILL.md) or a
+   * single .md file into the userData skills root, then rescan. Returns the
+   * refreshed catalogue.
+   */
+  handle(ipcMain, "skills:add", async (_e, rawPath) => {
+    const sourcePath = String(rawPath ?? "").trim();
+    if (!sourcePath) return err("source path is required");
+    if (!deps.userSkillsRoot) return err("user skills root is not available in this build");
+    const result = await installSkillSource(deps.skills, deps.userSkillsRoot, sourcePath);
+    if (!result.ok) return err(result.error);
+    return ok(deps.skills.list().map(toSkillView));
+  });
+
+  /** Remove a skill previously installed into the userData root; bundled and legacy entries are refused. */
+  handle(ipcMain, "skills:remove", async (_e, id) => {
+    try {
+      const removed = await deps.skills.removeUserSkill(String(id));
+      if (!removed) {
+        return err(`Skill "${String(id)}" not found or not removable (only skills you added can be removed).`);
+      }
+      return ok(undefined);
+    } catch (cause) {
+      return err(cause instanceof Error ? cause.message : String(cause));
+    }
   });
 
   /* ----------------------------------------------------------- memory --- */

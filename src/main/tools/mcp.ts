@@ -7,15 +7,34 @@
  * - mcp_call     — direct tool passthrough
  */
 
-import type { Tool } from "./registry.ts";
+import type { Tool, ToolContext } from "./registry.ts";
 import { ok, fail } from "./registry.ts";
 import type { McpManager } from "../mcp/manager.ts";
-import type { McpServerConfig, McpTransport } from "../../shared/types.ts";
+import type { AskBroker } from "./ask.ts";
+import type { McpPolicyAction, McpServerConfig, McpTransport } from "../../shared/types.ts";
 import { detectTransport } from "../mcp/transport.ts";
 
 let _idCounter = 1;
 function genId(): string {
   return `mcp_${Date.now()}_${_idCounter++}`;
+}
+
+/**
+ * Session-scoped "Always allow" cache for per-tool MCP policy prompts.
+ * Intentionally process-lifetime only, mirroring the permission gate's
+ * sessionAllowedTools semantics (discarded on restart).
+ */
+const mcpSessionAllowed = new Map<string, Set<string>>();
+
+function normalizeDecision(value: string): "allow_once" | "allow_always" | "deny" {
+  const normalized = value.trim().toLowerCase();
+  if (["allow_always", "always", "allow always", "remember", "yes_always"].includes(normalized)) {
+    return "allow_always";
+  }
+  if (["yes", "allow", "approve", "approved", "y", "true", "allow_once", "once", "allow once"].includes(normalized)) {
+    return "allow_once";
+  }
+  return "deny";
 }
 
 /* -------------------------------------------------------- helpers ------ */
@@ -267,7 +286,7 @@ function makeMcpRemove(manager: McpManager): Tool {
 
 /* ---------------------------------------------------------- mcp_call --- */
 
-function makeMcpCall(manager: McpManager): Tool {
+function makeMcpCall(manager: McpManager, ask: AskBroker): Tool {
   return {
     definition: {
       name: "mcp_call",
@@ -297,10 +316,39 @@ function makeMcpCall(manager: McpManager): Tool {
       },
     },
 
-    handler: async (input, _ctx) => {
+    handler: async (input, ctx) => {
       const serverId = input["serverId"] as string;
       const toolName = input["tool"] as string;
       const args = input["args"] as Record<string, unknown> | undefined;
+
+      const entry = manager.getEntry(serverId);
+
+      // ── Per-tool policy gate — evaluated BEFORE the call. ──────────────
+      // An unknown server skips the gate so it fails with the familiar
+      // "Unknown MCP server" contract instead of prompting about nothing.
+      let action: McpPolicyAction = entry
+        ? manager.effectiveToolAction(serverId, `mcp__${entry.config.name}__${toolName}`)
+        : "allow";
+      const allowedCache = mcpSessionAllowed.get(ctx.sessionId) ?? new Set<string>();
+      if (action === "ask" && allowedCache.has(`mcp__${entry?.config.name ?? serverId}__${toolName}`)) {
+        action = "allow";
+      }
+
+      if (action === "deny") {
+        return fail(
+          `Tool "mcp__${entry?.config.name ?? serverId}__${toolName}" is blocked by user policy for this connector.`,
+        );
+      }
+      if (action === "ask") {
+        const namespaced = `mcp__${entry!.config.name}__${toolName}`;
+        const decision = await askMcpPolicy(ask, ctx, namespaced, entry!.config.name);
+        if (decision === "allow_always") {
+          allowedCache.add(namespaced);
+          mcpSessionAllowed.set(ctx.sessionId, allowedCache);
+        } else if (decision !== "allow_once") {
+          return fail(`Tool "${namespaced}" was blocked by user policy (denied).`);
+        }
+      }
 
       const result = await manager.callTool(serverId, toolName, args);
 
@@ -316,13 +364,54 @@ function makeMcpCall(manager: McpManager): Tool {
   };
 }
 
+/**
+ * AskBroker flow for a per-tool policy prompt, identical in shape to
+ * ask_user_question: register with the broker (so sessions:reply reaches it),
+ * emit through ctx.onQuestion, and race against the abort signal.
+ */
+async function askMcpPolicy(
+  ask: AskBroker,
+  ctx: ToolContext,
+  namespaced: string,
+  serverName: string,
+): Promise<"allow_once" | "allow_always" | "deny"> {
+  const question = `Allow "${namespaced}" on connector "${serverName}"?`;
+  const options = [
+    { label: "Allow once", value: "allow_once" },
+    { label: "Always allow this session", value: "allow_always" },
+    { label: "Deny", value: "deny" },
+  ];
+  const { requestId, promise } = ask.ask(ctx.sessionId, {
+    question,
+    options,
+    multiSelect: false,
+  });
+  ctx.onQuestion?.({ requestId, question, options, multiSelect: false });
+
+  const abortPromise = new Promise<never>((_res, rej) => {
+    if (ctx.signal.aborted) {
+      rej(new Error("Cancelled"));
+      return;
+    }
+    ctx.signal.addEventListener("abort", () => rej(new Error("Cancelled")), { once: true });
+  });
+
+  try {
+    const values = await Promise.race([promise, abortPromise]);
+    return normalizeDecision(values[0] ?? "deny");
+  } catch {
+    ask.reject(requestId, "Cancelled by abort signal.");
+    return "deny";
+  }
+}
+
 /* ----------------------------------------------------------- export --- */
 
-export function makeMcpTools(manager: McpManager): Tool[] {
+export function makeMcpTools(manager: McpManager, ask: AskBroker): Tool[] {
   return [
     makeMcpInstall(manager),
     makeMcpList(manager),
     makeMcpRemove(manager),
-    makeMcpCall(manager),
+    makeMcpCall(manager, ask),
   ];
 }

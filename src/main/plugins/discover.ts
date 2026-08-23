@@ -13,7 +13,7 @@
  */
 
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
 import type { SkillFileMeta } from "../skills/index.ts";
 import type { SubagentFileMeta } from "../agent/subagents.ts";
@@ -270,7 +270,14 @@ function expandPluginRoot(
   warnings: DiscoveryWarning[],
 ): string {
   if (!value.includes(CLAUDE_PLUGIN_ROOT_TOKEN)) return value;
-  const expanded = value.split(CLAUDE_PLUGIN_ROOT_TOKEN).join(pluginDir);
+  // Manifests write paths POSIX-style ("${CLAUDE_PLUGIN_ROOT}/bin/x"), so a
+  // naive join leaves mixed separators on Windows ("C:\plugin/bin/x").
+  // Normalise each token-following segment to the platform separator while
+  // leaving unrelated literal segments (e.g. PATH-style env values) alone.
+  const segments = value.split(CLAUDE_PLUGIN_ROOT_TOKEN);
+  const expanded = segments
+    .map((segment, i) => (i === 0 ? segment : pluginDir + segment.replace(/[/\\]+/g, sep)))
+    .join("");
   const resolvedPath = resolve(expanded);
   const rel = relative(pluginDir, resolvedPath);
   if (rel === ".." || rel.startsWith("../") || rel.startsWith("..\\")) {

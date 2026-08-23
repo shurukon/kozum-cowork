@@ -161,14 +161,17 @@ describe("M2 — shell timeout settles within grace window", () => {
     assert.ok(tool, "shell_exec tool should exist");
 
     const ac = new AbortController();
-    const ctx = makeCtx({ signal: ac.signal, workingFolder: "/tmp" });
+    const ctx = makeCtx({ signal: ac.signal });
 
-    // setsid forks a grandchild that escapes the process group while keeping
-    // stdout open — the classic case that used to hang forever.
-    const command = "setsid sleep 600 & echo started; sleep 600";
+    const isWin = process.platform === "win32";
+    // POSIX: setsid forks a grandchild that escapes the process group while
+    // keeping stdout open — the classic case that used to hang forever.
+    // Windows has no setsid; taskkill /T handles tree kills, so a plain long
+    // running command exercises the same timeout + grace path.
+    const command = isWin ? "ping -n 601 127.0.0.1 > NUL" : "setsid sleep 600 & echo started; sleep 600";
     const timeoutSeconds = 2;
     const gracePeriodMs = 2000;
-    const marginMs = 2000; // allow some scheduler slop
+    const marginMs = isWin ? 6000 : 2000; // allow scheduler + taskkill slop
 
     const maxExpectedMs = timeoutSeconds * 1000 + gracePeriodMs + marginMs;
 
@@ -185,9 +188,11 @@ describe("M2 — shell timeout settles within grace window", () => {
     assert.ok(r.ok, "should return ok:true even on timeout");
     assert.match(r.content, /timed out/i, "should report timed out");
 
-    // Clean up any escaped grandchild.
-    const { spawnSync } = await import("node:child_process");
-    spawnSync("pkill", ["-f", "sleep 600"]);
+    if (!isWin) {
+      // Clean up any escaped grandchild.
+      const { spawnSync } = await import("node:child_process");
+      spawnSync("pkill", ["-f", "sleep 600"]);
+    }
   });
 });
 
@@ -486,15 +491,21 @@ describe("L8 — multi-byte character split across chunk boundaries (child-proce
     const tool = shellTools.find((t) => t.definition.name === "shell_exec")!;
     assert.ok(tool, "shell_exec tool should exist");
 
-    const ctx = makeCtx({ workingFolder: "/tmp" });
+    const ctx = makeCtx();
 
     // The Japanese yen sign '¥' is U+00A5, encoded as 0xC2 0xA5 (2 bytes).
-    // printf splits it across chunks so the decoder must handle the boundary.
-    // We use printf to emit the two bytes separately so the kernel delivers
-    // them in distinct read() calls.
-    const command = "printf '\\xc2' && printf '\\xa5'";
+    // The command emits the two bytes in separate raw writes so the decoder
+    // must handle the chunk boundary (bash printf hex escapes on POSIX, a
+    // PowerShell raw byte write on Windows).
+    const isWin = process.platform === "win32";
+    const command = isWin
+      ? "[Console]::OpenStandardOutput().Write([byte[]](194),0,1); [Console]::OpenStandardOutput().Write([byte[]](165),0,1)"
+      : "printf '\\xc2' && printf '\\xa5'";
 
-    const result = await tool.handler({ command, shell: "bash" }, ctx as never);
+    const result = await tool.handler(
+      isWin ? { command, shell: "powershell" } : { command, shell: "bash" },
+      ctx as never,
+    );
     assert.ok(result.ok, `Expected ok, got: ${result.error}`);
     assert.match(result.content, /¥/, "output should contain the correctly decoded ¥ character");
     assert.ok(

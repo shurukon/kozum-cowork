@@ -37,10 +37,34 @@ import {
 import { McpClient } from "../../src/main/mcp/client.ts";
 import { McpManager } from "../../src/main/mcp/manager.ts";
 import { makeMcpTools } from "../../src/main/tools/mcp.ts";
+import { AskBroker } from "../../src/main/tools/ask.ts";
 import type { ToolContext } from "../../src/main/tools/registry.ts";
 import type { McpServerConfig } from "../../src/shared/types.ts";
 
 /* ================================================================= helpers */
+
+/**
+ * Real AskBroker plus a responder that approves every pending per-tool policy
+ * prompt ("allow_once"), so legacy mcp_call tests exercise the gate without a
+ * human in the loop.
+ */
+function makeAutoAllowBroker(): AskBroker {
+  const broker = new AskBroker();
+  const origAsk = broker.ask.bind(broker);
+  broker.ask = (sessionId, payload) => {
+    const handle = origAsk(sessionId, payload);
+    // Auto-answer on the next microtask once the handler is awaiting.
+    queueMicrotask(() => {
+      // The mcp_call gate is the only caller here; resolve with allow.
+      void broker.resolve(handle.requestId, ["allow_once"], sessionId);
+    });
+    return handle;
+  };
+  return broker;
+}
+
+const autoAllowBroker = makeAutoAllowBroker();
+
 
 function getPort(server: http.Server): number {
   const addr = server.address();
@@ -657,7 +681,7 @@ describe("auth token forwarding", () => {
 
     try {
       const manager = new McpManager();
-      const tools = makeMcpTools(manager);
+      const tools = makeMcpTools(manager, autoAllowBroker);
       const installTool = tools.find((t) => t.definition.name === "mcp_install");
       assert.ok(installTool);
 
@@ -718,7 +742,7 @@ describe("JSON-RPC error response handling", () => {
 
     try {
       const manager = new McpManager();
-      const tools = makeMcpTools(manager);
+      const tools = makeMcpTools(manager, autoAllowBroker);
       const installTool = tools.find((t) => t.definition.name === "mcp_install");
       assert.ok(installTool);
 
@@ -830,7 +854,7 @@ describe("mcp_install end-to-end", () => {
 
   it("install → new tools appear in allTools() → mcp_call succeeds", async () => {
     const manager = new McpManager();
-    const tools = makeMcpTools(manager);
+    const tools = makeMcpTools(manager, autoAllowBroker);
 
     const installTool = tools.find((t) => t.definition.name === "mcp_install");
     const callTool = tools.find((t) => t.definition.name === "mcp_call");
@@ -871,7 +895,7 @@ describe("mcp_install end-to-end", () => {
 
   it("mcp_remove cleans up", async () => {
     const manager = new McpManager();
-    const tools = makeMcpTools(manager);
+    const tools = makeMcpTools(manager, autoAllowBroker);
     const installTool = tools.find((t) => t.definition.name === "mcp_install")!;
     const removeTool = tools.find((t) => t.definition.name === "mcp_remove")!;
 
@@ -1035,7 +1059,7 @@ describe("mcp_install failure handling", () => {
     const deadUrl = `http://127.0.0.1:${deadPort}`;
 
     const manager = new McpManager();
-    const tools = makeMcpTools(manager);
+    const tools = makeMcpTools(manager, autoAllowBroker);
     const installTool = tools.find((t) => t.definition.name === "mcp_install")!;
 
     const result = await installTool.handler(
