@@ -80,6 +80,15 @@ export interface ModelInfo {
  * and may override any field of a preset (base URL in particular, since several
  * of these vendors run regional endpoints).
  */
+export interface CustomProviderInput {
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  modelId: string;
+  /** Optional advanced wire protocol; defaults to OpenAI Chat Completions. */
+  protocol?: Extract<ProviderProtocol, "openai-chat" | "openai-responses" | "anthropic-messages">;
+}
+
 export interface ProviderPreset {
   id: string;
   name: string;
@@ -105,6 +114,8 @@ export interface ProviderPreset {
    * do not add routes without one.
    */
   protocolRoutes?: Partial<Record<ProviderProtocol, string[]>>;
+  /** Optional base URL per routed protocol for gateways whose paths differ. */
+  protocolBaseUrls?: Partial<Record<ProviderProtocol, string>>;
   notes?: string;
   builtIn: boolean;
 }

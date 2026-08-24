@@ -5,9 +5,14 @@
 .fallback {
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: calc(100% - (var(--sp-6) * 2));
+  max-height: calc(100% - (var(--sp-6) * 2));
   gap: var(--sp-4);
   padding: var(--sp-6);
   margin: var(--sp-6);
+  overflow: auto;
   background: var(--error-soft);
   border: 1px solid var(--error);
   border-radius: var(--r-lg);
@@ -32,9 +37,13 @@
 }
 
 .message {
+  min-width: 0;
+  max-width: 100%;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   line-height: var(--lh-snug);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 

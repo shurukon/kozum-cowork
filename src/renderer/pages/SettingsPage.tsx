@@ -20,6 +20,7 @@ import {
 import type {
   ApiKeyEntry,
   AppSettings,
+  CustomProviderInput,
   PermissionMode,
   ProviderPreset,
 } from "@shared/types.ts";
@@ -36,14 +37,9 @@ export interface SettingsPageProps {
   onSave: (patch: Partial<AppSettings>) => void;
   onAddKey: (providerId: string, rawKey: string, meta?: Record<string, string>) => void;
   onRemoveKey: (keyId: string) => void;
-  onAddCustomProvider: (input: {
-    name: string;
-    baseUrl: string;
-    protocol?: "openai-chat" | "openai-responses" | "anthropic-messages";
-    /** Comma/newline-separated model IDs stored as the preset's static list. */
-    modelIds?: string[];
-    apiKey?: string;
-  }) => Promise<void>;
+  onAddCustomProvider: (input: CustomProviderInput) => Promise<void>;
+  onAddProviderModel: (providerId: string, modelId: string) => Promise<void>;
+  onRemoveProviderModel: (providerId: string, modelId: string) => Promise<void>;
   onRemoveCustomProvider: (id: string) => void;
   onPickFolder: (mode: "cowork" | "code") => void;
   /** Pick the shared default workspace (changeable, never removable). */
@@ -110,8 +106,10 @@ function ProvidersSection({
   onAddKey,
   onRemoveKey,
   onAddCustomProvider,
+  onAddProviderModel,
+  onRemoveProviderModel,
   onRemoveCustomProvider,
-}: Pick<SettingsPageProps, "presets" | "keys" | "onAddKey" | "onRemoveKey" | "onAddCustomProvider" | "onRemoveCustomProvider">) {
+}: Pick<SettingsPageProps, "presets" | "keys" | "onAddKey" | "onRemoveKey" | "onAddCustomProvider" | "onAddProviderModel" | "onRemoveProviderModel" | "onRemoveCustomProvider">) {
   const [addingProvider, setAddingProvider] = useState<string | null>(null);
   const [keyValue, setKeyValue] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -119,8 +117,9 @@ function ProvidersSection({
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
   const [customKey, setCustomKey] = useState("");
-  const [customModels, setCustomModels] = useState("");
-  const [customProtocol, setCustomProtocol] = useState<"openai-chat" | "openai-responses" | "anthropic-messages">("openai-chat");
+  const [customModelId, setCustomModelId] = useState("");
+  const [modelDraftProviderId, setModelDraftProviderId] = useState<string | null>(null);
+  const [modelValue, setModelValue] = useState("");
   const [savingCustom, setSavingCustom] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -136,27 +135,43 @@ function ProvidersSection({
   const submitCustom = async () => {
     const name = customName.trim();
     const url = customUrl.trim();
-    if (!name || !url) return;
+    const apiKey = customKey.trim();
+    const modelId = customModelId.trim();
+    if (!name || !url || !apiKey || !modelId) {
+      setError("Name, Base URL, API key, and Model ID are all required.");
+      return;
+    }
     setSavingCustom(true);
     setError(null);
     try {
       await onAddCustomProvider({
         name,
         baseUrl: url,
-        protocol: customProtocol,
-        modelIds: customModels.split(/[,\n]/).map((m) => m.trim()).filter(Boolean),
-        apiKey: customKey.trim() || undefined,
+        apiKey,
+        modelId,
       });
       setCustomName("");
       setCustomUrl("");
       setCustomKey("");
-      setCustomModels("");
-      setCustomProtocol("openai-chat");
+      setCustomModelId("");
       setCustomOpen(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setSavingCustom(false);
+    }
+  };
+
+  const submitModel = async (providerId: string) => {
+    const model = modelValue.trim();
+    if (!model) return;
+    setError(null);
+    try {
+      await onAddProviderModel(providerId, model);
+      setModelValue("");
+      setModelDraftProviderId(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
 
@@ -178,26 +193,14 @@ function ProvidersSection({
           <div className={styles.inlineTitle}>Custom provider</div>
           <div className={styles.inlineGrid}>
             <input className={styles.input} placeholder="Provider name" value={customName} onChange={(event) => setCustomName(event.target.value)} />
-            <input className={styles.input} placeholder="https://api.example.com/v1" value={customUrl} onChange={(event) => setCustomUrl(event.target.value)} />
-            <select className={styles.input} value={customProtocol} onChange={(event) => setCustomProtocol(event.target.value as typeof customProtocol)} aria-label="Wire protocol">
-              <option value="openai-chat">OpenAI Chat Completions</option>
-              <option value="openai-responses">OpenAI Responses</option>
-              <option value="anthropic-messages">Anthropic Messages</option>
-            </select>
-            <input className={styles.input} type="password" placeholder="API key (optional — can be added later)" value={customKey} onChange={(event) => setCustomKey(event.target.value)} />
+            <input className={styles.input} placeholder="https://api.example.com/v1" value={customUrl} onChange={(event) => setCustomUrl(event.target.value)} aria-label="Provider Base URL" />
+            <input className={styles.input} type="password" placeholder="API key" value={customKey} onChange={(event) => setCustomKey(event.target.value)} aria-label="Provider API key" />
+            <input className={styles.input} placeholder="Model ID (e.g. llama-3.3-70b)" value={customModelId} onChange={(event) => setCustomModelId(event.target.value)} aria-label="Initial model ID" />
           </div>
-          <textarea
-            className={styles.textarea}
-            rows={2}
-            placeholder="Model IDs, comma or newline separated (e.g. my-model, my-model-mini). Used as the fallback list when /models is unreachable."
-            value={customModels}
-            onChange={(event) => setCustomModels(event.target.value)}
-            aria-label="Model IDs"
-          />
           {error && <p className={styles.error}>{error}</p>}
           <div className={styles.inlineActions}>
             <button type="button" className={styles.ghostButton} onClick={() => setCustomOpen(false)}>Cancel</button>
-            <button type="button" className={styles.primaryButton} disabled={savingCustom || !customName.trim() || !customUrl.trim()} onClick={() => void submitCustom()}>
+            <button type="button" className={styles.primaryButton} disabled={savingCustom || !customName.trim() || !customUrl.trim() || !customKey.trim() || !customModelId.trim()} onClick={() => void submitCustom()}>
               {savingCustom ? "Adding…" : "Add provider"}
             </button>
           </div>
@@ -205,8 +208,10 @@ function ProvidersSection({
       )}
       <div className={styles.providerList}>
         {presets.map((provider) => {
-          const providerKeys = keys[provider.id] ?? [];
-          const isAdding = addingProvider === provider.id;
+              const providerKeys = keys[provider.id] ?? [];
+              const providerModels = provider.staticModels ?? [];
+              const isAdding = addingProvider === provider.id;
+              const isAddingModel = modelDraftProviderId === provider.id;
           return (
             <article key={provider.id} className={styles.providerCard}>
               <div className={styles.providerTop}>
@@ -219,6 +224,22 @@ function ProvidersSection({
                 </span>
               </div>
               {provider.notes && <p className={styles.providerNote}>{provider.notes}</p>}
+              <div className={styles.modelRows}>
+                <div className={styles.modelLabel}>Models</div>
+                {providerModels.length > 0 ? providerModels.map((model) => (
+                  <span className={styles.modelChip} key={model}>
+                    {model}
+                    {!provider.builtIn && <button type="button" disabled={providerModels.length <= 1} onClick={() => void onRemoveProviderModel(provider.id, model)} aria-label={`Remove ${model}`} title={providerModels.length <= 1 ? "Keep at least one model ID" : `Remove ${model}`}>×</button>}
+                  </span>
+                )) : <span className={styles.keyStatus}>No model IDs</span>}
+                {!provider.builtIn && isAddingModel && (
+                  <div className={styles.modelAddRow}>
+                    <input autoFocus className={styles.input} value={modelValue} onChange={(event) => setModelValue(event.target.value)} placeholder="Model ID" onKeyDown={(event) => { if (event.key === "Enter") void submitModel(provider.id); }} />
+                    <button type="button" className={styles.primaryButton} disabled={!modelValue.trim()} onClick={() => void submitModel(provider.id)}>Add model</button>
+                    <button type="button" className={styles.ghostButton} onClick={() => setModelDraftProviderId(null)}>Cancel</button>
+                  </div>
+                )}
+              </div>
               <div className={styles.keyRows}>
                 {providerKeys.map((key) => (
                   <div className={styles.keyRow} key={key.id}>
@@ -241,6 +262,11 @@ function ProvidersSection({
               {!isAdding && (
                 <button type="button" className={styles.linkButton} onClick={() => { setAddingProvider(provider.id); setKeyValue(""); }}>
                   <KeyRound size={13} /> Add API key
+                </button>
+              )}
+              {!provider.builtIn && !isAddingModel && (
+                <button type="button" className={styles.linkButton} onClick={() => { setModelDraftProviderId(provider.id); setModelValue(""); setError(null); }}>
+                  <Plug size={13} /> Add model ID
                 </button>
               )}
               {!provider.builtIn && (
@@ -266,7 +292,7 @@ function SettingsSection({
   onPickFolder,
   onPickWorkspaceFolder,
   ...providerProps
-}: { section: Section; settings: AppSettings; rules: string; onRulesChange: (value: string) => void; onRulesBlur: () => void; onSave: (patch: Partial<AppSettings>) => void; onPickFolder: (mode: "cowork" | "code") => void; onPickWorkspaceFolder: () => void } & Pick<SettingsPageProps, "presets" | "keys" | "onAddKey" | "onRemoveKey" | "onAddCustomProvider" | "onRemoveCustomProvider">) {
+}: { section: Section; settings: AppSettings; rules: string; onRulesChange: (value: string) => void; onRulesBlur: () => void; onSave: (patch: Partial<AppSettings>) => void; onPickFolder: (mode: "cowork" | "code") => void; onPickWorkspaceFolder: () => void } & Pick<SettingsPageProps, "presets" | "keys" | "onAddKey" | "onRemoveKey" | "onAddCustomProvider" | "onAddProviderModel" | "onRemoveProviderModel" | "onRemoveCustomProvider">) {
   const general = settings.general;
   const patchGeneral = (patch: Partial<AppSettings["general"]>) => onSave({ general: { ...general, ...patch } });
 
@@ -363,7 +389,7 @@ export function SettingsPage(props: SettingsPageProps) {
       <main className={styles.main}>
         <div className={styles.topBar}><span className={styles.breadcrumb}>Settings <span>/</span> {NAV.find((item) => item.id === section)?.label}</span><button type="button" className={styles.iconButton} onClick={props.onBack} aria-label="Close settings"><X size={17} /></button></div>
         <div className={styles.content}>
-          <SettingsSection section={section} settings={props.settings} rules={props.rules} onRulesChange={props.onRulesChange} onRulesBlur={props.onRulesBlur} onSave={props.onSave} onPickFolder={props.onPickFolder} onPickWorkspaceFolder={props.onPickWorkspaceFolder} presets={props.presets} keys={props.keys} onAddKey={props.onAddKey} onRemoveKey={props.onRemoveKey} onAddCustomProvider={props.onAddCustomProvider} onRemoveCustomProvider={props.onRemoveCustomProvider} />
+          <SettingsSection section={section} settings={props.settings} rules={props.rules} onRulesChange={props.onRulesChange} onRulesBlur={props.onRulesBlur} onSave={props.onSave} onPickFolder={props.onPickFolder} onPickWorkspaceFolder={props.onPickWorkspaceFolder} presets={props.presets} keys={props.keys} onAddKey={props.onAddKey} onRemoveKey={props.onRemoveKey} onAddCustomProvider={props.onAddCustomProvider} onAddProviderModel={props.onAddProviderModel} onRemoveProviderModel={props.onRemoveProviderModel} onRemoveCustomProvider={props.onRemoveCustomProvider} />
         </div>
       </main>
     </div>

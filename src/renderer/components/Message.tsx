@@ -119,8 +119,8 @@ interface Props {
   onCopyMessage?: (text: string) => void;
   /** Replace a user turn by branching before it and pre-filling the composer. */
   onEditMessage?: (messageId: string, text: string) => void;
-  /** Retry a user turn through the existing send path. */
-  onRetryMessage?: (text: string) => void;
+  /** Retry a user turn by replacing that exact message and its tail. */
+  onRetryMessage?: (messageId: string, text: string) => void;
 }
 
 function isToolResultOnly(content: ContentBlock[]): boolean {
@@ -230,7 +230,7 @@ export function Message({
                 </button>
               )}
               {onRetryMessage && (
-                <button type="button" className={styles.messageAction} onClick={() => onRetryMessage(userText)} aria-label="Retry message" title="Retry message">
+                <button type="button" className={styles.messageAction} onClick={() =>                   onRetryMessage(message.id, userText)} aria-label="Retry message" title="Retry message">
                   <RotateCcw size={13} aria-hidden="true" />
                 </button>
               )}

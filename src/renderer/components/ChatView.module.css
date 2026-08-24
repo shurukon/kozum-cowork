@@ -33,7 +33,12 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
+  box-sizing: border-box;
   width: min(100%, 720px);
+  max-width: 100%;
+  min-width: 0;
+  max-height: min(30vh, 240px);
+  overflow: auto;
   padding: 12px 14px;
   border-inline-start: 3px solid var(--error);
   border-radius: 8px;
@@ -44,8 +49,17 @@
 }
 
 .inlineError strong {
+  max-width: 100%;
   color: var(--error);
   font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
+}
+
+.inlineError span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 /* Sticky "Action required" safety-net strip (pending prompts without a

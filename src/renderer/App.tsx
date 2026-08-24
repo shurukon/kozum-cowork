@@ -17,6 +17,7 @@ import { ChevronDown, FolderOpen, X } from "lucide-react";
 import type {
   ApiKeyEntry,
   AppSettings,
+  CustomProviderInput,
   McpServerConfig,
   Mode,
   ModelInfo,
@@ -549,6 +550,7 @@ export function App() {
   async function handleSubmit(text: string) {
     setBanner(null);
     setComposerDraft((prev) => ({ ...prev, [mode]: null }));
+    const restoreDraft = () => setComposerDraft((prev) => ({ ...prev, [mode]: text }));
     if (inFlightSend.current[mode]) return;
 
     // Resolve a usable selection synchronously for this send. React state is
@@ -567,6 +569,7 @@ export function App() {
       if (!effectiveSelection?.providerId || !effectiveSelection.modelId || !effectiveSelection.keyId || !hasAnyKeys) {
         setSkippedSetup(false);
         setBanner("Connect a provider and pick a model first.");
+        restoreDraft();
         return;
       }
     }
@@ -576,6 +579,7 @@ export function App() {
     const sid = await ensureSession(effectiveSelection);
     if (!sid) {
       inFlightSend.current[mode] = null;
+      restoreDraft();
       return;
     }
 
@@ -607,8 +611,9 @@ export function App() {
     } else {
       inFlightSend.current[mode] = null;
       // Keep send failures in the transcript flow; no popup interrupts the
-      // conversation. The user can submit the same text again from the
-      // composer after inspecting the inline error.
+      // conversation. Restore the draft so a transient network failure does
+      // not force the user to type the request again.
+      setComposerDraft((prev) => ({ ...prev, [mode]: text }));
       setBanner(res.error);
     }
   }
@@ -627,19 +632,20 @@ export function App() {
     }
   }
 
-  async function handleEditMessage(messageId: string, text: string) {
-    if (!activeSessionId || inFlightSend.current[mode]) return;
+  async function branchBeforeMessage(messageId: string): Promise<boolean> {
+    const sourceSessionId = activeSessionIdRef.current;
+    if (!sourceSessionId || inFlightSend.current[mode]) return false;
     const messages = useSessionStore.getState()[mode].messages;
     const index = messages.findIndex((item) => item.id === messageId);
     if (index < 0) {
-      setBanner("This message is no longer available for editing.");
-      return;
+      setBanner("This message is no longer available.");
+      return false;
     }
     const previousMessageId = index > 0 ? messages[index - 1].id : null;
-    const res = await bridge().sessions.branch(activeSessionId, previousMessageId);
+    const res = await bridge().sessions.branch(sourceSessionId, previousMessageId);
     if (!res.ok) {
       setBanner(res.error);
-      return;
+      return false;
     }
     const nextSession = res.value;
     await reloadSessions(mode);
@@ -648,12 +654,20 @@ export function App() {
     setActiveSessionId(nextSession.id);
     lastSession.current[mode] = nextSession.id;
     clearMode(mode);
-    setComposerDraft((prev) => ({ ...prev, [mode]: text }));
     setNav("new");
+    return true;
   }
 
-  async function handleRetryMessage(text: string) {
-    if (inFlightSend.current[mode]) return;
+  async function handleEditMessage(messageId: string, text: string) {
+    if (!(await branchBeforeMessage(messageId))) return;
+    setComposerDraft((prev) => ({ ...prev, [mode]: text }));
+  }
+
+  async function handleRetryMessage(messageId: string, text: string) {
+    if (!(await branchBeforeMessage(messageId))) return;
+    // The branch contains only the prefix before the retried turn, so the
+    // retry is sent as a genuinely new turn and cannot duplicate the old user
+    // message or replay its assistant/tool tail.
     await handleSubmit(text);
   }
 
@@ -782,13 +796,7 @@ export function App() {
    * fallback list). The addKey→refreshModels chain keeps populating the model
    * dropdown immediately after the provider exists.
    */
-  async function handleAddCustomProvider(input: {
-    name: string;
-    baseUrl: string;
-    protocol?: "openai-chat" | "openai-responses" | "anthropic-messages";
-    modelIds?: string[];
-    apiKey?: string;
-  }): Promise<void> {
+  async function handleAddCustomProvider(input: CustomProviderInput): Promise<void> {
     const res = await bridge().providers.addCustom(input);
     if (!res.ok) throw new Error(res.error);
     await reloadPresets();
@@ -814,6 +822,26 @@ export function App() {
     }
     await reloadPresets();
     pushToast("success", "Provider removed.");
+  }
+
+  async function handleAddProviderModel(providerId: string, modelId: string) {
+    const res = await bridge().providers.addModel(providerId, modelId);
+    if (!res.ok) {
+      setBanner(res.error);
+      return;
+    }
+    await reloadPresets();
+    pushToast("success", `Model "${modelId}" added.`);
+  }
+
+  async function handleRemoveProviderModel(providerId: string, modelId: string) {
+    const res = await bridge().providers.removeModel(providerId, modelId);
+    if (!res.ok) {
+      setBanner(res.error);
+      return;
+    }
+    await reloadPresets();
+    pushToast("success", `Model "${modelId}" removed.`);
   }
 
   async function chooseModel(providerId: string, modelId: string) {
@@ -1375,7 +1403,7 @@ export function App() {
                       onResolveQuestion={(requestId) => handleResolveQuestion(requestId)}
                       onCopyMessage={(text) => void handleCopyMessage(text)}
                       onEditMessage={(messageId, text) => void handleEditMessage(messageId, text)}
-                      onRetryMessage={(text) => void handleRetryMessage(text)}
+                       onRetryMessage={(messageId, text) => void handleRetryMessage(messageId, text)}
                       composerDraft={composerDraft[mode]}
                     />
                   )}
@@ -1532,6 +1560,8 @@ export function App() {
             onAddKey={(pid, rawKey, meta) => void handleAddKey(pid, rawKey, meta)}
             onRemoveKey={(keyId) => void handleRemoveKey(keyId)}
             onAddCustomProvider={(input) => handleAddCustomProvider(input)}
+            onAddProviderModel={(providerId, modelId) => handleAddProviderModel(providerId, modelId)}
+            onRemoveProviderModel={(providerId, modelId) => handleRemoveProviderModel(providerId, modelId)}
             onRemoveCustomProvider={(id) => void handleRemoveCustomProvider(id)}
             onPickFolder={(m) => void handlePickFolder(m)}
             onPickWorkspaceFolder={() => void pickDefaultWorkspace()}

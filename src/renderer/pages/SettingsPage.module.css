@@ -240,3 +240,66 @@
 .avatar { color: var(--accent-bright); background: var(--accent-soft); }
 .emptyState strong { color: var(--text-primary); }
 .statusGood { color: var(--success); background: var(--success-soft); }
+
+.modelRows {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+  margin-top: 15px;
+}
+.modelLabel {
+  flex: 0 0 100%;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.modelChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 25px;
+  padding: 4px 7px 4px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--bg-sunken);
+  font: 10px/1.2 "JetBrains Mono", monospace;
+  overflow-wrap: anywhere;
+}
+.modelChip button {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+.modelChip button:hover { color: var(--error); background: var(--bg-hover); }
+.modelAddRow {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.modelAddRow .input { flex: 1 1 220px; min-width: 0; }
+@media (max-width: 620px) {
+  .modelAddRow { align-items: stretch; flex-direction: column; }
+  .modelAddRow .input, .modelAddRow .primaryButton, .modelAddRow .ghostButton { width: 100%; }
+}
+
+.modelChip button:disabled {
+  cursor: not-allowed;
+  opacity: .35;
+}

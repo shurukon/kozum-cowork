@@ -14,7 +14,7 @@ import electron from "electron";
 import type { IpcMain, BrowserWindow, App } from "electron";
 
 const { shell } = electron;
-import type { AgentEvent, McpServerConfig, Mode, ModelSelection, PermissionMode, ProviderPreset, ScheduledTask } from "../../shared/types.ts";
+import type { AgentEvent, CustomProviderInput, McpServerConfig, Mode, ModelSelection, PermissionMode, ProviderPreset, ScheduledTask } from "../../shared/types.ts";
 import { ok, err } from "../../shared/types.ts";
 import { resolvePath, PathError } from "../tools/paths.ts";
 import { PROVIDER_PRESETS } from "../providers/presets.ts";
@@ -192,81 +192,115 @@ export function registerIpc(deps: IpcDeps): void {
   });
 
   handle(ipcMain, "providers:addCustom", async (_e, input) => {
-    const payload = input as {
-      name?: unknown;
-      baseUrl?: unknown;
-      protocol?: unknown;
-      modelIds?: unknown;
-      apiKey?: unknown;
-    };
+    const payload = input as Partial<CustomProviderInput> & { protocol?: CustomProviderInput["protocol"] };
     const name = String(payload.name ?? "").trim();
     const baseUrl = String(payload.baseUrl ?? "").trim();
-    if (!name) return err("name is required");
-    if (!baseUrl) return err("baseUrl is required");
+    const apiKey = String(payload.apiKey ?? "").trim();
+    const modelId = String(payload.modelId ?? "").trim();
+    if (!name) return err("Provider name is required.");
+    if (!baseUrl) return err("Base URL is required.");
+    if (!/^https?:\/\//i.test(baseUrl)) return err("Base URL must start with http:// or https://.");
+    if (!apiKey) return err("API key is required when creating a provider.");
+    if (!modelId) return err("Model ID is required when creating a provider.");
 
     const protocols = ["openai-chat", "openai-responses", "anthropic-messages"] as const;
-    type CustomProtocol = (typeof protocols)[number];
-    const requested = String(payload.protocol ?? "openai-chat") as CustomProtocol;
-    const protocol: CustomProtocol = protocols.includes(requested) ? requested : "openai-chat";
-
-    // Model IDs entered by the user become the preset's shipped fallback list;
-    // /models is still attempted live when reachable.
-    const modelIds = Array.isArray(payload.modelIds)
-      ? payload.modelIds.map((m) => String(m).trim()).filter(Boolean)
-      : String(payload.modelIds ?? "")
-          .split(/[,\n]/)
-          .map((m) => m.trim())
-          .filter(Boolean);
-
+    const requested = String(payload.protocol ?? "openai-chat") as typeof protocols[number];
+    const protocol = protocols.includes(requested) ? requested : "openai-chat";
     const id = `custom_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
     const preset: ProviderPreset = {
       id,
       name,
       protocol,
-      baseUrl,
+      baseUrl: baseUrl.replace(/\/+$/, ""),
       authScheme: protocol === "anthropic-messages" ? "x-api-key" : "bearer",
       modelsPath: "/models",
-      ...(modelIds.length > 0 ? { staticModels: modelIds } : {}),
+      staticModels: [modelId],
       builtIn: false,
     };
 
     const settings = await deps.settings.get();
     const existing = Array.isArray(settings.customProviders) ? settings.customProviders : [];
     await deps.settings.patch({ customProviders: [...existing, preset] });
-
-    // Optional inline API key: register it so the add→refresh→dropdown chain
-    // works without a separate trip to the key form.
-    const apiKey = String(payload.apiKey ?? "").trim();
-    if (apiKey) {
-      try {
-        await deps.secrets.add(id, "Key 1", apiKey);
-      } catch (e) {
-        return err(
-          `Provider saved but the API key could not be stored: ${
-            e instanceof Error ? e.message : String(e)
-          }`,
-        );
-      }
+    try {
+      await deps.secrets.add(id, "Key 1", apiKey);
+    } catch (cause) {
+      // Roll back the provider definition so a failed secret write cannot leave
+      // an unusable provider in the picker.
+      await deps.settings.patch({ customProviders: existing }).catch(() => undefined);
+      return err(`Provider was not created because its API key could not be stored: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
-
     return ok(preset);
   });
 
   handle(ipcMain, "providers:removeCustom", async (_e, id) => {
+    const providerId = String(id);
     const settings = await deps.settings.get();
     const existing = Array.isArray(settings.customProviders) ? settings.customProviders : [];
-    const next = existing.filter((p) => p.id !== String(id));
-    if (next.length === existing.length) return err(`Custom provider "${String(id)}" not found`);
-    await deps.settings.patch({ customProviders: next });
+    const next = existing.filter((p) => p.id !== providerId);
+    if (next.length === existing.length) return err(`Custom provider "${providerId}" not found`);
+
+    const resetSelection = (mode: "cowork" | "code") =>
+      settings[mode].selection.providerId === providerId
+        ? { ...settings[mode], selection: { providerId: "", keyId: null, modelId: "" } }
+        : settings[mode];
+    await deps.settings.patch({
+      customProviders: next,
+      cowork: resetSelection("cowork"),
+      code: resetSelection("code"),
+    });
+    for (const key of await deps.secrets.list(providerId)) {
+      await deps.secrets.remove(key.id).catch(() => undefined);
+    }
     return ok(undefined);
   });
 
   handle(ipcMain, "providers:updateCustom", async (_e, id, patch) => {
+    const providerId = String(id);
     const settings = await deps.settings.get();
     const existing = Array.isArray(settings.customProviders) ? settings.customProviders : [];
-    const idx = existing.findIndex((p) => p.id === String(id));
-    if (idx === -1) return err(`Custom provider "${String(id)}" not found`);
-    const updated = { ...existing[idx]!, ...(patch as Partial<ProviderPreset>) };
+    const idx = existing.findIndex((p) => p.id === providerId);
+    if (idx === -1) return err(`Custom provider "${providerId}" not found`);
+    const requested = patch as Partial<ProviderPreset>;
+    if (requested.name !== undefined || requested.baseUrl !== undefined) {
+      return err("A custom provider's name and Base URL are fixed after creation.");
+    }
+    const updated = { ...existing[idx]!, ...requested, id: providerId, builtIn: false };
+    const next = [...existing];
+    next[idx] = updated;
+    await deps.settings.patch({ customProviders: next });
+    return ok(updated);
+  });
+
+  handle(ipcMain, "providers:addModel", async (_e, providerId, modelId) => {
+    const id = String(providerId);
+    const model = String(modelId ?? "").trim();
+    if (!model) return err("Model ID is required.");
+    const settings = await deps.settings.get();
+    const existing = Array.isArray(settings.customProviders) ? settings.customProviders : [];
+    const idx = existing.findIndex((p) => p.id === id);
+    if (idx === -1) return err(`Custom provider "${id}" not found`);
+    const provider = existing[idx]!;
+    const models = provider.staticModels ?? [];
+    if (models.includes(model)) return err(`Model "${model}" is already registered for this provider.`);
+    const updated = { ...provider, staticModels: [...models, model] };
+    const next = [...existing];
+    next[idx] = updated;
+    await deps.settings.patch({ customProviders: next });
+    return ok(updated);
+  });
+
+  handle(ipcMain, "providers:removeModel", async (_e, providerId, modelId) => {
+    const id = String(providerId);
+    const model = String(modelId ?? "").trim();
+    const settings = await deps.settings.get();
+    const existing = Array.isArray(settings.customProviders) ? settings.customProviders : [];
+    const idx = existing.findIndex((p) => p.id === id);
+    if (idx === -1) return err(`Custom provider "${id}" not found`);
+    const provider = existing[idx]!;
+    const models = provider.staticModels ?? [];
+    if (!models.includes(model)) return err(`Model "${model}" is not registered for this provider.`);
+    if (models.length <= 1) return err("A custom provider must keep at least one model ID.");
+    const updated = { ...provider, staticModels: models.filter((entry) => entry !== model) };
     const next = [...existing];
     next[idx] = updated;
     await deps.settings.patch({ customProviders: next });

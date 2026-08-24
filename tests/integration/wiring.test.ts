@@ -166,6 +166,29 @@ describe("SettingsStore", () => {
     const settings = await store2.get();
     assert.equal(settings.general.userName, "Bob");
   });
+
+  it("migrates legacy custom provider modelIds into staticModels", async () => {
+    const dir = tmpDir("settings-provider-migration");
+    const path = join(dir, "settings.json");
+    await writeJson(path, {
+      customProviders: [{
+        id: "custom_legacy",
+        name: "Legacy Gateway",
+        protocol: "openai-chat",
+        baseUrl: "https://example.invalid/v1",
+        authScheme: "bearer",
+        modelsPath: "/models",
+        modelIds: [" legacy-model ", "", "legacy-model-2"],
+        builtIn: true,
+      }],
+    });
+
+    const settings = await new SettingsStore(path).get();
+    const provider = settings.customProviders[0] as unknown as Record<string, unknown>;
+    assert.deepEqual(provider.staticModels, ["legacy-model", "legacy-model-2"]);
+    assert.equal(provider.modelIds, undefined);
+    assert.equal(provider.builtIn, false);
+  });
 });
 
 /* ================================================================ SecretStore === */
@@ -415,9 +438,19 @@ describe("SessionManager", () => {
 
   let server: http.Server;
   let base = "";
+  let failNextStream = false;
+  let requestCount = 0;
 
   before(async () => {
     server = http.createServer((_req, res) => {
+      requestCount += 1;
+      if (failNextStream) {
+        failNextStream = false;
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        res.write(sse({ choices: [{ delta: { content: "partial" } }] }));
+        setTimeout(() => res.destroy(), 10);
+        return;
+      }
       res.writeHead(200, { "Content-Type": "text/event-stream" });
       res.end(sayText("Hello from agent"));
     });
@@ -519,6 +552,61 @@ describe("SessionManager", () => {
     // Persisted messages
     const messages = await sessions.messages(session.id);
     assert.ok(messages.length > 0, "should have persisted messages");
+  });
+
+  it("surfaces a mid-stream network break and accepts a later send", async () => {
+    const dir = tmpDir("sm-network-break");
+    const events: AgentEvent[] = [];
+    const { manager, sessions, secrets } = makeManager(dir, (_sid, e) => events.push(e));
+    const entry = await secrets.add("openai", "test", "sk-test");
+    const settingsStore = new SettingsStore(join(dir, "settings.json"));
+    const defaults = freshSettings();
+    await settingsStore.patch({
+      cowork: {
+        ...defaults.cowork,
+        selection: { providerId: "openai", keyId: entry.id, modelId: "gpt-4o" },
+      },
+    });
+    const session = await sessions.create("cowork", {
+      providerId: "openai",
+      keyId: entry.id,
+      modelId: "gpt-4o",
+    });
+
+    const beforeRequests = requestCount;
+    failNextStream = true;
+    const first = await manager.send(session.id, "Network may break");
+    assert.ok(first.ok, "queueing the first send should succeed");
+
+    await new Promise<void>((resolve, reject) => {
+      const deadline = setTimeout(() => reject(new Error("timed out waiting for network error")), 5000);
+      const check = setInterval(() => {
+        if (events.some((e) => e.type === "session_status" && e.status === "error")) {
+          clearInterval(check);
+          clearTimeout(deadline);
+          resolve();
+        }
+      }, 25);
+    });
+
+    assert.equal(requestCount, beforeRequests + 1, "a partial stream must not replay the POST automatically");
+    assert.ok(events.some((e) => e.type === "error"), "the transport failure must reach the session event stream");
+    assert.equal((await sessions.get(session.id))?.status, "error");
+
+    const second = await manager.send(session.id, "Please try again");
+    assert.ok(second.ok, "a later explicit send should be accepted after failure");
+    await new Promise<void>((resolve, reject) => {
+      const deadline = setTimeout(() => reject(new Error("timed out waiting for recovery")), 5000);
+      const check = setInterval(async () => {
+        const current = await sessions.get(session.id);
+        if (current?.status === "idle") {
+          clearInterval(check);
+          clearTimeout(deadline);
+          resolve();
+        }
+      }, 25);
+    });
+    assert.equal((await sessions.get(session.id))?.status, "idle");
   });
 
   it("cancel aborts the running loop", async () => {

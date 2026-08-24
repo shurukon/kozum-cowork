@@ -283,7 +283,7 @@ export class SessionManager {
       const adapter = this.registry.adapterForModel(preset, modelId);
 
       // Build provider context
-      const ctx = await this.registry.contextFor(providerId, resolvedKeyId);
+      const ctx = await this.registry.contextFor(providerId, resolvedKeyId, modelId);
 
       // Build history
       const history = await this.sessions.messages(sessionId);
@@ -529,7 +529,12 @@ export class SessionManager {
 
       if (this.retiredSessions.has(sessionId)) return;
       currentRunId = result.runId;
-      const finalStatus = result.stopReason === "cancelled" ? "cancelled" : "idle";
+      const finalStatus =
+        result.stopReason === "cancelled"
+          ? "cancelled"
+          : result.stopReason === "error"
+            ? "error"
+            : "idle";
       await this.sessions.updateStatus(sessionId, finalStatus);
       this.emitEvent(sessionId, {
         type: "session_status",

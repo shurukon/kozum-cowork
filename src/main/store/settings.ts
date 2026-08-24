@@ -6,7 +6,7 @@
  * without touching general.language.
  */
 
-import type { AppSettings } from "../../shared/types.ts";
+import type { AppSettings, ProviderPreset } from "../../shared/types.ts";
 import { freshSettings } from "../../shared/defaults.ts";
 import { readJson, writeJson } from "./json.ts";
 
@@ -24,8 +24,10 @@ export class SettingsStore {
     if (this.loaded) return;
     this.loaded = true;
     const saved = await readJson<Partial<AppSettings>>(this.filePath, {});
-    // Merge saved values over factory defaults.
-    this.data = deepMerge(freshSettings(), saved);
+    // Merge saved values over factory defaults, then normalize the custom
+    // provider records written by older builds. Secrets intentionally remain in
+    // SecretStore; settings migration never reads or copies raw API keys.
+    this.data = normalizeSettings(deepMerge(freshSettings(), saved));
   }
 
   async get(): Promise<AppSettings> {
@@ -57,6 +59,27 @@ export class SettingsStore {
  * signature, so AppSettings is not assignable to Record<string, unknown> under
  * strict mode, and casting at every call site is noisier than casting once here.
  */
+function normalizeSettings(settings: AppSettings): AppSettings {
+  const customProviders = Array.isArray(settings.customProviders)
+    ? settings.customProviders.map((provider) => {
+        const legacy = provider as ProviderPreset & { modelIds?: unknown };
+        const models = Array.isArray(provider.staticModels)
+          ? provider.staticModels.map(String).map((model) => model.trim()).filter(Boolean)
+          : Array.isArray(legacy.modelIds)
+            ? legacy.modelIds.map(String).map((model) => model.trim()).filter(Boolean)
+            : [];
+        const normalized: ProviderPreset = {
+          ...provider,
+          staticModels: models,
+          builtIn: false,
+        };
+        delete (normalized as ProviderPreset & { modelIds?: unknown }).modelIds;
+        return normalized;
+      })
+    : [];
+  return { ...settings, customProviders };
+}
+
 function deepMerge<T extends object>(target: T, src: Partial<T>): T {
   const result: Record<string, unknown> = { ...(target as Record<string, unknown>) };
   const srcRec = src as Record<string, unknown>;

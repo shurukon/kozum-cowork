@@ -16,6 +16,7 @@ import type {
   AppSettings,
   PermissionMode,
   ProviderPreset,
+  CustomProviderInput,
   ApiKeyEntry,
   ModelInfo,
   ModelSelection,
@@ -84,15 +85,12 @@ const api = {
       ipcRenderer.invoke("providers:refreshModels", providerId),
     listModels: (providerId: string): Promise<ModelInfo[]> =>
       ipcRenderer.invoke("providers:listModels", providerId),
-    addCustom: (input: {
-      name: string;
-      baseUrl: string;
-      protocol?: "openai-chat" | "openai-responses" | "anthropic-messages";
-      modelIds?: string[];
-      /** Raw key registered for the new provider in the same call. */
-      apiKey?: string;
-    }): Promise<Result<ProviderPreset>> =>
+    addCustom: (input: CustomProviderInput): Promise<Result<ProviderPreset>> =>
       ipcRenderer.invoke("providers:addCustom", input),
+    addModel: (providerId: string, modelId: string): Promise<Result<ProviderPreset>> =>
+      ipcRenderer.invoke("providers:addModel", providerId, modelId),
+    removeModel: (providerId: string, modelId: string): Promise<Result<ProviderPreset>> =>
+      ipcRenderer.invoke("providers:removeModel", providerId, modelId),
     removeCustom: (id: string): Promise<Result<void>> =>
       ipcRenderer.invoke("providers:removeCustom", id),
     updateCustom: (id: string, patch: Partial<ProviderPreset>): Promise<Result<ProviderPreset>> =>

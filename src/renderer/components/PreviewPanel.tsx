@@ -959,7 +959,7 @@ export function PreviewPanel({ target, onClose, onRefresh }: PreviewPanelProps) 
       className={`${styles.panel} ${resizing ? styles.resizing : ""} kz-glass kz-anim-fade`}
       aria-label="Preview"
       key={target.kind}
-      style={{ width: `${panelWidth}px`, flex: `0 0 ${panelWidth}px` }}
+      style={{ width: `min(${panelWidth}px, 100%)`, maxWidth: "100%", flex: `0 1 ${panelWidth}px`, minWidth: 0 }}
     >
       <button
         className={styles.resizeHandle}

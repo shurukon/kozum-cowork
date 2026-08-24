@@ -15,6 +15,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { OpenAiChatAdapter } from "../../src/main/providers/adapters/openai-chat.ts";
+import { parseSSE } from "../../src/main/providers/adapter.ts";
 import type { ProviderContext, StreamDelta } from "../../src/main/providers/adapter.ts";
 import type { Message } from "../../src/shared/types.ts";
 
@@ -206,6 +207,23 @@ describe("streaming text", () => {
     assert.equal(
       deltas.filter((d) => d.type === "text").map((d) => (d as any).text).join(""),
       "crlf",
+    );
+  });
+});
+
+describe("stream reliability", () => {
+  it("fails a stalled response with an idle timeout instead of hanging", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      pull: () => new Promise<void>(() => undefined),
+    });
+    const controller = new AbortController();
+    await assert.rejects(
+      async () => {
+        for await (const _payload of parseSSE(body, controller.signal, 20)) {
+          // The test stream never emits a frame.
+        }
+      },
+      /idle timeout/i,
     );
   });
 });

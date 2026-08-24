@@ -59,19 +59,26 @@
 .userBubble {
   width: 100%;
   max-width: 100%;
-  background: var(--accent-primary);
-  border: 1px solid color-mix(in srgb, var(--accent-primary) 76%, white);
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--accent-primary) 12%);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 78%, var(--accent-primary) 22%);
   border-radius: 18px 18px 5px 18px;
   padding: 12px 16px;
-  box-shadow: 0 5px 18px color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--accent-primary) 10%, transparent);
   /* kz-send-ack applied via JS on first mount (from glass.css) */
 }
 
 .userText {
+  max-width: 100%;
+  margin: 0;
+  font-family: var(--font-sans);
   font-size: var(--fs-base);
+  font-style: italic;
+  font-weight: 500;
   line-height: var(--lh-relaxed);
-  color: #fff;
+  color: var(--text-primary);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 

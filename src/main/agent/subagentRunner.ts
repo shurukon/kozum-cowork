@@ -75,7 +75,7 @@ export function makeRealRunner(deps: SubagentRunnerDeps): AgentRunner {
 
     // Split-protocol gateways route per model id, same as the main loop.
     const adapter = deps.registry.adapterForModel(preset, modelId);
-    const ctx = await deps.registry.contextFor(providerId, resolvedKeyId);
+    const ctx = await deps.registry.contextFor(providerId, resolvedKeyId, modelId);
 
     const history: Message[] = [
       {

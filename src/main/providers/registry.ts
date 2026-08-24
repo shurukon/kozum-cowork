@@ -22,6 +22,16 @@ const _openAiResponsesAdapter = new OpenAiResponsesAdapter();
 const _geminiAdapter = new GeminiAdapter();
 const _vertexGeminiAdapter = new VertexGeminiAdapter();
 
+function modelMatchesPrefix(modelId: string, prefix: string): boolean {
+  const normalizedId = modelId.trim().toLowerCase();
+  const normalizedPrefix = prefix.trim().toLowerCase();
+  if (normalizedId === normalizedPrefix || normalizedId.startsWith(normalizedPrefix)) return true;
+  const unqualifiedId = normalizedId.includes("/")
+    ? normalizedId.slice(normalizedId.lastIndexOf("/") + 1)
+    : normalizedId;
+  return unqualifiedId === normalizedPrefix || unqualifiedId.startsWith(normalizedPrefix);
+}
+
 export class ProviderRegistry {
   private readonly secrets: SecretStore;
   private readonly appPaths: AppPaths;
@@ -74,17 +84,21 @@ export class ProviderRegistry {
    * adapters append their own path segments (/chat/completions, /responses,
    * /messages).
    */
-  adapterForModel(preset: ProviderPreset, modelId: string): ProviderAdapter {
+  protocolForModel(preset: ProviderPreset, modelId: string): ProviderPreset["protocol"] {
     const routes = preset.protocolRoutes;
     if (routes) {
-      for (const [protocol, prefixes] of Object.entries(routes) as Array<[string, string[] | undefined]>) {
+      for (const [protocol, prefixes] of Object.entries(routes) as Array<[ProviderPreset["protocol"], string[] | undefined]>) {
         if (!prefixes) continue;
-        if (prefixes.some((p) => modelId === p || modelId.startsWith(p))) {
-          return this.adapterFor(protocol);
+        if (prefixes.some((prefix) => modelMatchesPrefix(modelId, prefix))) {
+          return protocol;
         }
       }
     }
-    return this.adapterFor(preset.protocol);
+    return preset.protocol;
+  }
+
+  adapterForModel(preset: ProviderPreset, modelId: string): ProviderAdapter {
+    return this.adapterFor(this.protocolForModel(preset, modelId));
   }
 
   /** Resolve a valid keyId for a provider, falling back to the first available key. */
@@ -98,7 +112,7 @@ export class ProviderRegistry {
   }
 
   /** Build a ProviderContext for a specific key. */
-  async contextFor(providerId: string, keyId: string): Promise<ProviderContext> {
+  async contextFor(providerId: string, keyId: string, modelId?: string): Promise<ProviderContext> {
     const preset = await this.presetFor(providerId);
     if (!preset) throw new Error(`Unknown provider: "${providerId}"`);
 
@@ -108,7 +122,8 @@ export class ProviderRegistry {
     const rawKey = await this.secrets.reveal(keyId);
     if (rawKey === null) throw new Error(`Could not decrypt key "${keyId}"`);
 
-    const baseUrl = resolveBaseUrl(preset, entry.meta);
+    const protocol = modelId ? this.protocolForModel(preset, modelId) : preset.protocol;
+    const baseUrl = resolveBaseUrl(preset, entry.meta, protocol);
     const extraHeaders: Record<string, string> = { ...(preset.defaultHeaders ?? {}) };
 
     return {

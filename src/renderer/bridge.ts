@@ -15,6 +15,7 @@ import type {
   AppSettings,
   PermissionMode,
   ProviderPreset,
+  CustomProviderInput,
   ApiKeyEntry,
   ModelInfo,
   ModelSelection,
@@ -87,14 +88,11 @@ export interface KozumBridge {
     ) => Promise<Result<{ models: ModelInfo[]; warning: string | null }>>;
     /** All cached ModelInfo records for a provider (falls back to static list). */
     listModels: (providerId: string) => Promise<ModelInfo[]>;
-    /** Register a new custom provider, optionally with inline key + model IDs. */
-    addCustom: (input: {
-      name: string;
-      baseUrl: string;
-      protocol?: "openai-chat" | "openai-responses" | "anthropic-messages";
-      modelIds?: string[];
-      apiKey?: string;
-    }) => Promise<Result<ProviderPreset>>;
+    /** Register a complete custom provider with its first key and model. */
+    addCustom: (input: CustomProviderInput) => Promise<Result<ProviderPreset>>;
+    /** Add or remove a model ID on a custom provider. */
+    addModel: (providerId: string, modelId: string) => Promise<Result<ProviderPreset>>;
+    removeModel: (providerId: string, modelId: string) => Promise<Result<ProviderPreset>>;
     /** Remove a previously registered custom provider. */
     removeCustom: (id: string) => Promise<Result<void>>;
     /** Patch fields on a custom provider. */

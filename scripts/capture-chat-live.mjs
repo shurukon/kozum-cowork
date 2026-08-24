@@ -119,14 +119,12 @@ async function selectProviderAndModel() {
   await addProviderButton.click();
   await page.getByPlaceholder("Provider name").fill("Manus Live Test");
   await page.getByPlaceholder("https://api.example.com/v1").fill(apiBase);
+  await page.getByRole("textbox", { name: "Provider API key" }).fill(apiKey);
+  await page.getByRole("textbox", { name: "Initial model ID" }).fill("gpt-5-mini");
   await page.getByRole("button", { name: /^Add provider$/i }).last().click();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(700);
 
   const providerCard = page.locator("article").filter({ hasText: "Manus Live Test" }).last();
-  await providerCard.getByRole("button", { name: /add api key/i }).click();
-  await providerCard.getByPlaceholder("Paste API key").fill(apiKey);
-  await providerCard.getByRole("button", { name: /^Save key$/i }).click();
-  await page.waitForTimeout(700);
 
   await page.getByRole("button", { name: "Close settings" }).click();
   await page.waitForTimeout(500);
@@ -376,6 +374,14 @@ const browserUiDiagnostics = await page.evaluate(async () => {
     state: state ?? null,
   };
 }).catch((error) => ({ error: String(error) }));
+const narrowPath = join(OUT, "chat-live-narrow-preview.png");
+await app.evaluate(({ BrowserWindow }) => {
+  const window = BrowserWindow.getAllWindows()[0];
+  window?.setSize(900, 700);
+});
+await page.waitForTimeout(700);
+await page.screenshot({ path: narrowPath, fullPage: false });
+console.log(`captured=narrow-preview path=${narrowPath}`);
 await app.close();
 liveServer.close();
 

@@ -16,6 +16,8 @@ function settingsProps(overrides: Record<string, unknown> = {}) {
     onAddKey: vi.fn(),
     onRemoveKey: vi.fn(),
     onAddCustomProvider: vi.fn(async () => undefined),
+    onAddProviderModel: vi.fn(async () => undefined),
+    onRemoveProviderModel: vi.fn(async () => undefined),
     onRemoveCustomProvider: vi.fn(),
     onPickFolder: vi.fn(),
     onBack: vi.fn(),
@@ -50,6 +52,24 @@ describe("independent settings surfaces", () => {
     expect(screen.getByText("OpenAI")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Privacy/i }));
     expect(screen.getByRole("heading", { name: /Privacy/i })).toBeInTheDocument();
+  });
+
+  it("creates a custom provider from name, Base URL, key, and model ID", async () => {
+    const onAddCustomProvider = vi.fn(async () => undefined);
+    render(<SettingsPage {...settingsProps({ onAddCustomProvider })} />);
+    fireEvent.click(screen.getByRole("button", { name: /AI providers/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Add provider/i }));
+    fireEvent.change(screen.getByPlaceholderText("Provider name"), { target: { value: "Local Gateway" } });
+    fireEvent.change(screen.getByPlaceholderText("https://api.example.com/v1"), { target: { value: "http://127.0.0.1:8080/v1" } });
+    fireEvent.change(screen.getByLabelText("Provider API key"), { target: { value: "test-key" } });
+    fireEvent.change(screen.getByLabelText("Initial model ID"), { target: { value: "local-model" } });
+    fireEvent.click(screen.getAllByRole("button", { name: /^Add provider$/ })[1]!);
+    await vi.waitFor(() => expect(onAddCustomProvider).toHaveBeenCalledWith({
+      name: "Local Gateway",
+      baseUrl: "http://127.0.0.1:8080/v1",
+      apiKey: "test-key",
+      modelId: "local-model",
+    }));
   });
 
   it("persists back navigation through the page callback", () => {

@@ -100,10 +100,12 @@ import {
 
 describe("App — sessions.send is called when user types and presses Enter", () => {
   let sendCalls: Array<{ sid: string; text: string }>;
+  let sendShouldFail = false;
   let cleanup: () => void;
 
   beforeEach(() => {
     sendCalls = [];
+    sendShouldFail = false;
     const bridge = makeFakeBridge({
       settings: {
         get: async () => makeConfiguredSettings(),
@@ -137,7 +139,9 @@ describe("App — sessions.send is called when user types and presses Enter", ()
         }),
         send: async (sid: string, text: string) => {
           sendCalls.push({ sid, text });
-          return { ok: true as const, value: undefined };
+          return sendShouldFail
+            ? { ok: false as const, error: "temporary network failure" }
+            : { ok: true as const, value: undefined };
         },
         cancel: async () => ({ ok: true as const, value: undefined }),
         get: async () => null,
@@ -179,6 +183,19 @@ describe("App — sessions.send is called when user types and presses Enter", ()
     );
 
     expect(sendCalls[0]!.text).toBe("Write a haiku about testing");
+  });
+
+  it("restores the draft when sessions.send is rejected", async () => {
+    sendShouldFail = true;
+    render(<App />);
+
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: /message/i })).not.toBeNull(), { timeout: 3000 });
+    const textarea = screen.getByRole("textbox", { name: /message/i }) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "Keep this while network recovers" } });
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => expect((screen.getByRole("textbox", { name: /message/i }) as HTMLTextAreaElement).value).toBe("Keep this while network recovers"), { timeout: 3000 });
+    expect(screen.getByRole("alert")).toHaveTextContent(/temporary network failure/i);
   });
 
   it("sessions.send is NOT called when Shift+Enter is pressed", async () => {

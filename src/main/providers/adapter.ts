@@ -148,9 +148,12 @@ export async function errorFromResponse(
  * a naive per-chunk split corrupts multi-byte characters. The incremental
  * TextDecoder plus a carry buffer is what makes non-Latin output survive.
  */
+const DEFAULT_SSE_IDLE_TIMEOUT_MS = 45_000;
+
 export async function* parseSSE(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal,
+  idleTimeoutMs = DEFAULT_SSE_IDLE_TIMEOUT_MS,
 ): AsyncGenerator<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
@@ -161,7 +164,7 @@ export async function* parseSSE(
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithIdleTimeout(reader, idleTimeoutMs, signal);
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
@@ -186,6 +189,28 @@ export async function* parseSSE(
   } finally {
     signal.removeEventListener("abort", onAbort);
     reader.releaseLock?.();
+  }
+}
+
+async function readWithIdleTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  if (signal.aborted) throw signal.reason ?? new Error("stream aborted");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`provider stream idle timeout after ${timeoutMs}ms`));
+          void reader.cancel().catch(() => undefined);
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

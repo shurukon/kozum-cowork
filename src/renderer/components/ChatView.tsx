@@ -100,7 +100,7 @@ export interface ChatViewProps {
   /** User-message actions shared by Cowork and Code. */
   onCopyMessage?: (text: string) => void;
   onEditMessage?: (messageId: string, text: string) => void;
-  onRetryMessage?: (text: string) => void;
+  onRetryMessage?: (messageId: string, text: string) => void;
   /** Draft injected by edit-back for this mode. */
   composerDraft?: string | null;
 }

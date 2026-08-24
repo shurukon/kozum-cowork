@@ -1053,7 +1053,14 @@ export const fsTools: Tool[] = [
       const caseSensitive = bool(input["caseSensitive"], true);
       const maxResults = Math.max(1, num(input["maxResults"]) ?? 100);
 
-      // H7: compile the user regex once.  Pattern length is not capped because
+      // H7: reject the common nested-quantifier shape before any RegExp
+      // evaluation. A worker budget is still used for other patterns, but a
+      // catastrophic expression must never fall back to the main thread when
+      // workers are unavailable (for example in a packaged Electron runtime).
+      if (hasNestedQuantifier(patternStr)) {
+        return fail("Regex pattern rejected: nested quantifiers can cause catastrophic backtracking.");
+      }
+      // Compile the user regex once. Pattern length is not capped because
       // length alone does not bound backtracking, but we impose a wall-clock
       // budget per file below.
       // Validate the pattern here so a bad regex fails fast with a clear
@@ -1244,6 +1251,14 @@ function countOccurrences(haystack: string, needle: string): number {
 
 // Re-export for tests
 export { matchGlob };
+
+function hasNestedQuantifier(pattern: string): boolean {
+  // Conservative guard for a repeated group containing a repeated atom, e.g.
+  // (a+)+, (.*)*, or ([a-z]*|x)+. It intentionally rejects only the shape
+  // responsible for the known catastrophic cases and leaves ordinary regexes
+  // to the worker-budgeted path.
+  return /\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)(?:[+*]|\{\d)/.test(pattern);
+}
 
 /* ------------------------------------------------------- worker-thread shim */
 

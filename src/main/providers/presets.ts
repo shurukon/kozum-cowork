@@ -177,12 +177,25 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "agentrouter",
     name: "AgentRouter",
+    // AgentRouter exposes both documented wire protocols under one account.
+    // OpenAI-compatible is the default; Claude model ids are routed to the
+    // Anthropic Messages endpoint below rather than being sent to /v1/chat.
     protocol: "openai-chat",
-    baseUrl: "https://agentrouter.org/v1",
+    baseUrl: "https://co.agentrouter.org/v1",
     authScheme: "bearer",
     modelsPath: "/models",
+    staticModels: ["claude-opus-4-8", "gpt-5.5", "glm-5.1", "kimi-k2.6"],
+    protocolRoutes: {
+      "anthropic-messages": ["claude-"],
+      "openai-chat": ["gpt-", "kimi-", "glm-", "deepseek-", "minimax-", "qwen-"],
+    },
+    protocolBaseUrls: {
+      "anthropic-messages": "https://co.agentrouter.org",
+      "openai-chat": "https://co.agentrouter.org/v1",
+    },
+    docsUrl: "https://co.agentrouter.org/portal/guide",
     notes:
-      "PARTIALLY VERIFIED 2026-08-23 — the host answers GET /v1/models with 401 Unauthorized (live OpenAI-style endpoint requiring a key), but public documentation listing models or confirming the catalogue shape could not be found. Treat as standard OpenAI-compatible; edit this provider if your account's dashboard says otherwise.",
+      "Catalogue verified live on 2026-08-23; routing re-verified against AgentRouter's official guide on 2026-08-24. OpenAI-compatible models use https://co.agentrouter.org/v1; Claude models use Anthropic Messages at https://co.agentrouter.org without /v1. Kilo Code identifies this provider as agentrouter.",
     builtIn: true,
   },
 
@@ -290,8 +303,9 @@ export function getPreset(id: string): ProviderPreset | undefined {
 export function resolveBaseUrl(
   preset: ProviderPreset,
   meta: Record<string, string> | undefined,
+  protocol: ProviderPreset["protocol"] = preset.protocol,
 ): string {
-  let url = preset.baseUrl;
+  let url = preset.protocolBaseUrls?.[protocol] ?? preset.baseUrl;
   if (preset.requiresAccountId) {
     url = url.replace("{accountId}", meta?.accountId ?? "");
   }
