@@ -40,6 +40,7 @@ export interface SessionStore {
 
   /** Reset the entire state for a mode (new session). */
   clearMode: (mode: Mode) => void;
+  markIdle: (mode: Mode) => void;
 
   /** Set the session identity before asynchronous hydration or live events arrive. */
   setSessionIdentity: (mode: Mode, sessionId: string | null) => void;
@@ -229,6 +230,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   clearMode(mode: Mode) {
     set({ [mode]: emptyModeState() });
+  },
+
+  /** R6: force the composer idle after a Stop — covers the stuck-running case
+   * where the backend had already finished and a terminal event never comes. */
+  markIdle(mode: Mode) {
+    set((prev) => ({ [mode]: { ...prev[mode], status: "idle" as const } }));
   },
 
   setSessionIdentity(mode: Mode, sessionId: string | null) {

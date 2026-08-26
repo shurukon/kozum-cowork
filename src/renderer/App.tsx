@@ -693,9 +693,11 @@ export function App() {
       finalText = `${text}\n\n[Attached files]\n${attachedFiles.map((f) => `- ${f}`).join("\n")}`;
     }
 
-    // Render the user's turn immediately; the backend echoes it back on reload.
+    // Render the user's turn immediately; the backend persists it under the
+    // SAME id (`msg_${clientTurnId}`), so Edit/Retry anchors always match the
+    // persisted transcript (the old `local-` prefix broke truncateFrom).
     addUserMessage(mode, {
-      id: `local-${clientTurnId}`,
+      id: `msg_${clientTurnId}`,
       role: "user",
       content: [{ type: "text", text: finalText }],
       createdAt: Date.now(),
@@ -726,9 +728,15 @@ export function App() {
   }
 
   async function handleCancel() {
-    if (!activeSessionId) return;
-    const res = await bridge().sessions.cancel(activeSessionId);
+    const sid = activeSessionId;
+    if (!sid) return;
+    const res = await bridge().sessions.cancel(sid);
     if (!res.ok) setBanner(res.error);
+    // R6: always release the composer locally. If the backend was already
+    // idle, cancel() is a no-op and NO terminal event will arrive — without
+    // this the Stop button looked dead and the UI stayed "running" forever.
+    clearInFlight(mode);
+    useSessionStore.getState().markIdle(mode);
   }
 
   async function handleCopyMessage(text: string) {
@@ -752,6 +760,16 @@ export function App() {
     }
     const res = await bridge().sessions.truncateFrom(sid, messageId, { inclusive });
     if (!res.ok) {
+      // Legacy turns created before the id-alignment fix carry ids the backend
+      // never saw. Rather than dead-ending the action, mirror the cut locally
+      // so Edit/Retry still resend; the tail re-syncs on next reload.
+      const existsLocally = useSessionStore
+        .getState()
+        [mode].messages.some((m) => m.id === messageId);
+      if (existsLocally && /not found/i.test(res.error)) {
+        useSessionStore.getState().dropMessagesFrom(mode, messageId);
+        return true;
+      }
       setBanner(res.error);
       return false;
     }
