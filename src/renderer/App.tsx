@@ -664,7 +664,7 @@ export function App() {
           } as Partial<AppSettings>);
         }
       }
-      if (!effectiveSelection?.providerId || !effectiveSelection.modelId || !effectiveSelection.keyId || !hasAnyKeys) {
+      if (!effectiveSelection?.providerId || !effectiveSelection.modelId || !effectiveSelection.keyId) {
         setSkippedSetup(false);
         setBanner("Connect a provider and pick a model first.");
         restoreDraft();
@@ -749,8 +749,9 @@ export function App() {
 
   /* ── T8: in-place history truncation helpers ───────────────────────────── */
 
-  /** Truncate locally AND on the backend (backend first — it is the source of
-   * truth; local mirror only after success). */
+  // Kept for potential future use (e.g., manual history pruning); currently
+  // retry/edit send as new entries without truncating.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function truncateBoth(messageId: string, inclusive: boolean): Promise<boolean> {
     const sid = activeSessionIdRef.current;
     if (!sid) return false;
@@ -777,6 +778,7 @@ export function App() {
     await reloadSessions(mode);
     return true;
   }
+  void truncateBoth;
 
   function messageTextOf(id: string): string | null {
     const msg = useSessionStore.getState()[mode].messages.find((m) => m.id === id);
@@ -788,28 +790,27 @@ export function App() {
   }
 
   /**
-   * T1 Edit: the bubble itself is already in inline-edit mode (ChatView).
-   * Saving truncates from that message inclusive and resends the new text as a
-   * normal turn — previous history for this interaction is gone.
+   * Resend/Edit: per latest spec, both send as a BRAND-NEW entry.
+   * Do NOT truncate history — keep the old message(s) and append the new
+   * turn. This matches "completely new entry, not a modification".
    */
-  async function handleEditSave(messageId: string, newText: string): Promise<void> {
+  async function handleEditSave(_messageId: string, newText: string): Promise<void> {
     setEditingMessageId(null);
-    if (!(await truncateBoth(messageId, true))) return;
+    // Old message stays visible; new edited content is appended as a fresh turn.
     await handleSubmit(newText);
   }
 
-  /**
-   * T1 Retry on a USER bubble: identical contract to regenerate — drop the
-   * question AND its stale tail, then re-send the same prompt through the
-   * normal path so exactly one fresh exchange replaces the old one.
-   */
   async function handleRetryMessage(messageId: string, _text: string): Promise<void> {
     void _text;
-    const messages = useSessionStore.getState()[mode].messages;
-    if (!messages.some((m) => m.id === messageId)) return;
     const promptText = messageTextOf(messageId);
-    if (!promptText) return;
-    if (!(await truncateBoth(messageId, true))) return;
+    if (!promptText) {
+      // Fallback to passed text if lookup fails
+      const fallback = _text?.trim();
+      if (!fallback) return;
+      await handleSubmit(fallback);
+      return;
+    }
+    // Send as a completely new entry, preserving history
     await handleSubmit(promptText);
   }
 

@@ -226,6 +226,10 @@ export class SessionManager {
   }
 
   async cancel(sessionId: string): Promise<Result<void>> {
+    // R6: instant stop in EVERY state — thinking, tool call, waiting on a
+    // question/permission, or still queued. Rejecting pending asks first makes
+    // a suspended loop unwind immediately instead of after the user replies.
+    this.ask.rejectAllForSession(sessionId, "Stopped by the user.");
     const inf = this.inFlight.get(sessionId);
     if (!inf) return ok(undefined); // not running, that's fine
     inf.controller.abort();

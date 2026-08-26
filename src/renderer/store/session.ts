@@ -30,6 +30,8 @@ export type { ModeState, ToolCard, ToolStatus, PendingQuestion, PendingPermissio
 export interface SessionStore {
   cowork: ModeState;
   code: ModeState;
+  /** Per-session cache to preserve running task state when navigating away */
+  _cache: Map<string, ModeState>;
 
   /** Apply an inbound AgentEvent to the appropriate mode's state. */
   applyEvent: (e: AgentEvent) => void;
@@ -185,22 +187,42 @@ function messageText(message: Message): string {
 export const useSessionStore = create<SessionStore>((set, get) => ({
   cowork: emptyModeState(),
   code: emptyModeState(),
+  // Cache per sessionId to preserve running task state when navigating away
+  _cache: new Map<string, ModeState>() as Map<string, ModeState>,
 
   applyEvent(e: AgentEvent) {
-    const state = get();
+    const state = get() as SessionStore & { _cache: Map<string, ModeState> };
     const targetMode = resolveTargetMode(state, e);
 
-    set((prev) => {
+    set((prevRaw) => {
+      const prev = prevRaw as SessionStore & { _cache: Map<string, ModeState> };
       const current = prev[targetMode];
-      // IPC broadcasts events for all sessions on one channel. Once this mode
-      // has an identity, reject every event from another session before the
-      // reducer can mutate messages, cards, tasks, or prompts.
-      if (!eventBelongsToSession(current.sessionId, e.sessionId)) return prev;
-      const seenEventIds = new Set(current.seenEventIds);
-      if (e.eventId && seenEventIds.has(e.eventId)) return prev;
-      if (e.eventId) seenEventIds.add(e.eventId);
-      const next = applyEventToMode(current, e);
-      return { [targetMode]: { ...next, seenEventIds } };
+      const isVisibleSession = eventBelongsToSession(current.sessionId, e.sessionId);
+      if (isVisibleSession) {
+        const seenEventIds = new Set(current.seenEventIds);
+        if (e.eventId && seenEventIds.has(e.eventId)) return prev as unknown as SessionStore;
+        if (e.eventId) seenEventIds.add(e.eventId);
+        const next = applyEventToMode(current, e);
+        // Also update cache for this session so switching back restores latest
+        const newCache = new Map(prev._cache);
+        if (next.sessionId) newCache.set(next.sessionId, { ...next, seenEventIds: new Set(seenEventIds) });
+        return { [targetMode]: { ...next, seenEventIds }, _cache: newCache } as unknown as SessionStore;
+      } else {
+        // Event for a non-visible session of same mode — update its cached state
+        // If no cache exists yet (first event while away), create from empty
+        let cached = prev._cache.get(e.sessionId);
+        if (!cached) {
+          cached = emptyModeState();
+          cached.sessionId = e.sessionId;
+        }
+        const seenEventIds = new Set(cached.seenEventIds);
+        if (e.eventId && seenEventIds.has(e.eventId)) return prev as unknown as SessionStore;
+        if (e.eventId) seenEventIds.add(e.eventId);
+        const next = applyEventToMode(cached, e);
+        const newCache = new Map(prev._cache);
+        newCache.set(e.sessionId, { ...next, seenEventIds });
+        return { _cache: newCache } as unknown as SessionStore;
+      }
     });
   },
 
@@ -235,15 +257,52 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   /** R6: force the composer idle after a Stop — covers the stuck-running case
    * where the backend had already finished and a terminal event never comes. */
   markIdle(mode: Mode) {
-    set((prev) => ({ [mode]: { ...prev[mode], status: "idle" as const } }));
+    set((prevRaw) => {
+      const prev = prevRaw as SessionStore & { _cache: Map<string, ModeState> };
+      const cur = prev[mode];
+      const nextMode: ModeState = {
+        ...cur,
+        status: "idle" as const,
+        streamingMessageId: null,
+        pendingQuestions: [],
+        pendingPermissions: [],
+      };
+      const newCache = new Map(prev._cache);
+      if (cur.sessionId) newCache.set(cur.sessionId, { ...nextMode, toolCards: new Map(nextMode.toolCards), seenEventIds: new Set(nextMode.seenEventIds) });
+      return { [mode]: nextMode, _cache: newCache } as unknown as SessionStore;
+    });
   },
 
   setSessionIdentity(mode: Mode, sessionId: string | null) {
-    set((prev) => {
-      if (prev[mode].sessionId === sessionId) return prev;
+    set((prevRaw) => {
+      const prev = prevRaw as SessionStore & { _cache: Map<string, ModeState> };
+      if (prev[mode].sessionId === sessionId) return prevRaw as unknown as SessionStore;
+      const newCache = new Map(prev._cache);
+      // Save current state under old sessionId before switching
+      const oldId = prev[mode].sessionId;
+      if (oldId) {
+        const cur = prev[mode];
+        const toCache: ModeState = {
+          ...cur,
+          toolCards: new Map(cur.toolCards),
+          seenEventIds: new Set(cur.seenEventIds),
+          tasks: [...cur.tasks],
+          messages: [...cur.messages],
+          pendingQuestions: [...cur.pendingQuestions],
+          pendingPermissions: [...cur.pendingPermissions],
+          sessionFiles: [...(cur.sessionFiles ?? [])],
+          subagents: { ...cur.subagents },
+        };
+        newCache.set(oldId, toCache);
+      }
+      // Restore from cache if available
+      if (sessionId && newCache.has(sessionId)) {
+        const cached = newCache.get(sessionId)!;
+        return { [mode]: { ...cached, sessionId }, _cache: newCache } as unknown as SessionStore;
+      }
       const next = emptyModeState();
       next.sessionId = sessionId;
-      return { [mode]: next };
+      return { [mode]: next, _cache: newCache } as unknown as SessionStore;
     });
   },
 
@@ -255,21 +314,21 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // First-turn hydration race: the backend persists the user turn only
       // after the whole run finishes (manager.runLoop → appendMessages), so a
       // brand-new session's history fetch can come back EMPTY while the
-      // optimistic `local-` copy of the first message is already on screen.
-      // Replacing the slice wholesale used to erase it — the reported
-      // "first user message never appears" bug in BOTH modes. Keep any
-      // optimistic user turns that the persisted list does not reflect yet
-      // (deduped by text so a later reload with the persisted twin shows one
-      // copy), and prepend them because they are earlier turns.
+      // optimistic copy of the first message is already on screen. Replacing
+      // the slice wholesale used to erase it — the reported "first user
+      // message never appears" bug in BOTH modes. Keep any optimistic user
+      // turns whose twin has not been flushed yet: matched by id (R6 aligned
+      // `msg_<turnId>` ids) OR by text (legacy `local-` ids).
       const persistedUserTexts = new Set(
         messages.filter((m) => m.role === "user").map(messageText),
       );
+      const persistedIds = new Set(messages.map((m) => m.id));
       const keptOptimistic = sessionChanged
         ? []
         : prev[mode].messages.filter(
             (m) =>
               m.role === "user" &&
-              m.id.startsWith("local-") &&
+              !persistedIds.has(m.id) &&
               !persistedUserTexts.has(messageText(m)),
           );
       const mergedMessages =
@@ -300,11 +359,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           streamingThinking: "",
           toolCards: reconstructed,
           error: null,
-          // Pending question/permission arrays are UI-only state; once messages
-          // are replaced from the backend there is nothing live to answer, so
-          // drop them to avoid a stale dangling form.
-          pendingQuestions: [],
-          pendingPermissions: [],
+          // For same-session reloads (hydration), preserve pending prompts
+          // so a running task's AskDock doesn't disappear when switching
+          // away and back. Only clear when identity actually changes.
+          pendingQuestions: sessionChanged ? [] : prev[mode].pendingQuestions,
+          pendingPermissions: sessionChanged ? [] : prev[mode].pendingPermissions,
           // Preserve live event ids while reloading the same session so a replay
           // cannot apply an event twice. A different identity is a hard boundary:
           // never let the previous session's dedupe set suppress or admit events.
