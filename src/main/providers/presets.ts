@@ -180,6 +180,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     // AgentRouter exposes both documented wire protocols under one account.
     // OpenAI-compatible is the default; Claude model ids are routed to the
     // Anthropic Messages endpoint below rather than being sent to /v1/chat.
+    // agentRouterMode allows the user to force a wire pattern (kilo vs claude)
+    // rather than relying solely on model prefix inference.
     protocol: "openai-chat",
     baseUrl: "https://co.agentrouter.org/v1",
     authScheme: "bearer",
@@ -193,9 +195,10 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       "anthropic-messages": "https://co.agentrouter.org",
       "openai-chat": "https://co.agentrouter.org/v1",
     },
+    agentRouterMode: "auto",
     docsUrl: "https://co.agentrouter.org/portal/guide",
     notes:
-      "Catalogue verified live on 2026-08-23; routing re-verified against AgentRouter's official guide on 2026-08-24. OpenAI-compatible models use https://co.agentrouter.org/v1; Claude models use Anthropic Messages at https://co.agentrouter.org without /v1. Kilo Code identifies this provider as agentrouter.",
+      "Catalogue verified live on 2026-08-23; routing re-verified against AgentRouter's official guide on 2026-08-24. OpenAI-compatible models use https://co.agentrouter.org/v1; Claude models use Anthropic Messages at https://co.agentrouter.org without /v1. Kilo Code identifies this provider as agentrouter. Use AgentRouter mode selector (Auto/Kilo/Claude) to force the wire pattern when model prefix is ambiguous.",
     builtIn: true,
   },
 
@@ -279,17 +282,14 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       "Signs in with the same OAuth device flow the official Codex CLI uses — not a reverse-engineered API, but it is scoped to personal use and rate-limited by your Plus/Pro tier. There is no other supported way to drive a ChatGPT subscription programmatically.",
     builtIn: true,
   },
-  {
-    id: "custom",
-    name: "Custom (OpenAI-compatible)",
-    protocol: "openai-chat",
-    baseUrl: "",
-    authScheme: "bearer",
-    modelsPath: "/models",
-    notes:
-      "Escape hatch for anything not listed: local llama.cpp or vLLM servers, corporate gateways, LiteLLM, or a vendor added after this build.",
-    builtIn: true,
-  },
+  // NOTE: the legacy built-in "custom" escape hatch ("Custom (OpenAI-compatible)")
+  // was removed on 2026-08-25. It shipped with an empty baseUrl and offered only
+  // a single API-key field, which made real custom servers impossible to
+  // configure. User-defined providers now live exclusively in
+  // settings.customProviders via Settings → AI providers → "Add provider"
+  // (name + baseUrl + key + model id), and appear in every picker by their
+  // user-chosen name. Selections referencing providerId "custom" are reset by
+  // normalizeSettings with guidance to recreate via Add provider.
 ];
 
 export function getPreset(id: string): ProviderPreset | undefined {

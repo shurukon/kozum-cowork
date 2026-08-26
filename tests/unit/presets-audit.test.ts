@@ -2,7 +2,8 @@
  * Preset audit snapshot test (Task 10).
  *
  * Every shipped provider preset must be structurally complete:
- * - a baseUrl (empty string allowed ONLY for the "custom" escape hatch),
+ * - a non-empty baseUrl (the legacy "custom" escape hatch was removed on
+ *   2026-08-25; user-defined providers live in settings.customProviders),
  * - a known wire protocol,
  * - at least one model source: a live modelsPath OR ≥1 staticModels entry.
  *
@@ -26,11 +27,11 @@ const KNOWN_PROTOCOLS: ProviderProtocol[] = [
 describe("provider presets audit", () => {
   it("every preset has a baseUrl, protocol and ≥1 model source", () => {
     for (const preset of PROVIDER_PRESETS) {
-      if (preset.id === "custom") {
-        assert.equal(preset.baseUrl, "", "the custom escape hatch ships with an empty URL");
-      } else {
-        assert.ok(preset.baseUrl.length > 0, `${preset.id}: missing baseUrl`);
-      }
+      assert.ok(
+        preset.id !== "custom",
+        'the legacy "Custom (OpenAI-compatible)" escape hatch must stay removed',
+      );
+      assert.ok(preset.baseUrl.length > 0, `${preset.id}: missing baseUrl`);
       assert.ok(
         KNOWN_PROTOCOLS.includes(preset.protocol),
         `${preset.id}: unknown protocol ${preset.protocol}`,

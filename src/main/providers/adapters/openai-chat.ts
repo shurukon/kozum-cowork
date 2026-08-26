@@ -357,42 +357,63 @@ export class OpenAiChatAdapter implements ProviderAdapter {
   }
 
   async listModels(ctx: ProviderContext): Promise<ModelInfo[] | null> {
-    const res = await fetchWithRetry(
+    const headers = ctx.apiKey
+      ? { Authorization: `Bearer ${ctx.apiKey}`, ...ctx.extraHeaders }
+      : { ...ctx.extraHeaders };
+
+    const parse = async (res: Response): Promise<ModelInfo[] | null> => {
+      if (res.status === 404 || res.status === 405) return null;
+      if (!res.ok) throw await errorFromResponse(res, ctx.providerId);
+
+      const json = (await res.json()) as any;
+      const rows: RawCatalogueEntry[] = Array.isArray(json)
+        ? json
+        : (json.data ?? json.models ?? []);
+      if (!Array.isArray(rows)) return null;
+
+      const now = Date.now();
+      return rows
+        .filter((r) => typeof r?.id === "string")
+        .map((r) => {
+          const id = String(r.id);
+          const { capabilities, inferred } = resolveCapabilities(id, ctx.providerId, r);
+          return {
+            id,
+            displayName: r.name ?? r.display_name ?? id,
+            providerId: ctx.providerId,
+            capabilities,
+            description: typeof r.description === "string" ? r.description : undefined,
+            fetchedAt: now,
+            capabilitiesInferred: inferred,
+          } satisfies ModelInfo;
+        });
+    };
+
+    // Primary attempt: <baseUrl>/models (OpenAI-compatible convention).
+    let res = await fetchWithRetry(
       `${ctx.baseUrl}/models`,
-      {
-        method: "GET",
-        headers: ctx.apiKey
-          ? { Authorization: `Bearer ${ctx.apiKey}`, ...ctx.extraHeaders }
-          : { ...ctx.extraHeaders },
-      },
+      { method: "GET", headers },
       { providerId: ctx.providerId, timeoutMs: 30_000 },
     );
 
-    if (res.status === 404 || res.status === 405) return null;
-    if (!res.ok) throw await errorFromResponse(res, ctx.providerId);
+    // Fallback (W5): some gateways — AgentRouter among them — serve the
+    // catalogue from the origin root without the /v1 segment while chat lives
+    // under /v1. Retry once there before surfacing 401/404 to the user.
+    if ((res.status === 401 || res.status === 404 || res.status === 405) && !ctx.extraHeaders["x-no-origin-fallback"]) {
+      try {
+        const originRoot = new URL(ctx.baseUrl).origin;
+        if (`${originRoot}/models` !== `${ctx.baseUrl}/models`) {
+          const alt = await fetchWithRetry(
+            `${originRoot}/models`,
+            { method: "GET", headers },
+            { providerId: ctx.providerId, timeoutMs: 30_000 },
+          );
+          if (alt.ok) res = alt;
+        }
+      } catch { /* primary result stands */ }
+    }
 
-    const json = (await res.json()) as any;
-    const rows: RawCatalogueEntry[] = Array.isArray(json)
-      ? json
-      : (json.data ?? json.models ?? []);
-    if (!Array.isArray(rows)) return null;
-
-    const now = Date.now();
-    return rows
-      .filter((r) => typeof r?.id === "string")
-      .map((r) => {
-        const id = String(r.id);
-        const { capabilities, inferred } = resolveCapabilities(id, ctx.providerId, r);
-        return {
-          id,
-          displayName: r.name ?? r.display_name ?? id,
-          providerId: ctx.providerId,
-          capabilities,
-          description: typeof r.description === "string" ? r.description : undefined,
-          fetchedAt: now,
-          capabilitiesInferred: inferred,
-        } satisfies ModelInfo;
-      });
+    return parse(res);
   }
 }
 

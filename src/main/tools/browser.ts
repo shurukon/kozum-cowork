@@ -230,8 +230,7 @@ export function makeBrowserTools(engine: BrowserEngine): Tool[] {
         name: "browser_screenshot",
         title: "Browser: Screenshot",
         description:
-          "Capture a screenshot of the current browser page. " +
-          "Requires a vision-capable model.",
+          "Capture a screenshot of the current browser page. ",
         inputSchema: {
           type: "object",
           properties: {
@@ -245,7 +244,6 @@ export function makeBrowserTools(engine: BrowserEngine): Tool[] {
         },
         icon: "camera",
         group: "browser",
-        requiresVision: true,
         modes: ["cowork", "code"],
       },
 
@@ -506,3 +504,4 @@ export function makeBrowserTools(engine: BrowserEngine): Tool[] {
     },
   ];
 }
+

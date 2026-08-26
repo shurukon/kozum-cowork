@@ -858,17 +858,17 @@ describe("tool counts", () => {
     }
   });
 
-  it("browser_screenshot has requiresVision: true", () => {
+  it("browser_screenshot has NO vision gating (R5)", () => {
     const engine = new BrowserEngine(new FakeBrowserBackend());
     const tools = makeBrowserTools(engine);
     const ss = tools.find((t) => t.definition.name === "browser_screenshot")!;
-    assert.equal(ss.definition.requiresVision, true);
+    assert.notEqual(ss.definition.requiresVision, true);
   });
 
-  it("computer_screenshot has requiresVision: true", () => {
+  it("computer_screenshot has NO vision gating (R5)", () => {
     const tools = makeComputerTools(new UnavailableComputerBackend(), () => []);
     const ss = tools.find((t) => t.definition.name === "computer_screenshot")!;
-    assert.equal(ss.definition.requiresVision, true);
+    assert.notEqual(ss.definition.requiresVision, true);
   });
 
   it("computer dangerous tools have dangerous: true", () => {

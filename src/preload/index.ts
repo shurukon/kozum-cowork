@@ -95,6 +95,8 @@ const api = {
       ipcRenderer.invoke("providers:removeCustom", id),
     updateCustom: (id: string, patch: Partial<ProviderPreset>): Promise<Result<ProviderPreset>> =>
       ipcRenderer.invoke("providers:updateCustom", id, patch),
+    setAgentRouterMode: (mode: "auto" | "openai" | "anthropic"): Promise<Result<AppSettings>> =>
+      ipcRenderer.invoke("providers:setAgentRouterMode", mode),
   },
 
   sessions: {
@@ -109,6 +111,12 @@ const api = {
       ipcRenderer.invoke("sessions:delete", sessionId),
     branch: (sessionId: string, uptoMessageId?: string | null): Promise<Result<Session>> =>
       ipcRenderer.invoke("sessions:branch", sessionId, uptoMessageId),
+    truncateFrom: (
+      sessionId: string,
+      messageId: string,
+      opts?: { inclusive?: boolean },
+    ): Promise<Result<{ removed: number }>> =>
+      ipcRenderer.invoke("sessions:truncateFrom", sessionId, messageId, opts ?? { inclusive: true }),
     rename: (sessionId: string, title: string): Promise<Result<void>> =>
       ipcRenderer.invoke("sessions:rename", sessionId, title),
     setPermissionMode: (sessionId: string, mode: PermissionMode): Promise<Result<void>> =>
@@ -189,6 +197,12 @@ const api = {
       policy: { default: "allow" | "deny" | "ask"; tools?: Record<string, "allow" | "deny" | "ask"> },
     ): Promise<Result<McpServerConfig>> =>
       ipcRenderer.invoke("mcp:setToolPolicy", serverId, policy),
+    oauthLogin: (serverId: string): Promise<Result<McpServerConfig>> =>
+      ipcRenderer.invoke("mcp:oauthLogin", serverId),
+    discoverOAuth: (
+      url: string,
+    ): Promise<Result<{ authorizationEndpoint?: string; tokenEndpoint?: string; registrationEndpoint?: string; resource?: string; scopes?: string[] }>> =>
+      ipcRenderer.invoke("mcp:discoverOAuth", url),
   },
 
   plugins: {

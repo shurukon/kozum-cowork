@@ -57,6 +57,9 @@ export interface ToolExecutor {
         multiSelect: boolean;
         allowFreeform?: boolean;
       }) => void;
+      onPreviewOpen?: (
+        target: { kind: "file"; path: string } | { kind: "url"; url: string },
+      ) => void;
     },
   ): Promise<ToolResult>;
 }
@@ -89,6 +92,17 @@ export interface LoopResult {
   stopReason: StopReason;
   iterations: number;
 }
+
+/** R6: pure dev-file tools exempt from the mandatory sequential rule. */
+const DEV_FILE_TOOLS = new Set([
+  "create_file",
+  "read_file",
+  "edit_file",
+  "file_write",
+  "file_read",
+  "file_edit",
+  "file_edit_enhanced",
+]);
 
 interface PendingCall {
   id: string;
@@ -257,9 +271,19 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
         }
 
         const candidate = e instanceof Error ? e : new Error(String(e));
+        // Determine if this error is retryable even when it is not a ProviderError (e.g. idle timeout, fetch abort).
+        // 401/403 are never retryable — they need a new key.
+        const messageLower = candidate.message.toLowerCase();
+        const isAuthFailure = /401|403|unauthorized|forbidden|invalid api key|invalid_api_key/.test(messageLower);
+        // Deterministic config errors must never be retried.
+        const isConfigError = /bytestring|invalid character|failed to construct|invalid api key.*characters/i.test(candidate.message);
+        const isRetryableError = isAuthFailure || isConfigError
+          ? false
+          : candidate instanceof ProviderError
+            ? candidate.retryable
+            : /idle timeout|timeout|network|fetch failed|econnreset|etimedout|econnrefused|enetunreach|socket hang up|connection (?:reset|closed|refused)|aborted|temporarily unavailable/i.test(candidate.message);
         const canRetry =
-          candidate instanceof ProviderError &&
-          candidate.retryable &&
+          isRetryableError &&
           !text &&
           !thinking &&
           calls.size === 0 &&
@@ -352,12 +376,20 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     }
 
     if (streamError) {
+      const seLower = streamError.message.toLowerCase();
+      const seIsAuth = /401|403|unauthorized|forbidden|invalid api key/.test(seLower);
+      const seIsConfig = /bytestring|invalid character|failed to construct/.test(seLower);
+      const seRecoverable = seIsAuth || seIsConfig
+        ? false
+        : streamError instanceof ProviderError
+          ? streamError.retryable
+          : /idle timeout|timeout|network|fetch failed|econnreset|etimedout|connection|socket hang up|temporarily unavailable|429|502|503|504/.test(seLower);
       emit({
         type: "error",
         mode: opts.mode,
         sessionId: opts.sessionId,
         message: streamError.message,
-        recoverable: streamError instanceof ProviderError ? streamError.retryable : false,
+        recoverable: seRecoverable,
       });
       stopReason = "error";
       break;
@@ -381,7 +413,22 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       break;
     }
 
-    for (const c of ordered) {
+    /* ── R5/R6: SEQUENTIAL EXECUTION WITH A NARROW DEV-FILE EXCEPTION ─────
+     * Every tool runs one at a time, in model-declared order: emit start →
+     * await result (the executor verifies/validates) → emit end → next. This
+     * is mandatory for MCP orchestration (Higgsfield's generate → poll →
+     * fetch breaks under parallel calls).
+     * Sole exception, per product decision: contiguous batches of the pure
+     * development file tools (create/read/edit) MAY run in parallel — they
+     * are independent, local, and side-effect-isolated. */
+    const settled: Array<{ call: PendingCall; result: ToolResult }> = [];
+    let toolPhaseCancelled = false;
+    const runOneTracked = async (c: PendingCall) => {
+      if (opts.signal.aborted) {
+        stopReason = "cancelled";
+        toolPhaseCancelled = true;
+        return null;
+      }
       emit({
         type: "tool_start",
         mode: opts.mode,
@@ -390,22 +437,32 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
         name: c.name,
         input: parseArgs(c.args),
       });
-    }
+      const result = await runOne(opts, c, emit, opts.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS);
+      emit({
+        type: "tool_end",
+        mode: opts.mode,
+        sessionId: opts.sessionId,
+        toolUseId: c.id,
+        result,
+      });
+      settled.push({ call: c, result });
+      return { call: c, result };
+    };
 
-    // Concurrent execution, ordered assembly.
-    const settled = await Promise.all(
-      ordered.map(async (c) => {
-        const result = await runOne(opts, c, emit, opts.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS);
-        emit({
-          type: "tool_end",
-          mode: opts.mode,
-          sessionId: opts.sessionId,
-          toolUseId: c.id,
-          result,
-        });
-        return { call: c, result };
-      }),
-    );
+    let i = 0;
+    while (i < ordered.length && !toolPhaseCancelled) {
+      const c = ordered[i]!;
+      if (!DEV_FILE_TOOLS.has(c.name)) {
+        await runOneTracked(c);
+        i += 1;
+        continue;
+      }
+      // Contiguous run of exempt dev-file tools → parallel batch.
+      let j = i;
+      while (j < ordered.length && DEV_FILE_TOOLS.has(ordered[j]!.name)) j += 1;
+      await Promise.all(ordered.slice(i, j).map(runOneTracked));
+      i = j;
+    }
 
     const resultBlocks: ContentBlock[] = settled.map(({ call, result }) => ({
       type: "tool_result",
@@ -540,6 +597,14 @@ async function runOne(
             options: payload.options,
             multiSelect: payload.multiSelect,
             ...(payload.allowFreeform ? { allowFreeform: true } : {}),
+          });
+        },
+        onPreviewOpen: (target) => {
+          emit({
+            type: "preview_open",
+            mode: opts.mode,
+            sessionId: opts.sessionId,
+            target,
           });
         },
       });

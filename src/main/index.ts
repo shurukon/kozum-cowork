@@ -162,10 +162,18 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     // ── providers ───────────────────────────────────────────────────────────
-    const registry = new ProviderRegistry(secrets, appPaths, async () => {
-      const current = await settings.get();
-      return Array.isArray(current.customProviders) ? current.customProviders : [];
-    });
+    const registry = new ProviderRegistry(
+      secrets,
+      appPaths,
+      async () => {
+        const current = await settings.get();
+        return Array.isArray(current.customProviders) ? current.customProviders : [];
+      },
+      async () => {
+        const current = await settings.get();
+        return (current as unknown as { providerOverrides?: Record<string, { agentRouterMode?: "auto" | "openai" | "anthropic" }> }).providerOverrides ?? {};
+      },
+    );
 
     // ── sessions ────────────────────────────────────────────────────────────
     const sessionStore = new SessionStore(sessionsDir(appPaths));

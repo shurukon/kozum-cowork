@@ -306,6 +306,46 @@ export class SessionStore {
     return true;
   }
 
+  /**
+   * T7/T8: drop messages from `messageId` onward and persist the shorter
+   * transcript in place. Used by Regenerate/Edit so the SAME session keeps a
+   * single coherent history instead of spawning "(branch)" sessions.
+   *
+   * `inclusive: true` also removes the message itself (edit/regenerate of an
+   * assistant reply); `false` keeps it (retry that preserves the user turn).
+   * Returns the number of removed messages, or null when the session or the
+   * anchor message does not exist.
+   */
+  async truncateFrom(
+    sessionId: string,
+    messageId: string,
+    opts?: { inclusive?: boolean },
+  ): Promise<{ removed: number } | null> {
+    const session = await this.get(sessionId);
+    if (!session) return null;
+    const all = await this.messages(sessionId);
+    const idx = all.findIndex((m) => m.id === messageId);
+    if (idx === -1) return null;
+    const cut = opts?.inclusive ? idx : idx + 1;
+    const remaining = all.slice(0, cut);
+    const removed = all.length - remaining.length;
+
+    let totalUsage = emptyUsage();
+    for (const msg of remaining) {
+      if (msg.usage) totalUsage = addUsage(totalUsage, msg.usage);
+    }
+
+    await writeJson(this.messagesFilePath(sessionId), remaining);
+    const updated: Session = {
+      ...session,
+      messageCount: remaining.length,
+      totalUsage,
+      updatedAt: Date.now(),
+    };
+    await writeJson(this.sessionFilePath(sessionId), updated);
+    return { removed };
+  }
+
   /** Update the permissionMode on a session. */
   async setPermissionMode(sessionId: string, mode: PermissionMode): Promise<boolean> {
     const session = await this.get(sessionId);

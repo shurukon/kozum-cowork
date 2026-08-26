@@ -172,7 +172,19 @@ export function registerIpc(deps: IpcDeps): void {
   handle(ipcMain, "providers:presets", async () => {
     const settings = await deps.settings.get();
     const custom = Array.isArray(settings.customProviders) ? settings.customProviders : [];
-    return [...PROVIDER_PRESETS, ...custom];
+    const overrides = (settings as unknown as { providerOverrides?: Record<string, { agentRouterMode?: string }> }).providerOverrides ?? {};
+    // The legacy built-in "custom" escape hatch was removed; filter defensively
+    // in case an old persisted blob ever resurrects it.
+    const builtIns = PROVIDER_PRESETS
+      .filter((p) => p.id !== "custom")
+      .map((p) => {
+        const ov = overrides[p.id];
+        if (ov && typeof ov.agentRouterMode === "string") {
+          return { ...p, agentRouterMode: ov.agentRouterMode as ProviderPreset["agentRouterMode"] };
+        }
+        return p;
+      });
+    return [...builtIns, ...custom.filter((c) => c.id !== "custom")];
   });
 
   handle(ipcMain, "providers:addKey", async (_e, providerId, label, rawKey, meta) => {
@@ -203,6 +215,17 @@ export function registerIpc(deps: IpcDeps): void {
     if (!apiKey) return err("API key is required when creating a provider.");
     if (!modelId) return err("Model ID is required when creating a provider.");
 
+    // Enforce unique name across built-ins and customs (case-insensitive) to keep selection unambiguous.
+    const settingsForNameCheck = await deps.settings.get();
+    const existingForCheck = Array.isArray(settingsForNameCheck.customProviders) ? settingsForNameCheck.customProviders : [];
+    const allNames = new Set([
+      ...PROVIDER_PRESETS.map((p) => p.name.toLowerCase()),
+      ...existingForCheck.map((p) => p.name.toLowerCase()),
+    ]);
+    if (allNames.has(name.toLowerCase())) {
+      return err(`Provider name "${name}" already exists. Choose a different name.`);
+    }
+
     const protocols = ["openai-chat", "openai-responses", "anthropic-messages"] as const;
     const requested = String(payload.protocol ?? "openai-chat") as typeof protocols[number];
     const protocol = protocols.includes(requested) ? requested : "openai-chat";
@@ -218,8 +241,7 @@ export function registerIpc(deps: IpcDeps): void {
       builtIn: false,
     };
 
-    const settings = await deps.settings.get();
-    const existing = Array.isArray(settings.customProviders) ? settings.customProviders : [];
+    const existing = existingForCheck;
     await deps.settings.patch({ customProviders: [...existing, preset] });
     try {
       await deps.secrets.add(id, "Key 1", apiKey);
@@ -339,6 +361,18 @@ export function registerIpc(deps: IpcDeps): void {
     return deps.registry.listModels(String(providerId));
   });
 
+  handle(ipcMain, "providers:setAgentRouterMode", async (_e, mode) => {
+    const m = String(mode);
+    if (m !== "auto" && m !== "openai" && m !== "anthropic") {
+      return err(`Invalid AgentRouter mode "${m}". Expected auto, openai, or anthropic.`);
+    }
+    const settings = await deps.settings.get();
+    const overrides = (settings as unknown as { providerOverrides?: Record<string, { agentRouterMode?: string }> }).providerOverrides ?? {};
+    const next = { ...overrides, agentrouter: { agentRouterMode: m } };
+    const updated = await deps.settings.patch({ providerOverrides: next } as unknown as Parameters<typeof deps.settings.patch>[0]);
+    return ok(updated);
+  });
+
   /* ---------------------------------------------------------- sessions --- */
 
   handle(ipcMain, "sessions:list", async (_e, mode) => {
@@ -391,6 +425,12 @@ export function registerIpc(deps: IpcDeps): void {
     const done = await deps.sessions.rename(String(sessionId), String(title));
     if (!done) return err(`Session "${String(sessionId)}" not found`);
     return ok(undefined);
+  });
+
+  // T7/T8: in-place history truncation for Regenerate/Edit.
+  handle(ipcMain, "sessions:truncateFrom", async (_e, sessionId, messageId, opts) => {
+    const inclusive = opts === undefined ? true : Boolean((opts as { inclusive?: boolean }).inclusive);
+    return deps.sessions.truncateFrom(String(sessionId), String(messageId), { inclusive });
   });
 
   handle(ipcMain, "sessions:setPermissionMode", async (_e, sessionId, mode) => {
@@ -529,7 +569,18 @@ export function registerIpc(deps: IpcDeps): void {
     try {
       return ok(await deps.mcp.testConnection(serverConfig, { authToken }));
     } catch (cause) {
-      return err(cause instanceof Error ? cause.message : String(cause));
+      let msg = cause instanceof Error ? cause.message : String(cause);
+      // Turn the raw SSRF message into actionable guidance for the common
+      // loopback case (the form auto-ticks the box, but a stale client may not).
+      if (msg.startsWith("SSRF guard") && serverConfig.allowLocal !== true) {
+        try {
+          const host = new URL(String(serverConfig.url ?? "")).hostname.toLowerCase();
+          if (host === "localhost" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) {
+            msg = "This is a local MCP server: enable \"Allow localhost / local network\" in the add-server form, then test again.";
+          }
+        } catch { /* keep original */ }
+      }
+      return err(msg);
     }
   });
 
@@ -542,11 +593,21 @@ export function registerIpc(deps: IpcDeps): void {
     const hasAuthToken = Boolean(authToken) || rest.hasAuthToken;
 
     // A syntactically valid URL is not a connected MCP server. Require the
-    // actual initialize + tools/list handshake before persisting it.
+    // actual initialize + tools/list handshake before persisting it — unless
+    // the server indicates OAuth is required (401 + authorization_uri), in
+    // which case we persist the entry so the user can trigger the login flow.
+    let oauthRequired = false;
     try {
       await deps.mcp.testConnection(rest, { authToken });
     } catch (cause) {
-      return err(cause instanceof Error ? cause.message : String(cause));
+      const msg = cause instanceof Error ? cause.message : String(cause);
+      const low = msg.toLowerCase();
+      const isOAuthHint = low.includes("401") || low.includes("authorization") || low.includes("bearer") || low.includes("oauth") || low.includes("www-authenticate");
+      if (isOAuthHint) {
+        oauthRequired = true;
+      } else {
+        return err(msg);
+      }
     }
 
     const full: McpServerConfig = {
@@ -568,6 +629,10 @@ export function registerIpc(deps: IpcDeps): void {
     }
 
     const updated = deps.mcp.status().find((s) => s.id === full.id);
+    if (oauthRequired) {
+      // Persisted for OAuth login — UI will call mcp:oauthLogin to open browser and complete.
+      return ok(updated!);
+    }
     if (!updated || (full.enabled && updated.status !== "connected")) {
       await deps.mcp.remove(full.id);
       return err(updated?.statusMessage ?? "MCP server failed to connect after validation.");
@@ -593,6 +658,50 @@ export function registerIpc(deps: IpcDeps): void {
 
   handle(ipcMain, "mcp:tools", async (_e, serverId) => {
     return deps.mcp.allTools().filter((t) => t.serverId === String(serverId));
+  });
+
+  handle(ipcMain, "mcp:oauthLogin", async (_e, id) => {
+    const serverId = String(id);
+    const entry = deps.mcp.status().find((s) => s.id === serverId);
+    if (!entry) return err(`MCP server "${serverId}" not found`);
+    const mcpUrl = entry.url;
+    if (!mcpUrl) return err(`MCP server "${serverId}" has no URL`);
+    try {
+      const { startMcpOAuthFlow } = await import("../mcp/oauth.ts");
+      const result = await startMcpOAuthFlow({
+        mcpUrl,
+        openExternal: (url: string) => shell.openExternal(url),
+        existingClientId: entry.oauthClientId,
+      });
+      // Persist the DCR-issued client_id (and secret, when issued) before
+      // connecting so subsequent logins reuse the same client identity.
+      await deps.mcp.setOAuthClientId(serverId, result.clientId);
+      if (result.refreshToken) {
+        await deps.secrets.add(`mcp-oauth:${serverId}`, "OAuth refresh token", result.refreshToken).catch(() => undefined);
+      }
+      await deps.mcp.setAuthToken(serverId, result.accessToken);
+      await deps.mcp.connect(serverId, { authToken: result.accessToken }).catch(() => undefined);
+      const updated = deps.mcp.status().find((s) => s.id === serverId);
+      if (!updated || updated.status !== "connected") {
+        return err(updated?.statusMessage ?? "OAuth succeeded but MCP server still failed to connect.");
+      }
+      return ok(updated);
+    } catch (cause) {
+      const msg = cause instanceof Error ? cause.message : String(cause);
+      return err(`OAuth login failed: ${msg}`);
+    }
+  });
+
+  handle(ipcMain, "mcp:discoverOAuth", async (_e, url) => {
+    const mcpUrl = String(url);
+    if (!mcpUrl) return err("URL is required");
+    try {
+      const { discoverOAuthForMcp } = await import("../mcp/oauth.ts");
+      const meta = await discoverOAuthForMcp(mcpUrl);
+      return ok(meta);
+    } catch (cause) {
+      return err(cause instanceof Error ? cause.message : String(cause));
+    }
   });
 
   handle(ipcMain, "mcp:setToolPolicy", async (_e, serverId, policy) => {
@@ -945,29 +1054,37 @@ export function registerIpc(deps: IpcDeps): void {
     const win = deps.getWindow();
     if (!win) return err("app window is not available.");
 
-    // The renderer opens the preview on browser tool_start, which can happen
-    // before browser_navigate has reached the backend's lazy initializer. Ask
-    // the backend for its shared view instead of failing the first attach. The
-    // backend serialises creation, so this is the exact view navigation uses.
-    let view = deps.getBrowserView?.() ?? null;
-    if (!view && deps.ensureBrowserView) {
-      try {
-        view = await deps.ensureBrowserView();
-      } catch {
-        view = null;
-      }
-    }
-    if (!view) return err("No active browser session. Navigating to a page first will create one.");
-
     const rect = rectRaw as SurfaceRect | undefined;
     if (!rect) return err("rect is required.");
     if (typeof rect.x !== "number" || typeof rect.y !== "number" || typeof rect.width !== "number" || typeof rect.height !== "number") {
       return err("rect must have numeric x, y, width, height.");
     }
 
+    // R6: route through the surface's sequence-guarded attach. If the preview
+    // unmounts while the lazy WebContentsView is still being created, the
+    // late resolve is discarded instead of re-parenting an orphaned native
+    // view over the whole app (the old "browser covers everything until
+    // restart" bug).
     try {
-      deps.browserSurface.attachTo(win, view, rect);
-      return ok(deps.browserSurface.getState());
+      const state = await deps.browserSurface.attachWhenReady(
+        win,
+        async () => {
+          let view = deps.getBrowserView?.() ?? null;
+          if (!view && deps.ensureBrowserView) {
+            try {
+              view = await deps.ensureBrowserView();
+            } catch {
+              view = null;
+            }
+          }
+          return view;
+        },
+        rect,
+      );
+      if (!state.attached) {
+        return err("No active browser session. Navigating to a page first will create one.");
+      }
+      return ok(state);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return err(msg);

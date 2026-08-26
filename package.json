@@ -1,6 +1,6 @@
 {
   "name": "kozum-cowork",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Kozum Cowork \u2014 a provider-agnostic desktop agent for Windows. Cowork and Code modes, no VM required.",
   "main": "./out/main/index.js",
   "author": "Kozum",

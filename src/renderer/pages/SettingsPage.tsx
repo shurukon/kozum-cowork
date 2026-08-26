@@ -41,6 +41,7 @@ export interface SettingsPageProps {
   onAddProviderModel: (providerId: string, modelId: string) => Promise<void>;
   onRemoveProviderModel: (providerId: string, modelId: string) => Promise<void>;
   onRemoveCustomProvider: (id: string) => void;
+  onSetAgentRouterMode?: (mode: "auto" | "openai" | "anthropic") => Promise<void>;
   onPickFolder: (mode: "cowork" | "code") => void;
   /** Pick the shared default workspace (changeable, never removable). */
   onPickWorkspaceFolder: () => void;
@@ -109,7 +110,8 @@ function ProvidersSection({
   onAddProviderModel,
   onRemoveProviderModel,
   onRemoveCustomProvider,
-}: Pick<SettingsPageProps, "presets" | "keys" | "onAddKey" | "onRemoveKey" | "onAddCustomProvider" | "onAddProviderModel" | "onRemoveProviderModel" | "onRemoveCustomProvider">) {
+  onSetAgentRouterMode,
+}: Pick<SettingsPageProps, "presets" | "keys" | "onAddKey" | "onRemoveKey" | "onAddCustomProvider" | "onAddProviderModel" | "onRemoveProviderModel" | "onRemoveCustomProvider" | "onSetAgentRouterMode">) {
   const [addingProvider, setAddingProvider] = useState<string | null>(null);
   const [keyValue, setKeyValue] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -118,6 +120,7 @@ function ProvidersSection({
   const [customUrl, setCustomUrl] = useState("");
   const [customKey, setCustomKey] = useState("");
   const [customModelId, setCustomModelId] = useState("");
+  const [customProtocol, setCustomProtocol] = useState<"openai-chat" | "openai-responses" | "anthropic-messages">("openai-chat");
   const [modelDraftProviderId, setModelDraftProviderId] = useState<string | null>(null);
   const [modelValue, setModelValue] = useState("");
   const [savingCustom, setSavingCustom] = useState(false);
@@ -149,11 +152,13 @@ function ProvidersSection({
         baseUrl: url,
         apiKey,
         modelId,
+        protocol: customProtocol,
       });
       setCustomName("");
       setCustomUrl("");
       setCustomKey("");
       setCustomModelId("");
+      setCustomProtocol("openai-chat");
       setCustomOpen(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -190,12 +195,21 @@ function ProvidersSection({
       </div>
       {customOpen && (
         <div className={styles.inlineCard}>
-          <div className={styles.inlineTitle}>Custom provider</div>
+          <div className={styles.inlineTitle}>Custom provider — Name & Base URL become immutable after creation</div>
           <div className={styles.inlineGrid}>
             <input className={styles.input} placeholder="Provider name" value={customName} onChange={(event) => setCustomName(event.target.value)} />
             <input className={styles.input} placeholder="https://api.example.com/v1" value={customUrl} onChange={(event) => setCustomUrl(event.target.value)} aria-label="Provider Base URL" />
             <input className={styles.input} type="password" placeholder="API key" value={customKey} onChange={(event) => setCustomKey(event.target.value)} aria-label="Provider API key" />
             <input className={styles.input} placeholder="Model ID (e.g. llama-3.3-70b)" value={customModelId} onChange={(event) => setCustomModelId(event.target.value)} aria-label="Initial model ID" />
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+            <label className={styles.hint} style={{ minWidth: 90 }}>Wire protocol</label>
+            <select className={styles.input} value={customProtocol} onChange={(e) => setCustomProtocol(e.target.value as typeof customProtocol)} style={{ maxWidth: 260 }}>
+              <option value="openai-chat">OpenAI Chat Completions (default)</option>
+              <option value="anthropic-messages">Anthropic Messages</option>
+              <option value="openai-responses">OpenAI Responses</option>
+            </select>
+            <span className={styles.hint}>Can be changed later via settings until you need to recreate provider.</span>
           </div>
           {error && <p className={styles.error}>{error}</p>}
           <div className={styles.inlineActions}>
@@ -208,6 +222,9 @@ function ProvidersSection({
       )}
       <div className={styles.providerList}>
         {presets.map((provider) => {
+              // Defensive reads: legacy persisted customProviders may predate
+              // newer fields; a malformed entry must never crash the section.
+              if (!provider || !provider.id || !provider.name) return null;
               const providerKeys = keys[provider.id] ?? [];
               const providerModels = provider.staticModels ?? [];
               const isAdding = addingProvider === provider.id;
@@ -217,13 +234,29 @@ function ProvidersSection({
               <div className={styles.providerTop}>
                 <div>
                   <div className={styles.providerName}>{provider.name}</div>
-                  <div className={styles.providerMeta}>{provider.protocol} · {provider.baseUrl}</div>
+                  <div className={styles.providerMeta}>{provider.protocol ?? "openai-chat"} · {provider.baseUrl ?? "—"}</div>
                 </div>
                 <span className={`${styles.statusPill} ${providerKeys.length ? styles.statusGood : styles.statusMuted}`}>
                   <span className={styles.statusDot} /> {providerKeys.length ? "Configured" : "Not configured"}
                 </span>
               </div>
               {provider.notes && <p className={styles.providerNote}>{provider.notes}</p>}
+              {provider.id === "agentrouter" && (
+                <div className={styles.field} style={{ gridTemplateColumns: "1fr", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                  <label className={styles.label} style={{ fontSize: 11 }}>AgentRouter mode</label>
+                  <select
+                    className={styles.input}
+                    value={(provider as ProviderPreset & { agentRouterMode?: string }).agentRouterMode ?? "auto"}
+                    onChange={(e) => void onSetAgentRouterMode?.(e.target.value as "auto" | "openai" | "anthropic")}
+                    title="Auto selects wire protocol by model prefix; Kilo forces OpenAI-chat on /v1, Claude forces Anthropic on base without /v1"
+                  >
+                    <option value="auto">Auto — by model prefix (default)</option>
+                    <option value="openai">Kilo Code — OpenAI-compatible (forces /v1 + /chat/completions)</option>
+                    <option value="anthropic">Claude Code — Anthropic (forces base without /v1 + /messages)</option>
+                  </select>
+                  <span className={styles.hint}>When forced, a mismatched model shows a diagnostic error instead of silently using the wrong endpoint. Keep Auto unless you need to emulate a specific agent.</span>
+                </div>
+              )}
               <div className={styles.modelRows}>
                 <div className={styles.modelLabel}>Models</div>
                 {providerModels.length > 0 ? providerModels.map((model) => (

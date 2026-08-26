@@ -349,3 +349,71 @@
     transition: none;
   }
 }
+
+/* == T4: session file explorer (Context) ================================== */
+
+.fileExplorer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  margin-bottom: var(--sp-3);
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--bg-sunken) 60%, transparent);
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: inherit;
+  font-size: var(--fs-2xs);
+  text-align: start;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.fileRow:hover,
+.fileRow:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.fileIcon {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.fileIconImage {
+  color: var(--accent-secondary);
+}
+
+.fileName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.fileMeta {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.emptyFiles {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}

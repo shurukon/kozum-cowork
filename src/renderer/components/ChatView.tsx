@@ -52,6 +52,8 @@ export interface ChatViewProps {
   sessionId: string;
   /** Renderer/action error shown inside the transcript instead of a popup. */
   inlineError?: string | null;
+  /** T6: clear the renderer-side inline error without a restart. */
+  onDismissInlineError?: () => void;
 
   // Messaging
   onSend: (text: string) => void;
@@ -99,9 +101,15 @@ export interface ChatViewProps {
 
   /** User-message actions shared by Cowork and Code. */
   onCopyMessage?: (text: string) => void;
-  onEditMessage?: (messageId: string, text: string) => void;
+  /** T8: enter inline editing on this user bubble (in-place, not composer). */
+  onEditMessage?: (messageId: string) => void;
+  /** T8: save the inline edit — truncates history from the message and resends. */
+  onEditSave?: (messageId: string, newText: string) => void;
+  onEditCancel?: () => void;
+  /** Message id currently being edited inline. */
+  editingMessageId?: string | null;
   onRetryMessage?: (messageId: string, text: string) => void;
-  /** Draft injected by edit-back for this mode. */
+  /** Draft injected by send-failure restore for this mode. */
   composerDraft?: string | null;
 }
 
@@ -116,6 +124,7 @@ export function ChatView({
   mode,
   sessionId,
   inlineError,
+  onDismissInlineError,
   onSend,
   onCancel,
   onAttach,
@@ -140,6 +149,9 @@ export function ChatView({
   onResolveQuestion,
   onCopyMessage,
   onEditMessage,
+  onEditSave,
+  onEditCancel,
+  editingMessageId,
   onRetryMessage,
   composerDraft = null,
 }: ChatViewProps) {
@@ -248,7 +260,10 @@ export function ChatView({
               onOpenFile={onOpenFile}
               onPreview={onPreview}
               onCopyMessage={onCopyMessage}
-              onEditMessage={onEditMessage}
+              editActive={editingMessageId === msg.id}
+              onEditMessage={msg.role === "user" ? onEditMessage : undefined}
+              onEditSave={onEditSave}
+              onEditCancel={onEditCancel}
               onRetryMessage={onRetryMessage}
             />
           ))}
@@ -256,6 +271,17 @@ export function ChatView({
             <div className={styles.inlineError} role="alert" aria-live="assertive">
               <strong>Something went wrong</strong>
               <span>{modeState.error || inlineError}</span>
+              {onDismissInlineError && (
+                <button
+                  type="button"
+                  className={styles.inlineErrorDismiss}
+                  aria-label="Dismiss error"
+                  title="Dismiss"
+                  onClick={onDismissInlineError}
+                >
+                  ×
+                </button>
+              )}
             </div>
           )}
         </div>

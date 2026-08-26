@@ -96,8 +96,7 @@ export function makeComputerTools(
         name: "computer_screenshot",
         title: "Computer: Screenshot",
         description:
-          "Capture a screenshot of the Windows desktop or a screen region. " +
-          "Requires a vision-capable model.",
+          "Capture a screenshot of the Windows desktop or a screen region. ",
         inputSchema: {
           type: "object",
           properties: {
@@ -127,7 +126,6 @@ export function makeComputerTools(
         },
         icon: "monitor",
         group: "computer",
-        requiresVision: true,
         modes: ["cowork", "code"],
       },
 
@@ -468,3 +466,4 @@ export function makeComputerTools(
     },
   ];
 }
+

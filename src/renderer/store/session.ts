@@ -36,6 +36,7 @@ export interface SessionStore {
 
   /** Append a user message immediately (optimistic). */
   addUserMessage: (mode: Mode, message: Message) => void;
+  dropMessagesFrom: (mode: Mode, messageId: string) => boolean;
 
   /** Reset the entire state for a mode (new session). */
   clearMode: (mode: Mode) => void;
@@ -207,6 +208,23 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const m = prev[mode];
       return { [mode]: { ...m, messages: [...m.messages, message] } };
     });
+  },
+
+  /** T8: drop the message and everything after it (local transcript mirror of
+   * the backend truncateFrom). Returns false when the anchor is gone. */
+  dropMessagesFrom(mode: Mode, messageId: string): boolean {
+    let removed = false;
+    set((prev) => {
+      const m = prev[mode];
+      const idx = m.messages.findIndex((msg) => msg.id === messageId);
+      if (idx === -1) return prev;
+      removed = true;
+      const kept = m.messages.slice(0, idx);
+      const removedIds = new Set(m.messages.slice(idx).map((msg) => msg.id));
+      const toolCards = new Map([...m.toolCards].filter(([id]) => !removedIds.has(id)));
+      return { [mode]: { ...m, messages: kept, toolCards } };
+    });
+    return removed;
   },
 
   clearMode(mode: Mode) {

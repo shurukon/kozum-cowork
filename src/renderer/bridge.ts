@@ -97,6 +97,8 @@ export interface KozumBridge {
     removeCustom: (id: string) => Promise<Result<void>>;
     /** Patch fields on a custom provider. */
     updateCustom: (id: string, patch: Partial<ProviderPreset>) => Promise<Result<ProviderPreset>>;
+    /** Set AgentRouter explicit wire mode (auto/openai/anthropic). */
+    setAgentRouterMode: (mode: "auto" | "openai" | "anthropic") => Promise<Result<AppSettings>>;
   };
 
   sessions: {
@@ -113,6 +115,12 @@ export interface KozumBridge {
      * Pass null to create an empty-prefix branch for replacing the first turn.
      */
     branch: (sessionId: string, uptoMessageId?: string | null) => Promise<Result<Session>>;
+    /** T7/T8: drop messages from messageId onward, in place (Regenerate/Edit). */
+    truncateFrom: (
+      sessionId: string,
+      messageId: string,
+      opts?: { inclusive?: boolean },
+    ) => Promise<Result<{ removed: number }>>;
     /** Rename a session. */
     rename: (sessionId: string, title: string) => Promise<Result<void>>;
     /** Change the permission posture for a session. */
@@ -185,6 +193,10 @@ export interface KozumBridge {
         tools?: Record<string, "allow" | "deny" | "ask">;
       },
     ) => Promise<Result<McpServerConfig>>;
+    oauthLogin: (serverId: string) => Promise<Result<McpServerConfig>>;
+    discoverOAuth: (
+      url: string,
+    ) => Promise<Result<{ authorizationEndpoint?: string; tokenEndpoint?: string; registrationEndpoint?: string; resource?: string; scopes?: string[] }>>;
   };
 
   plugins: {

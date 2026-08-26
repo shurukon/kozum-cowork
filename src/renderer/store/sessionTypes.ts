@@ -3,7 +3,7 @@
  * Shared by the reducer and the store.
  */
 
-import type { Message, AgentTask, ToolResult, SessionStatus, SubagentRun } from "@shared/types.ts";
+import type { Message, AgentTask, ToolResult, SessionStatus, SubagentRun, SessionFileInfo } from "@shared/types.ts";
 
 export type ToolStatus = "running" | "ok" | "error";
 
@@ -91,6 +91,8 @@ export interface ModeState {
   pendingPermissions: PendingPermission[];
   /** Live subagent runs keyed by run id (P1-1). */
   subagents: Record<string, SubagentView>;
+  /** Newest-first snapshot of the session working folder (W4 chips + Canvas). Optional for legacy literals/tests. */
+  sessionFiles?: SessionFileInfo[];
   /** Event identities already applied to this mode; bounded by the store lifecycle. */
   seenEventIds: Set<string>;
 }

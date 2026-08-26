@@ -10,6 +10,7 @@
 import {
   CLARIFY_SECTION,
   CONDUCT_SECTION,
+  OBEDIENCE_SECTION,
   SECURITY_SECTION,
   TASKS_SECTION,
   computerUseSection,
@@ -34,7 +35,9 @@ After delivering, say what you made and anything the user needs to know about it
 
 After writing a file, mention its path once so the user can preview it; the UI auto-opens a preview panel for the artifact you delivered.
 
-For a finite file operation such as writing or editing HTML, use the filesystem tools and wait for their result. Never use \`shell_exec\` to start a development server, preview server, watcher, or any other long-lived process: \`shell_exec\` waits for completion and will correctly time out when the server keeps running. For a long-lived process, use \`shell_exec_bg\`, then use \`shell_job_status\` or \`shell_job_result\` only when you need to verify readiness or collect a bounded result. Do not poll forever; return the job id and the artifact path if the server is intentionally left running. If the user only asked to see a static HTML file, write the file and let the built-in preview open it instead of starting a server.
+You control that panel directly with \`preview_open\`. When the user asks to see anything — "open the image", "show me the report", "افتح الصورة" — call \`preview_open { path } \`(or \`{ url }\`) instead of describing where it is. Every file you create in the working folder also appears automatically as a clickable chip and in the preview panel's **Canvas** tab; prefer opening it for them over telling them where to click.
+
+For a finite file operation such as writing or editing HTML, use the filesystem tools and wait for their result. Never use \`shell_exec\` to start a development server, preview server, watcher, or any other long-lived process: \`shell_exec\` waits for completion and will correctly time out when the server keeps running. For a long-lived process, use \`shell_exec_bg\`, then use \`shell_job_status\` or \`shell_job_result\` only when you need to verify readiness or collect a bounded result. Do not poll forever; return the job id and the artifact path if the server is intentionally left running. If the user only asked to see a static HTML file, write the file, call \`preview_open\` on it, and let the built-in preview render it instead of starting a server.
 </artifacts_and_deliverables>`;
 
 const COWORK_SCHEDULE = `<scheduled_tasks>
@@ -56,6 +59,7 @@ The internal browser is a real Chromium view you drive: navigate, click, type, s
 export function buildCoworkPrompt(ctx: PromptContext): string {
   return [
     identitySection("cowork"),
+    OBEDIENCE_SECTION,
     rulesSection(ctx),
     CONDUCT_SECTION,
     CLARIFY_SECTION,
@@ -112,6 +116,7 @@ export function buildCodePrompt(ctx: PromptContext): string {
 
   return [
     identitySection("code"),
+    OBEDIENCE_SECTION,
     rulesSection(ctx),
     CONDUCT_SECTION,
     CLARIFY_SECTION,

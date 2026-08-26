@@ -128,6 +128,8 @@ export function App() {
     cowork: null,
     code: null,
   });
+  /** T8: id of the user bubble currently in inline-edit mode. */
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
 
   // Preview panel target (file / url / project / computer / mcp)
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
@@ -139,7 +141,21 @@ export function App() {
   const activeSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSessionId;
   const inFlightSend = useRef<Record<Mode, string | null>>({ cowork: null, code: null });
+  const inFlightWatchdog = useRef<Record<Mode, ReturnType<typeof setTimeout> | null>>({
+    cowork: null,
+    code: null,
+  });
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
+
+  /** Clear the in-flight send flag for a mode from ANY terminal signal. */
+  function clearInFlight(m: Mode) {
+    inFlightSend.current[m] = null;
+    const timer = inFlightWatchdog.current[m];
+    if (timer) {
+      clearTimeout(timer);
+      inFlightWatchdog.current[m] = null;
+    }
+  }
 
   // TranscriptSkeleton shows while the active session's history is loading.
   const [loadingSession, setLoadingSession] = useState(false);
@@ -171,6 +187,32 @@ export function App() {
   }
 
   const modeState = useSessionStore((s) => s[mode]);
+  /** W4: newest-first artifacts from the active session's working folder. */
+  const modeSessionFiles = useSessionStore((s) => s[mode].sessionFiles) ?? [];
+
+  /** T3: manual right-sidebar visibility, persisted per mode. Preview wins over it. */
+  const [rightPanelHidden, setRightPanelHidden] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(`kozum.rightPanel.hidden.cowork`) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    // Re-read when the mode changes so each mode remembers its own preference.
+    try {
+      setRightPanelHidden(window.localStorage.getItem(`kozum.rightPanel.hidden.${mode}`) === "1");
+    } catch { /* storage optional */ }
+  }, [mode]);
+  function toggleRightPanel() {
+    setRightPanelHidden((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(`kozum.rightPanel.hidden.${mode}`, next ? "1" : "0");
+      } catch { /* storage optional */ }
+      return next;
+    });
+  }
   const applyEvent = useSessionStore((s) => s.applyEvent);
   const addUserMessage = useSessionStore((s) => s.addUserMessage);
   const clearMode = useSessionStore((s) => s.clearMode);
@@ -379,6 +421,24 @@ export function App() {
     let off: (() => void) | undefined;
     try {
       off = bridge().sessions.onEvent((e) => {
+        // W4: agent-requested preview opens globally — bypass the visibility
+        // filter so the agent can always show the user something on demand.
+        if (e.type === "preview_open") {
+          const t = e.target;
+          setPreviewTarget(t.kind === "file" ? { kind: "file", path: t.path } : { kind: "url", url: t.url });
+          return;
+        }
+        // Terminal signals reset the in-flight send flag UNCONDITIONALLY —
+        // before the visibility filter — so a missed/filtered event can never
+        // wedge the composer (the "cowork does nothing" bug).
+        if (
+          (e.type === "session_status" && e.status !== "running") ||
+          e.type === "error" ||
+          e.type === "turn_end"
+        ) {
+          const targetMode = (e.mode ?? mode) as Mode;
+          clearInFlight(targetMode);
+        }
         // Events are global on the IPC channel, but the visible transcript is
         // per session. Keep background work for the other mode, while refusing
         // stale events from another session in the currently visible mode.
@@ -389,9 +449,6 @@ export function App() {
             : true;
         if (!belongsToVisibleSession) return;
         applyEvent(e);
-        if (e.type === "session_status" && e.status !== "running") {
-          inFlightSend.current[e.mode] = null;
-        }
         if (e.type === "error") setBanner(e.message);
 
         // BP-A: live browser preview. Open on tool_start for browser_* tools
@@ -468,6 +525,19 @@ export function App() {
   );
 
   const inSession = activeSessionId !== null;
+
+  // AgentRouter explicit-mode conflict: warn BEFORE the send instead of letting
+  // every turn fail with the diagnostic error.
+  const selectedAgentRouterPreset = presets.find((p) => p.id === "agentrouter");
+  const agentRouterConflict =
+    selection?.providerId === "agentrouter" && !!selection.modelId &&
+    selectedAgentRouterPreset?.agentRouterMode && selectedAgentRouterPreset.agentRouterMode !== "auto"
+      ? (() => {
+          const isClaude = selection!.modelId.toLowerCase().startsWith("claude");
+          const forced = selectedAgentRouterPreset.agentRouterMode!;
+          return (forced === "anthropic") !== isClaude ? forced : null;
+        })()
+      : null;
   // A stored key is sufficient to enter the shell; the resolver below selects a
   // provider/model before the first send. FirstRun is only for a truly empty
   // installation, never for a previously configured installation with stale or
@@ -482,6 +552,30 @@ export function App() {
     if (!bootstrapReady || presets.length === 0 || !hasAnyKeys) return;
     void reloadModels(presets);
   }, [bootstrapReady, presets, hasAnyKeys, reloadModels]);
+
+  // W5: silent auto-refresh — gateways such as AgentRouter change their model
+  // catalogue frequently. Refresh in the background when the freshest cached
+  // entry for the selected provider is older than six hours.
+  const autoRefreshTried = useRef<Set<string>>(new Set());
+  const selectedProviderId = selection?.providerId ?? null;
+  useEffect(() => {
+    if (!selectedProviderId || !hasAnyKeys) return;
+    const list = modelsByProvider[selectedProviderId];
+    const freshest = (list ?? []).reduce((m, x) => Math.max(m, x.fetchedAt ?? 0), 0);
+    if (Date.now() - freshest < 6 * 60 * 60_000) return;
+    if (autoRefreshTried.current.has(selectedProviderId)) return;
+    autoRefreshTried.current.add(selectedProviderId);
+    // Fire-and-forget: must never surface as an uncaught commit-phase error
+    // when the component detaches mid-flight (bridge torn down first).
+    void (async () => {
+      try {
+        const res = await bridge().providers.refreshModels(selectedProviderId);
+        if (res.ok) setModelsByProvider((prev) => ({ ...prev, [selectedProviderId]: res.value.models }));
+      } catch {
+        /* background refresh is best-effort */
+      }
+    })();
+  }, [selectedProviderId, modelsByProvider, hasAnyKeys]);
 
   // Resolve provider, key and model together from persisted memory. This also
   // repairs stale keyId/modelId metadata rather than leaving the UI half-ready.
@@ -551,7 +645,11 @@ export function App() {
     setBanner(null);
     setComposerDraft((prev) => ({ ...prev, [mode]: null }));
     const restoreDraft = () => setComposerDraft((prev) => ({ ...prev, [mode]: text }));
-    if (inFlightSend.current[mode]) return;
+    if (inFlightSend.current[mode]) {
+      // Never fail silently: explain why the composer ignored the submit.
+      setBanner("A previous request is still being processed. Wait for it to finish or press Stop, then send again.");
+      return;
+    }
 
     // Resolve a usable selection synchronously for this send. React state is
     // updated as well, but the current handler must not wait for a re-render
@@ -578,7 +676,7 @@ export function App() {
     inFlightSend.current[mode] = clientTurnId;
     const sid = await ensureSession(effectiveSelection);
     if (!sid) {
-      inFlightSend.current[mode] = null;
+      clearInFlight(mode);
       restoreDraft();
       return;
     }
@@ -608,8 +706,17 @@ export function App() {
       // Clear attachments only after the backend accepted the send, so a
       // failed send doesn't silently throw away the user's file list.
       if (attachedFiles) setSharedFiles([]);
+      // Watchdog: if no terminal event ever arrives (dropped IPC, backend
+      // crash), un-wedge the composer instead of staying blocked forever.
+      if (inFlightWatchdog.current[mode]) clearTimeout(inFlightWatchdog.current[mode]!);
+      inFlightWatchdog.current[mode] = setTimeout(() => {
+        if (inFlightSend.current[mode]) {
+          clearInFlight(mode);
+          setBanner("The session did not report completion in time — the composer was released. Try sending again.");
+        }
+      }, 120_000);
     } else {
-      inFlightSend.current[mode] = null;
+      clearInFlight(mode);
       // Keep send failures in the transcript flow; no popup interrupts the
       // conversation. Restore the draft so a transient network failure does
       // not force the user to type the request again.
@@ -632,43 +739,60 @@ export function App() {
     }
   }
 
-  async function branchBeforeMessage(messageId: string): Promise<boolean> {
-    const sourceSessionId = activeSessionIdRef.current;
-    if (!sourceSessionId || inFlightSend.current[mode]) return false;
-    const messages = useSessionStore.getState()[mode].messages;
-    const index = messages.findIndex((item) => item.id === messageId);
-    if (index < 0) {
-      setBanner("This message is no longer available.");
+  /* ── T8: in-place history truncation helpers ───────────────────────────── */
+
+  /** Truncate locally AND on the backend (backend first — it is the source of
+   * truth; local mirror only after success). */
+  async function truncateBoth(messageId: string, inclusive: boolean): Promise<boolean> {
+    const sid = activeSessionIdRef.current;
+    if (!sid) return false;
+    if (inFlightSend.current[mode]) {
+      setBanner("Wait for the current response to finish before editing or regenerating.");
       return false;
     }
-    const previousMessageId = index > 0 ? messages[index - 1].id : null;
-    const res = await bridge().sessions.branch(sourceSessionId, previousMessageId);
+    const res = await bridge().sessions.truncateFrom(sid, messageId, { inclusive });
     if (!res.ok) {
       setBanner(res.error);
       return false;
     }
-    const nextSession = res.value;
+    useSessionStore.getState().dropMessagesFrom(mode, messageId);
     await reloadSessions(mode);
-    activeSessionIdRef.current = nextSession.id;
-    setSessionIdentity(mode, nextSession.id);
-    setActiveSessionId(nextSession.id);
-    lastSession.current[mode] = nextSession.id;
-    clearMode(mode);
-    setNav("new");
     return true;
   }
 
-  async function handleEditMessage(messageId: string, text: string) {
-    if (!(await branchBeforeMessage(messageId))) return;
-    setComposerDraft((prev) => ({ ...prev, [mode]: text }));
+  function messageTextOf(id: string): string | null {
+    const msg = useSessionStore.getState()[mode].messages.find((m) => m.id === id);
+    if (!msg) return null;
+    return msg.content
+      .map((b) => (b.type === "text" ? b.text : ""))
+      .join("\n")
+      .trim();
   }
 
-  async function handleRetryMessage(messageId: string, text: string) {
-    if (!(await branchBeforeMessage(messageId))) return;
-    // The branch contains only the prefix before the retried turn, so the
-    // retry is sent as a genuinely new turn and cannot duplicate the old user
-    // message or replay its assistant/tool tail.
-    await handleSubmit(text);
+  /**
+   * T1 Edit: the bubble itself is already in inline-edit mode (ChatView).
+   * Saving truncates from that message inclusive and resends the new text as a
+   * normal turn — previous history for this interaction is gone.
+   */
+  async function handleEditSave(messageId: string, newText: string): Promise<void> {
+    setEditingMessageId(null);
+    if (!(await truncateBoth(messageId, true))) return;
+    await handleSubmit(newText);
+  }
+
+  /**
+   * T1 Retry on a USER bubble: identical contract to regenerate — drop the
+   * question AND its stale tail, then re-send the same prompt through the
+   * normal path so exactly one fresh exchange replaces the old one.
+   */
+  async function handleRetryMessage(messageId: string, _text: string): Promise<void> {
+    void _text;
+    const messages = useSessionStore.getState()[mode].messages;
+    if (!messages.some((m) => m.id === messageId)) return;
+    const promptText = messageTextOf(messageId);
+    if (!promptText) return;
+    if (!(await truncateBoth(messageId, true))) return;
+    await handleSubmit(promptText);
   }
 
   /* Reply to a pending question or permission_request from the inline UI.
@@ -683,6 +807,11 @@ export function App() {
   function handleResolveQuestion(requestId: string) {
     if (!activeSessionId) return;
     useSessionStore.getState().resolveQuestion(mode, requestId);
+  }
+
+  /** T8: enter inline editing on a user bubble (in place). */
+  function handleEditMessage(messageId: string): void {
+    setEditingMessageId(messageId);
   }
 
   /** Handles file attachment from the in-chat QuickPanel. Extension actions stay in chat. */
@@ -1351,6 +1480,14 @@ export function App() {
           {!inSession && inlineErrors[mode] && (
             <div className={styles.banner} role="alert" aria-live="assertive">
               <span>{inlineErrors[mode]}</span>
+              <button
+                type="button"
+                aria-label="Dismiss error"
+                title="Dismiss"
+                onClick={() => setBanner(null)}
+              >
+                ×
+              </button>
             </div>
           )}
           {nav === "new" &&
@@ -1371,6 +1508,30 @@ export function App() {
               />
             ) : inSession ? (
               <div className={styles.sessionWrap}>
+                {agentRouterConflict && (
+                  <div className={styles.banner} role="alert">
+                    <span>
+                      AgentRouter mode "{agentRouterConflict === "anthropic" ? "Claude (Anthropic)" : "Kilo (OpenAI)"}" conflicts
+                      with the selected model "{selection?.modelId}". Sending will fail until you switch to Auto or pick a
+                      matching model.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void bridge().providers.setAgentRouterMode("auto").then(async (res) => {
+                          if (res.ok) {
+                            await reloadPresets();
+                            pushToast("success", "AgentRouter mode reset to Auto");
+                          } else {
+                            pushToast("error", res.error);
+                          }
+                        }).catch(() => undefined);
+                      }}
+                    >
+                      Switch to Auto
+                    </button>
+                  </div>
+                )}
                 <ErrorBoundary label="chat view">
                   {loadingSession ? (
                     <TranscriptSkeleton rows={4} />
@@ -1379,6 +1540,7 @@ export function App() {
                       mode={mode}
                       sessionId={activeSessionId!}
                       inlineError={inlineErrors[mode]}
+                      onDismissInlineError={() => setBanner(null)}
                       onSend={(t) => void handleSubmit(t)}
                       onCancel={() => void handleCancel()}
                       onAttach={(kind) => void handleAttach(kind)}
@@ -1402,7 +1564,10 @@ export function App() {
                       onReply={(requestId, answer) => void handleReply(requestId, answer)}
                       onResolveQuestion={(requestId) => handleResolveQuestion(requestId)}
                       onCopyMessage={(text) => void handleCopyMessage(text)}
-                      onEditMessage={(messageId, text) => void handleEditMessage(messageId, text)}
+                      onEditMessage={handleEditMessage}
+                      onEditSave={(messageId, newText) => void handleEditSave(messageId, newText)}
+                      onEditCancel={() => setEditingMessageId(null)}
+                      editingMessageId={editingMessageId}
                        onRetryMessage={(messageId, text) => void handleRetryMessage(messageId, text)}
                       composerDraft={composerDraft[mode]}
                     />
@@ -1520,7 +1685,7 @@ export function App() {
           )}
         </main>
 
-        {!previewTarget && (inSession || (mode === "cowork" && !needsSetup)) && (
+        {!previewTarget && !rightPanelHidden && (inSession || (mode === "cowork" && !needsSetup)) && (
           <RightPanel
             mode={mode}
             tasks={modeState.tasks}
@@ -1530,7 +1695,22 @@ export function App() {
             skillsUsed={skillsUsed}
             projectName={activeProject?.name ?? null}
             workingFolder={activeProject?.folder ?? null}
+            sessionFiles={modeSessionFiles}
+            onOpenFile={openFilePreview}
           />
+        )}
+
+        {/* T3: floating edge toggle — works whether the panel is visible or hidden */}
+        {!previewTarget && (inSession || (mode === "cowork" && !needsSetup)) && (
+          <button
+            type="button"
+            className={`${styles.edgeToggle} ${rightPanelHidden ? styles.edgeToggleHidden : ""}`}
+            onClick={toggleRightPanel}
+            aria-label={rightPanelHidden ? "Show side panel" : "Hide side panel"}
+            title={rightPanelHidden ? "Show side panel" : "Hide side panel"}
+          >
+            {rightPanelHidden ? "‹" : "›"}
+          </button>
         )}
 
         {previewTarget && (
@@ -1563,6 +1743,17 @@ export function App() {
             onAddProviderModel={(providerId, modelId) => handleAddProviderModel(providerId, modelId)}
             onRemoveProviderModel={(providerId, modelId) => handleRemoveProviderModel(providerId, modelId)}
             onRemoveCustomProvider={(id) => void handleRemoveCustomProvider(id)}
+            onSetAgentRouterMode={async (mode) => {
+              const res = await bridge().providers.setAgentRouterMode(mode);
+              if (res.ok) {
+                setSettings(res.value);
+                await reloadPresets();
+                pushToast("success", `AgentRouter mode set to ${mode}`);
+              } else {
+                pushToast("error", res.error);
+                throw new Error(res.error);
+              }
+            }}
             onPickFolder={(m) => void handlePickFolder(m)}
             onPickWorkspaceFolder={() => void pickDefaultWorkspace()}
             onBack={() => setSettingsOpen(false)}
@@ -1600,6 +1791,16 @@ export function App() {
               }
             }}
             onLoadConnectorTools={(serverId) => bridge().mcp.tools(serverId)}
+            onOAuthLogin={async (serverId) => {
+              const res = await bridge().mcp.oauthLogin(serverId);
+              if (res.ok) {
+                await reloadExtensions();
+                pushToast("success", `${res.value.name}: connected · ${res.value.toolCount} tool${res.value.toolCount === 1 ? "" : "s"}`);
+              } else {
+                pushToast("error", res.error);
+              }
+              return res;
+            }}
             onSetConnectorToolPolicy={async (serverId, policy) => {
               const res = await bridge().mcp.setToolPolicy(serverId, policy);
               if (res.ok) await reloadExtensions();

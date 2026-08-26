@@ -36,21 +36,38 @@ export class ProviderRegistry {
   private readonly secrets: SecretStore;
   private readonly appPaths: AppPaths;
   private readonly loadCustomPresets?: () => Promise<ProviderPreset[]>;
+  private readonly loadProviderOverrides?: () => Promise<Record<string, { agentRouterMode?: "auto" | "openai" | "anthropic" }>>;
 
   constructor(
     secrets: SecretStore,
     appPaths: AppPaths,
     loadCustomPresets?: () => Promise<ProviderPreset[]>,
+    loadProviderOverrides?: () => Promise<Record<string, { agentRouterMode?: "auto" | "openai" | "anthropic" }>>,
   ) {
     this.secrets = secrets;
     this.appPaths = appPaths;
     this.loadCustomPresets = loadCustomPresets;
+    this.loadProviderOverrides = loadProviderOverrides;
   }
 
   /** Resolve built-in and user-defined providers from the persisted settings. */
   async presetFor(providerId: string): Promise<ProviderPreset | undefined> {
     const builtIn = getPreset(providerId);
-    if (builtIn) return builtIn;
+    if (builtIn) {
+      // Apply stored providerOverrides (e.g. AgentRouter explicit mode) without mutating the shipped preset.
+      if (this.loadProviderOverrides) {
+        try {
+          const overrides = await this.loadProviderOverrides();
+          const ov = overrides[providerId];
+          if (ov && typeof ov.agentRouterMode === "string") {
+            return { ...builtIn, agentRouterMode: ov.agentRouterMode as ProviderPreset["agentRouterMode"] };
+          }
+        } catch {
+          /* ignore override load failure */
+        }
+      }
+      return builtIn;
+    }
     const custom = await this.loadCustomPresets?.().catch(() => []) ?? [];
     return custom.find((preset) => preset.id === providerId);
   }
@@ -83,8 +100,33 @@ export class ProviderRegistry {
    * default protocol. All routed protocols share the same baseUrl because
    * adapters append their own path segments (/chat/completions, /responses,
    * /messages).
+   *
+   * For AgentRouter, an explicit `agentRouterMode` overrides prefix inference.
+   * When forced, a mismatched model family throws a diagnostic error instead of
+   * silently falling back to the wrong wire format.
    */
   protocolForModel(preset: ProviderPreset, modelId: string): ProviderPreset["protocol"] {
+    // AgentRouter explicit mode takes precedence over prefix inference.
+    if (preset.id === "agentrouter" && preset.agentRouterMode && preset.agentRouterMode !== "auto") {
+      const forced = preset.agentRouterMode === "anthropic" ? "anthropic-messages" : "openai-chat";
+      // Validate compatibility: give a clear error instead of silent fallback.
+      const isClaudeModel = modelMatchesPrefix(modelId, "claude-");
+      const isOpenAiFamily = ["gpt-", "kimi-", "glm-", "deepseek-", "minimax-", "qwen-"].some((p) => modelMatchesPrefix(modelId, p));
+      if (preset.agentRouterMode === "anthropic" && !isClaudeModel) {
+        throw new Error(
+          `AgentRouter mode "Claude (Anthropic)" expects a claude- model but got "${modelId}". Switch AgentRouter mode to Auto or Kilo (OpenAI) or pick a claude- model.`,
+        );
+      }
+      if (preset.agentRouterMode === "openai" && isClaudeModel) {
+        throw new Error(
+          `AgentRouter mode "Kilo (OpenAI)" expects an OpenAI-compatible model (gpt-/kimi-/glm-/...) but got "${modelId}". Switch AgentRouter mode to Auto or Claude (Anthropic) or pick a compatible model.`,
+        );
+      }
+      if (preset.agentRouterMode === "openai" && !isOpenAiFamily && !isClaudeModel) {
+        // Unknown family still allowed through openai-chat — provider will decide. No error.
+      }
+      return forced as ProviderPreset["protocol"];
+    }
     const routes = preset.protocolRoutes;
     if (routes) {
       for (const [protocol, prefixes] of Object.entries(routes) as Array<[ProviderPreset["protocol"], string[] | undefined]>) {
@@ -119,8 +161,21 @@ export class ProviderRegistry {
     const entry = await this.secrets.getEntry(keyId);
     if (!entry) throw new Error(`API key "${keyId}" not found`);
 
-    const rawKey = await this.secrets.reveal(keyId);
-    if (rawKey === null) throw new Error(`Could not decrypt key "${keyId}"`);
+    const rawKey = (await this.secrets.reveal(keyId)) ?? "";
+    if (!rawKey) throw new Error(`Could not decrypt key "${keyId}"`);
+
+    // HTTP headers must be ByteStrings: reject keys with non-ASCII/control
+    // characters (typical copy-paste artifact from chat/RTL text) with an
+    // actionable message instead of an opaque fetch failure later.
+    const trimmed = rawKey.trim();
+    if (!trimmed || !/^[\x21-\x7E]+$/.test(trimmed)) {
+      await this.secrets.setStatus(keyId, "invalid", "key contains invalid characters");
+      throw new Error(
+        `The stored API key for provider "${preset.name}" contains invalid characters ` +
+          `(non-ASCII or spaces). This usually happens when the key is copied with ` +
+          `extra text. Remove it from Settings → AI providers and paste it again.`,
+      );
+    }
 
     const protocol = modelId ? this.protocolForModel(preset, modelId) : preset.protocol;
     const baseUrl = resolveBaseUrl(preset, entry.meta, protocol);
@@ -129,7 +184,7 @@ export class ProviderRegistry {
     return {
       providerId,
       baseUrl,
-      apiKey: rawKey,
+      apiKey: trimmed,
       meta: entry.meta ?? {},
       extraHeaders,
     };
@@ -166,8 +221,16 @@ export class ProviderRegistry {
         const ctx = await this.contextFor(providerId, keyId);
         models = await adapter.listModels(ctx);
       } catch (e) {
-        // Fall through to static models, but surface WHY upstream.
-        warning = e instanceof Error ? e.message : String(e);
+        // Fall through to static models, but surface WHY upstream — with an
+        // actionable hint for auth failures, which are the common case.
+        const raw = e instanceof Error ? e.message : String(e);
+        if (/401|unauthorized/i.test(raw)) {
+          warning =
+            `401 from ${preset.name} — the stored API key was rejected. ` +
+            `Remove and re-add it in Settings → AI providers, then refresh again.`;
+        } else {
+          warning = raw;
+        }
         models = null;
       }
     }

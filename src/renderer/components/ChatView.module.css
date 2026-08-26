@@ -183,3 +183,35 @@
 @media (max-width: 720px) {
   :global(.kz-cowork-shell) .messages { padding-inline: 18px; gap: 22px; }
 }
+
+/* == T6: inline error dismiss ============================================= */
+
+.inlineError {
+  position: relative;
+}
+
+.inlineErrorDismiss {
+  position: absolute;
+  top: 6px;
+  inset-inline-end: 6px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-xs, 4px);
+  background: transparent;
+  color: inherit;
+  font-size: var(--fs-md, 14px);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.inlineErrorDismiss:hover,
+.inlineErrorDismiss:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  opacity: 1;
+  outline: none;
+}

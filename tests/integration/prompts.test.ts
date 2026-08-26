@@ -65,16 +65,18 @@ describe("mode separation", () => {
 });
 
 describe("vision gating", () => {
-  it("does not instruct a blind model to look at the screen", () => {
+  it("R5: no vision-model refusals — every model gets the full desktop guidance", () => {
     const blind = buildCoworkPrompt(
       ctx({ visionCapable: false, modelId: "deepseek-v4-pro", providerId: "deepseek" }),
     );
-    assert.match(blind, /cannot read images/i);
-    assert.match(blind, /must not pretend/i);
-    // It must name a concrete way out, not just refuse.
-    assert.match(blind, /Gemini|MiniMax-M3|Kimi/);
-    // And it must not be telling it to screenshot first.
-    assert.doesNotMatch(blind, /Take a screenshot and read it/);
+    // The old "cannot read images / switch to a vision-capable model" refusal
+    // branch was removed by product decision: no restrictions, no exceptions.
+    assert.doesNotMatch(blind, /cannot read images/i);
+    assert.doesNotMatch(blind, /must not pretend/i);
+    assert.doesNotMatch(blind, /switch to a vision-capable/i);
+    // The sighted guidance (tier order) is now given unconditionally.
+    const section = blind.slice(blind.indexOf("<computer_use>"), blind.indexOf("</computer_use>"));
+    assert.match(section, /Look before you act/);
   });
 
   it("gives the tier order to a sighted model", () => {

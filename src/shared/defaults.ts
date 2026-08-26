@@ -133,6 +133,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
 
   customProviders: [],
+  providerOverrides: {},
 };
 
 /** Deep-clone so callers cannot mutate the frozen factory state. */

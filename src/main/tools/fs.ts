@@ -914,7 +914,7 @@ export const fsTools: Tool[] = [
       title: "Read Image File",
       description:
         "Read an image file (PNG, JPEG, GIF, WEBP, BMP, SVG) and return it as a base64 " +
-        "blob the model can see. Requires a vision-capable model. Use this when you need " +
+        "blob into context. Use this when you need " +
         "to inspect a diagram, screenshot, or photo.",
       inputSchema: {
         type: "object",
@@ -925,7 +925,6 @@ export const fsTools: Tool[] = [
       },
       icon: "image",
       group: "filesystem",
-      requiresVision: true,
       modes: ["cowork", "code"],
     },
     async handler(input, ctx) {
@@ -1003,7 +1002,7 @@ export const fsTools: Tool[] = [
         return fail(
           `Could not extract text from ${displayPath(resolved, ctx.workingFolder)}. ` +
             `The PDF is likely scanned or image-based (no embedded text streams). ` +
-            `Try file_read_image to pass the page as a visual to a vision model.`,
+            `Try file_read_image to pass the page as a visual into context.`,
         );
       }
 
@@ -1422,3 +1421,4 @@ async function regexTestLines(
   }
   return inThreadRegexTest(pattern, flags, cappedLines, budgetMs);
 }
+

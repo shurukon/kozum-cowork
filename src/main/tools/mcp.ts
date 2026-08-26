@@ -284,14 +284,89 @@ function makeMcpRemove(manager: McpManager): Tool {
   };
 }
 
+/* ------------------------------------------------------ mcp_list_tools --- */
+
+function makeMcpListTools(manager: McpManager): Tool {
+  return {
+    definition: {
+      name: "mcp_list_tools",
+      title: "List MCP Tools",
+      description:
+        "List every callable tool on the connected MCP servers with exact names, " +
+        "descriptions and required arguments. Use this when a server exposes more " +
+        "tools than fit in your context or before calling an unfamiliar tool.",
+      icon: "list",
+      group: "mcp",
+      modes: ["cowork", "code"],
+      inputSchema: {
+        type: "object",
+        properties: {
+          serverId: {
+            type: "string",
+            description: "Optional server id. Omit to list every connected server.",
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+
+    handler: async (input, _ctx) => {
+      const only = typeof input["serverId"] === "string" ? (input["serverId"] as string) : undefined;
+      const catalog = manager.toolCatalog().filter((s) => !only || s.id === only);
+      if (only && catalog.length === 0) {
+        const ids = manager.status().map((s) => s.id);
+        return fail(
+          ids.length
+            ? `No connected MCP server with id "${only}". Connected: ${ids.join(", ")}.`
+            : "No connected MCP servers.",
+        );
+      }
+      if (catalog.length === 0) {
+        const content = "No connected MCP servers.";
+        return ok(content, { summary: "No MCP tools", detail: content });
+      }
+      const blocks = catalog.map((server) => {
+        const lines = [`MCP server "${server.name}" (serverId: ${server.id}) — ${server.tools.length} tools:`];
+        for (const t of server.tools) {
+          const args = t.requiredArgs.length ? ` [required: ${t.requiredArgs.join(", ")}]` : "";
+          lines.push(`  - ${t.name}${args} — ${t.description || "(no description)"}`);
+        }
+        return lines.join("\n");
+      });
+      const content = blocks.join("\n\n");
+      return ok(content, { summary: `${catalog.reduce((n, s) => n + s.tools.length, 0)} MCP tools`, detail: content });
+    },
+  };
+}
+
 /* ---------------------------------------------------------- mcp_call --- */
+
+/** Levenshtein distance capped for suggestion use (small strings). */
+function editDistance(a: string, b: string): number {
+  if (Math.abs(a.length - b.length) > 3) return 99;
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j++) dp[0]![j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i]![j] = Math.min(
+        dp[i - 1]![j]! + 1,
+        dp[i]![j - 1]! + 1,
+        dp[i - 1]![j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+  }
+  return dp[a.length]![b.length]!;
+}
 
 function makeMcpCall(manager: McpManager, ask: AskBroker): Tool {
   return {
     definition: {
       name: "mcp_call",
       title: "Call MCP Tool",
-      description: "Call a tool on a specific MCP server directly.",
+      description:
+        "Call a tool on a specific MCP server directly. Tool names and required " +
+        "arguments are listed in your system prompt per server; when unsure, call " +
+        "`mcp_list_tools` first. Unknown names or missing required args fail fast.",
       icon: "zap",
       group: "mcp",
       modes: ["cowork", "code"],
@@ -309,7 +384,7 @@ function makeMcpCall(manager: McpManager, ask: AskBroker): Tool {
           },
           args: {
             type: "object",
-            description: "Arguments to pass to the tool",
+            description: "Arguments to pass to the tool (include every required arg)",
           },
         },
         additionalProperties: false,
@@ -321,27 +396,29 @@ function makeMcpCall(manager: McpManager, ask: AskBroker): Tool {
       const toolName = input["tool"] as string;
       const args = input["args"] as Record<string, unknown> | undefined;
 
+      /* ── Policy gate FIRST (deny wins even when down; asks happen before
+         any existence validation so prompts are never phantom). ─────────── */
       const entry = manager.getEntry(serverId);
-
-      // ── Per-tool policy gate — evaluated BEFORE the call. ──────────────
-      // An unknown server skips the gate so it fails with the familiar
-      // "Unknown MCP server" contract instead of prompting about nothing.
-      let action: McpPolicyAction = entry
-        ? manager.effectiveToolAction(serverId, `mcp__${entry.config.name}__${toolName}`)
-        : "allow";
+      if (!entry) {
+        const ids = manager.status().map((s) => s.id);
+        return fail(
+          `Unknown MCP server "${serverId}". Connected servers: ${ids.length ? ids.join(", ") : "(none)"}.`,
+        );
+      }
+      let action: McpPolicyAction = manager.effectiveToolAction(serverId, `mcp__${entry.config.name}__${toolName}`);
       const allowedCache = mcpSessionAllowed.get(ctx.sessionId) ?? new Set<string>();
-      if (action === "ask" && allowedCache.has(`mcp__${entry?.config.name ?? serverId}__${toolName}`)) {
+      if (action === "ask" && allowedCache.has(`mcp__${entry.config.name}__${toolName}`)) {
         action = "allow";
       }
 
       if (action === "deny") {
         return fail(
-          `Tool "mcp__${entry?.config.name ?? serverId}__${toolName}" is blocked by user policy for this connector.`,
+          `Tool "mcp__${entry.config.name}__${toolName}" is blocked by user policy for this connector.`,
         );
       }
       if (action === "ask") {
-        const namespaced = `mcp__${entry!.config.name}__${toolName}`;
-        const decision = await askMcpPolicy(ask, ctx, namespaced, entry!.config.name);
+        const namespaced = `mcp__${entry.config.name}__${toolName}`;
+        const decision = await askMcpPolicy(ask, ctx, namespaced, entry.config.name);
         if (decision === "allow_always") {
           allowedCache.add(namespaced);
           mcpSessionAllowed.set(ctx.sessionId, allowedCache);
@@ -350,14 +427,62 @@ function makeMcpCall(manager: McpManager, ask: AskBroker): Tool {
         }
       }
 
-      const result = await manager.callTool(serverId, toolName, args);
+      /* ── W2 fast-fail validation — runs once the gate is open, so a real
+         allow is never wasted on a call that cannot succeed. ────────────── */
+      const catalogEntry = manager.toolCatalog().find((s) => s.id === serverId);
+      if (!catalogEntry) {
+        return fail(`MCP server "${entry.config.name}" is not connected (status: ${entry.status}).`);
+      }
+      const def = catalogEntry.tools.find((t) => t.name === toolName);
+      if (!def) {
+        const all = catalogEntry.tools.map((t) => t.name);
+        const close = all.filter((n) => editDistance(n.toLowerCase(), toolName.toLowerCase()) <= 2).slice(0, 5);
+        return fail(
+          `Tool "${toolName}" does not exist on "${entry.config.name}". Available (${all.length}): ${all.join(", ")}.` +
+            (close.length ? ` Did you mean: ${close.join(", ")}?` : ""),
+        );
+      }
+      const missing = def.requiredArgs.filter((k) => !args || !(k in args));
+      if (missing.length > 0) {
+        return fail(
+          `Missing required argument(s) for "${toolName}": ${missing.join(", ")}. ` +
+            `Supply them in args; see \`mcp_list_tools\` for the full schema.`,
+        );
+      }
+
+      /* ── R5 live feedback: elapsed-time ticker so long media-generation
+         calls (Higgsfield et al.) visibly progress instead of hanging. ──── */
+      const startedAt = Date.now();
+      const ticker = setInterval(() => {
+        ctx.onProgress(`${entry.config.name}.${toolName}: ${Math.round((Date.now() - startedAt) / 1000)}s elapsed…`);
+      }, 5000);
+
+      let result;
+      try {
+        result = await manager.callTool(serverId, toolName, args);
+      } finally {
+        clearInterval(ticker);
+      }
+      const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
 
       if (result.isError) {
         return fail(result.content, `mcp_call: ${toolName} returned error`);
       }
 
+      /* ── R5 auto-preview: surface generated media the moment it exists.
+         Scan the payload for image/video URLs and push the first one into
+         the user's preview panel; also note it for the transcript. */
+      let mediaNote = "";
+      const mediaUrlMatch = result.content.match(
+        /https?:\/\/[^\s"'<>\\]+\.(?:png|jpe?g|webp|gif|mp4|webm|mov)(?:\?[^\s"'<>\\]*)?/i,
+      );
+      if (mediaUrlMatch) {
+        ctx.onPreviewOpen?.({ kind: "url", url: mediaUrlMatch[0] });
+        mediaNote = ` Generated media auto-previewed: ${mediaUrlMatch[0]}`;
+      }
+
       return ok(result.content, {
-        summary: `mcp_call: ${toolName}`,
+        summary: `mcp_call: ${toolName} (${elapsedSec}s)${mediaNote}`,
         detail: result.content,
       });
     },
@@ -411,6 +536,7 @@ export function makeMcpTools(manager: McpManager, ask: AskBroker): Tool[] {
   return [
     makeMcpInstall(manager),
     makeMcpList(manager),
+    makeMcpListTools(manager),
     makeMcpRemove(manager),
     makeMcpCall(manager, ask),
   ];

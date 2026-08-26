@@ -36,6 +36,7 @@ import { makeScheduleTools } from "./schedule.ts";
 import { Scheduler } from "../schedule/scheduler.ts";
 import { makeMcpTools } from "./mcp.ts";
 import { McpManager } from "../mcp/manager.ts";
+import { makePreviewTool } from "./preview.ts";
 import { makePluginTools } from "./plugins.ts";
 import { PluginManager } from "../plugins/manager.ts";
 import { makeBrowserTools } from "./browser.ts";
@@ -70,6 +71,7 @@ export function buildToolRegistry(svc: ToolServices): ToolRegistry {
   registry.registerAll(fsTools);
   registry.registerAll(dirTools);
   registry.registerAll(envTools);
+  registry.registerAll([makePreviewTool()]);
 
   // Shell, background jobs, processes, host info.
   registry.registerAll(shellTools);
@@ -131,6 +133,9 @@ export function makeExecutor(
         signal: AbortSignal;
         onProgress: (n: string) => void;
         onQuestion?: NonNullable<ToolContext["onQuestion"]>;
+        /** R5 fix: forward the preview hook — it was previously dropped here,
+         * which is why preview_open reported "no preview panel attached". */
+        onPreviewOpen?: NonNullable<ToolContext["onPreviewOpen"]>;
       },
     ) {
       const base = getContext(opts.sessionId);
@@ -147,6 +152,7 @@ export function makeExecutor(
         signal: opts.signal,
         onProgress: opts.onProgress,
         onQuestion: opts.onQuestion,
+        onPreviewOpen: opts.onPreviewOpen,
       });
     },
   };

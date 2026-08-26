@@ -36,6 +36,7 @@ export interface CustomizePageProps {
   onRemovePlugin: (id: string) => void | Promise<void>;
   onAddConnector: (input: McpAddInput) => Promise<Result<McpServerConfig>>;
   onTestConnector: (input: McpAddInput) => Promise<Result<{ transport: McpServerConfig["transport"]; toolCount: number; toolNames: string[] }>>;
+  onOAuthLogin?: (serverId: string) => Promise<Result<McpServerConfig>>;
   onInstallPlugin: (source: PluginInstallSource) => Promise<Result<Plugin>>;
   onPickPluginZip: () => Promise<string | null>;
   onBack: () => void;
@@ -113,10 +114,12 @@ function McpServerDetail({
   server,
   onLoadTools,
   onSetPolicy,
+  onOAuthLogin,
 }: {
   server: McpServerConfig;
   onLoadTools: CustomizePageProps["onLoadConnectorTools"];
   onSetPolicy: CustomizePageProps["onSetConnectorToolPolicy"];
+  onOAuthLogin?: CustomizePageProps["onOAuthLogin"];
 }) {
   const [tools, setTools] = useState<McpToolInfo[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -167,11 +170,29 @@ function McpServerDetail({
     }
   }
 
+  const [oauthBusy, setOauthBusy] = useState(false);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  async function handleOAuthLogin() {
+    if (!onOAuthLogin) return;
+    setOauthBusy(true);
+    setOauthError(null);
+    try {
+      const res = await onOAuthLogin(server.id);
+      if (!res.ok) setOauthError(res.error);
+    } catch (cause) {
+      setOauthError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setOauthBusy(false);
+    }
+  }
+
   return (
     <div className={styles.serverDetail}>
       <div className={styles.detailHeader}>
         <span className={server.status === "connected" ? styles.statusGoodText : styles.statusMutedText}>
-          {server.status}{server.toolCount > 0 ? ` · ${server.toolCount} tools` : ""}
+          {server.status === "connected"
+            ? `Connected ✓${server.toolCount > 0 ? ` · ${server.toolCount} tools` : ""}${server.hasAuthToken ? " · logged in" : ""}`
+            : `${server.status}${server.toolCount > 0 ? ` · ${server.toolCount} tools` : ""}${server.statusMessage ? ` — ${server.statusMessage.slice(0, 120)}` : ""}`}
         </span>
         <span className={styles.detailHint}>
           Default: <strong>{policy.default}</strong>{saving ? " · saving…" : ""}
@@ -181,6 +202,15 @@ function McpServerDetail({
           <button type="button" className={styles.textButton} onClick={() => void bulk("deny")}>Deny all</button>
           <button type="button" className={styles.textButton} onClick={() => void bulk("ask")}>Ask for all</button>
         </div>
+        {onOAuthLogin && server.status !== "connected" && server.url && /^https?:/i.test(server.url) && (
+          <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button type="button" className={styles.primaryButton} disabled={oauthBusy} onClick={() => void handleOAuthLogin()}>
+              {oauthBusy ? "Opening browser…" : server.hasAuthToken ? "Re-login with OAuth" : "Login with OAuth (open browser)"}
+            </button>
+            <span className={styles.detailHint}>{oauthBusy ? "Complete the login in your browser — this panel updates automatically." : "Opens system browser to complete login, then connects and refreshes automatically."}</span>
+          </div>
+        )}
+        {oauthError && <InlineNotice kind="error"><AlertCircle size={14} />{oauthError}</InlineNotice>}
       </div>
 
       {loadError && <InlineNotice kind="error"><AlertCircle size={14} />{loadError}</InlineNotice>}
@@ -231,6 +261,31 @@ function McpForm({ onSubmit, onTest, onClose }: { onSubmit: CustomizePageProps["
   const [testMessage, setTestMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState<McpServerConfig | null>(null);
+
+  // Auto-enable "Allow localhost" the moment the URL points at a loopback
+  // host, so local dev MCP servers work without hunting for the checkbox.
+  // The user can still untick it explicitly.
+  useEffect(() => {
+    try {
+      const host = new URL(url.trim()).hostname.toLowerCase();
+      const isLoopback =
+        host === "localhost" || host.endsWith(".localhost") || host === "::1" || host === "[::1]" ||
+        /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+      if (isLoopback) setAllowLocal(true);
+    } catch { /* not a URL yet */ }
+  }, [url]);
+
+  function isLoopbackUrl(raw: string): boolean {
+    try {
+      const host = new URL(raw.trim()).hostname.toLowerCase();
+      return (
+        host === "localhost" || host.endsWith(".localhost") || host === "::1" || host === "[::1]" ||
+        /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)
+      );
+    } catch {
+      return false;
+    }
+  }
 
   function validateUrl(raw: string): string | null {
     if (!raw.trim()) return "Server URL is required.";
@@ -328,11 +383,11 @@ function McpForm({ onSubmit, onTest, onClose }: { onSubmit: CustomizePageProps["
         <label className={styles.formField}><span>Name</span><input value={name} placeholder="Auto-detected from URL" onChange={(event) => setName(event.target.value)} disabled={busy} /></label>
         <label className={styles.formField}><span>Server URL <b>*</b></span><input type="url" value={url} placeholder="https://example.com/mcp" onChange={(event) => { setUrl(event.target.value); setError(null); setConnected(null); setTestMessage(null); }} disabled={busy} /></label>
         <label className={styles.formField}><span>Auth token <small>(optional)</small></span><input type="password" value={token} placeholder="sk-…" onChange={(event) => setToken(event.target.value)} disabled={busy} /><em>Stored encrypted by the OS keychain.</em></label>
+        <label className={styles.formField}><span>Allow localhost / local network</span><span><input type="checkbox" checked={allowLocal} onChange={(event) => setAllowLocal(event.target.checked)} disabled={busy} /> Allow 127.0.0.1 / localhost servers</span><em>{isLoopbackUrl(url) ? "Auto-enabled because this URL is a local address." : "Enable only for a server running on this computer."}</em></label>
       </div>
       <button type="button" className={styles.advancedButton} onClick={() => setAdvancedOpen((value) => !value)} aria-expanded={advancedOpen}>{advancedOpen ? "Hide" : "Show"} advanced settings</button>
       {advancedOpen && <>
         <label className={styles.formField}><span>Auth header name</span><input value={headerName} placeholder="Authorization" onChange={(event) => setHeaderName(event.target.value)} disabled={busy} /><em>Most servers use Authorization.</em></label>
-        <label className={styles.formField}><span>Local server access</span><span><input type="checkbox" checked={allowLocal} onChange={(event) => setAllowLocal(event.target.checked)} disabled={busy} /> Allow localhost / 127.0.0.1</span><em>Enable only for a server you control on this computer.</em></label>
       </>}
       <div className={styles.inlineFormActions}>
         <button type="button" className={styles.secondaryButton} disabled={busy || !url.trim()} onClick={() => void handleTest()}>Test connection</button>
@@ -426,6 +481,7 @@ export function CustomizePage({
   onPickSkillSource,
   onLoadConnectorTools,
   onSetConnectorToolPolicy,
+  onOAuthLogin,
   onRemoveConnector,
   onRemovePlugin,
   onAddConnector,
@@ -480,7 +536,7 @@ export function CustomizePage({
 
           {tab === "mcp" && <>
             {mcpFormOpen && <McpForm onSubmit={onAddConnector} onTest={onTestConnector} onClose={() => setMcpFormOpen(false)} />}
-            <section className={styles.card}><div className={styles.listHeader}><div><strong>Connected MCP servers</strong><span>Only enabled servers contribute tools to a turn. Click a server to set per-tool policies.</span></div><button type="button" className={styles.secondaryButton} onClick={() => setMcpFormOpen((value) => !value)} aria-expanded={mcpFormOpen}><Plus size={14} /> {mcpFormOpen ? "Hide form" : "Add server"}</button></div><div className={styles.extensionList}>{connectors.map((server) => <div key={server.id}><div className={styles.extensionRow}><button type="button" className={styles.serverExpand} onClick={() => setExpandedServerId((current) => (current === server.id ? null : server.id))} aria-expanded={expandedServerId === server.id} title="Show tool policies"><ChevronRight size={13} className={`${styles.expandChevron} ${expandedServerId === server.id ? styles.expandChevronOpen : ""}`} /><Settings2 size={13} /></button><div className={`${styles.extensionIcon} ${server.status === "connected" ? styles.iconGood : ""}`}><Plug size={14} /></div><div className={styles.extensionCopy}><strong>{server.name}</strong><span>{server.url ?? server.command ?? "Local server"}</span><small>{server.status} · {server.toolCount} tools · default {server.toolPolicy?.default ?? "ask"}{server.hasAuthToken ? " · token stored" : ""}</small></div><div className={styles.rowActions}><Toggle checked={server.enabled} label={`Enable ${server.name}`} onChange={(value) => onToggleConnector(server.id, value)} /><button type="button" className={styles.iconButton} onClick={() => void onRemoveConnector(server.id)} aria-label={`Remove ${server.name}`}><Trash2 size={14} /></button></div></div>{expandedServerId === server.id && <McpServerDetail server={server} onLoadTools={onLoadConnectorTools} onSetPolicy={onSetConnectorToolPolicy} />}</div>)}</div>{connectors.length === 0 && <Empty icon={<Plug size={20} />} text={mcpFormOpen ? "Add your first MCP server above." : "No MCP servers connected yet. Add one here."} />}</section>
+            <section className={styles.card}><div className={styles.listHeader}><div><strong>Connected MCP servers</strong><span>Only enabled servers contribute tools to a turn. Click a server to set per-tool policies.</span></div><button type="button" className={styles.secondaryButton} onClick={() => setMcpFormOpen((value) => !value)} aria-expanded={mcpFormOpen}><Plus size={14} /> {mcpFormOpen ? "Hide form" : "Add server"}</button></div><div className={styles.extensionList}>{connectors.map((server) => <div key={server.id}><div className={styles.extensionRow}><button type="button" className={styles.serverExpand} onClick={() => setExpandedServerId((current) => (current === server.id ? null : server.id))} aria-expanded={expandedServerId === server.id} title="Show tool policies"><ChevronRight size={13} className={`${styles.expandChevron} ${expandedServerId === server.id ? styles.expandChevronOpen : ""}`} /><Settings2 size={13} /></button><div className={`${styles.extensionIcon} ${server.status === "connected" ? styles.iconGood : ""}`}><Plug size={14} /></div><div className={styles.extensionCopy}><strong>{server.name}</strong><span>{server.url ?? server.command ?? "Local server"}</span><small>{server.status} · {server.toolCount} tools · default {server.toolPolicy?.default ?? "ask"}{server.hasAuthToken ? " · token stored" : ""}</small></div><div className={styles.rowActions}><Toggle checked={server.enabled} label={`Enable ${server.name}`} onChange={(value) => onToggleConnector(server.id, value)} /><button type="button" className={styles.iconButton} onClick={() => void onRemoveConnector(server.id)} aria-label={`Remove ${server.name}`}><Trash2 size={14} /></button></div></div>{expandedServerId === server.id && <McpServerDetail server={server} onLoadTools={onLoadConnectorTools} onSetPolicy={onSetConnectorToolPolicy} onOAuthLogin={onOAuthLogin} />}</div>)}</div>{connectors.length === 0 && <Empty icon={<Plug size={20} />} text={mcpFormOpen ? "Add your first MCP server above." : "No MCP servers connected yet. Add one here."} />}</section>
           </>}
 
           {tab === "plugins" && <>

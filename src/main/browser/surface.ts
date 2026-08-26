@@ -54,11 +54,66 @@ export class BrowserSurface {
   private _window: BrowserWindow | null = null;
   private _view: AttachableWebContentsView | null = null;
   private _loadingState = false;
+  /**
+   * R6 fix — monotonic attach generation. A late-resolving `browser:attach`
+   * (the lazy WebContentsView creation can take tens of ms) used to re-parent
+   * an orphaned native view AFTER the renderer had already detached while
+   * unmounting. That orphan painted over the whole app and nothing could
+   * remove it short of a restart. Any detach/new attach bumps the sequence so
+   * stale in-flight attaches become no-ops.
+   */
+  private _attachSeq = 0;
   private _didNavigateListener: ((...args: unknown[]) => void) | null = null;
   private _didStartLoadingListener: ((...args: unknown[]) => void) | null = null;
   private _didStopLoadingListener: ((...args: unknown[]) => void) | null = null;
   private _titleUpdatedListener: ((...args: unknown[]) => void) | null = null;
   private _lastTitle = "";
+
+  /** Clamp a requested rect to the host window's content bounds; rejects NaN. */
+  private clampRect(win: BrowserWindow | null, rect: SurfaceRect): SurfaceRect {
+    const num = (v: unknown): number =>
+      typeof v === "number" && Number.isFinite(v) ? v : 0;
+    let x = Math.round(num(rect.x));
+    let y = Math.round(num(rect.y));
+    let width = Math.max(1, Math.round(num(rect.width)));
+    let height = Math.max(1, Math.round(num(rect.height)));
+
+    const cb = (win as unknown as {
+      getContentBounds?: () => { width: number; height: number };
+    }).getContentBounds?.();
+    if (cb && cb.width > 0 && cb.height > 0) {
+      width = Math.min(width, cb.width);
+      height = Math.min(height, cb.height);
+      x = Math.min(Math.max(0, x), Math.max(0, cb.width - Math.min(width, cb.width)));
+      y = Math.min(Math.max(0, y), Math.max(0, cb.height - Math.min(height, cb.height)));
+    }
+    return { x, y, width, height };
+  }
+
+  /**
+   * Attach the shared engine view once its lazy creation resolves, unless a
+   * newer attach/detach superseded this request meanwhile (see _attachSeq).
+   */
+  async attachWhenReady(
+    win: BrowserWindow | null,
+    ensureView: () => Promise<AttachableWebContentsView | null>,
+    rect: SurfaceRect,
+  ): Promise<BrowserState> {
+    const seq = ++this._attachSeq;
+    let view: AttachableWebContentsView | null = null;
+    try {
+      view = await ensureView();
+    } catch {
+      view = null;
+    }
+    if (seq !== this._attachSeq || !win || !view) {
+      // Superseded by a detach/attach that arrived while we were awaiting —
+      // do NOT touch the native view tree.
+      return this.getState();
+    }
+    this.attachTo(win, view, rect);
+    return this.getState();
+  }
 
   /** Attach the given view to the app window at the specified rect. */
   attachTo(
@@ -96,20 +151,11 @@ export class BrowserSurface {
       // addChildView may fail if the view is already a child — ignore.
     }
 
-    view.setBounds({
-      x: Math.max(0, Math.round(rect.x)),
-      y: Math.max(0, Math.round(rect.y)),
-      width: Math.max(1, Math.round(rect.width)),
-      height: Math.max(1, Math.round(rect.height)),
-    });
-
-    // Auto-resize so the live view tracks window size changes in sync with the
-    // renderer's ResizeObserver (the renderer re-sends the rect on resize too).
-    try {
-      view.setAutoResize?.({ width: true, height: true });
-    } catch {
-      // Optional method — ignore.
-    }
+    // R6: clamped to window bounds; NO setAutoResize — the renderer already
+    // tracks panel/window resizes via ResizeObserver + explicit resize events,
+    // and Electron's auto-resize deltas were drifting the view over the whole
+    // UI after a couple of resizes.
+    view.setBounds(this.clampRect(win, rect));
 
     // Track loading state + title for browser:state polling.
     try {
@@ -143,19 +189,17 @@ export class BrowserSurface {
     }
   }
 
-  /** Update only the rect of the already-attached view. */
+  /** Update only the rect of the already-attached view (clamped to the window). */
   updateBounds(rect: SurfaceRect): void {
     if (!this._view) return;
-    this._view.setBounds({
-      x: Math.max(0, Math.round(rect.x)),
-      y: Math.max(0, Math.round(rect.y)),
-      width: Math.max(1, Math.round(rect.width)),
-      height: Math.max(1, Math.round(rect.height)),
-    });
+    this._view.setBounds(this.clampRect(this._window, rect));
   }
 
   /** Remove the view from the window. The view is NOT destroyed (engine owns it). */
   detachFrom(win: BrowserWindow | null): void {
+    // Invalidate any in-flight attach immediately.
+    this._attachSeq += 1;
+
     if (this._view && win) {
       try {
         const host = win as unknown as {

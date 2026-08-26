@@ -136,10 +136,10 @@ after(async () => {
 });
 
 describe("complete production registry coverage", () => {
-  it("registers exactly 84 cowork tools", () => {
+  it("registers exactly 86 cowork tools", () => {
     const tools = registry.list("cowork");
-    assert.equal(tools.length, 84);
-    assert.equal(new Set(tools.map((tool) => tool.name)).size, 84);
+    assert.equal(tools.length, 86);
+    assert.equal(new Set(tools.map((tool) => tool.name)).size, 86);
   });
 
   it("executes every tool with real inputs or an explicit capability boundary", async () => {
@@ -206,7 +206,8 @@ describe("complete production registry coverage", () => {
         marketplace_list: { id: "missing-marketplace" }, marketplace_add: { source: "https://example.com/marketplace.json" },
         plugin_install: { source: join(root, "all-tools-plugin.zip") }, plugin_list: {},
         plugin_disable: { id: state.pluginId }, plugin_enable: { id: state.pluginId }, plugin_uninstall: { id: state.pluginId },
-        mcp_list: {}, mcp_call: { serverId: "missing-server", tool: "missing-tool", args: {} },
+        mcp_list: {}, mcp_list_tools: {}, mcp_call: { serverId: "missing-server", tool: "missing-tool", args: {} },
+        preview_open: { path: "generated.txt" },
         mcp_install: { name: "smoke", transport: "stdio", command: "missing-command" }, mcp_remove: { id: "missing-server" },
         computer_self_test: {}, computer_list_windows: {}, computer_screen_size: {}, computer_screenshot: { x: 0, y: 0, width: 1, height: 1 },
         computer_move: { x: 1, y: 1 }, computer_click: { x: 1, y: 1, button: "left" }, computer_key: { keys: ["ESC"] }, computer_type: { text: "smoke" },

@@ -77,7 +77,32 @@ function normalizeSettings(settings: AppSettings): AppSettings {
         return normalized;
       })
     : [];
-  return { ...settings, customProviders };
+  const providerOverrides =
+    settings.providerOverrides && typeof settings.providerOverrides === "object" && !Array.isArray(settings.providerOverrides)
+      ? settings.providerOverrides
+      : {};
+  // Only keep known agentRouterMode values
+  const sanitizedOverrides: typeof providerOverrides = {};
+  for (const [k, v] of Object.entries(providerOverrides as Record<string, unknown>)) {
+    if (v && typeof v === "object") {
+      const mode = (v as { agentRouterMode?: unknown }).agentRouterMode;
+      if (mode === "auto" || mode === "openai" || mode === "anthropic") {
+        sanitizedOverrides[k] = { agentRouterMode: mode };
+      }
+    }
+  }
+  // Legacy "custom" escape hatch was removed (2026-08-25). Any selection still
+  // pointing at it can never resolve; reset it so the resolver guides the user
+  // to Settings → AI providers → Add provider instead of failing opaquely.
+  const stripLegacyCustom = (sel: AppSettings["cowork"]["selection"]): AppSettings["cowork"]["selection"] =>
+    sel?.providerId === "custom" ? { providerId: "", keyId: null, modelId: "" } : sel;
+  const cowork = settings.cowork
+    ? { ...settings.cowork, selection: stripLegacyCustom(settings.cowork.selection) }
+    : settings.cowork;
+  const code = settings.code
+    ? { ...settings.code, selection: stripLegacyCustom(settings.code.selection) }
+    : settings.code;
+  return { ...settings, customProviders, providerOverrides: sanitizedOverrides, cowork, code };
 }
 
 function deepMerge<T extends object>(target: T, src: Partial<T>): T {

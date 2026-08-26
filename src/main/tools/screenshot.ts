@@ -198,7 +198,7 @@ OUTPUT
   When fullPage:true and the page is taller than tileHeight, multiple tiles are returned.
 
 NOTES
-  - Requires a vision-capable model to be useful (requiresVision: true).
+  - Works with every model.
   - Only available inside the Kozum Cowork Electron app; returns an error in plain Node.
   - PDF rendering uses Electron's built-in PDF viewer.
 `.trim();
@@ -267,7 +267,6 @@ export const screenshotTools: Tool[] = [
       },
       icon: "camera",
       group: "browser",
-      requiresVision: true,
       modes: ["cowork", "code"],
     },
 
@@ -354,3 +353,4 @@ export const screenshotTools: Tool[] = [
     },
   },
 ];
+

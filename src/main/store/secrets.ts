@@ -106,6 +106,18 @@ export class SecretStore {
       );
     }
 
+    // API keys travel in HTTP headers, which must be ByteStrings. Reject
+    // non-ASCII/control characters (and surrounding whitespace) up front so a
+    // bad paste never becomes an opaque fetch failure inside the agent loop.
+    const trimmedKey = String(rawKey ?? "").trim();
+    if (!trimmedKey || !/^[\x21-\x7E]+$/.test(trimmedKey)) {
+      throw new Error(
+        "Invalid API key: it must contain only printable ASCII characters with no spaces. " +
+          "Re-copy the key — it may have picked up extra text or hidden characters.",
+      );
+    }
+    rawKey = trimmedKey;
+
     // Deduplication check: if key already exists for this provider, update metadata and return it
     for (const r of this.records) {
       if (r.providerId === providerId) {

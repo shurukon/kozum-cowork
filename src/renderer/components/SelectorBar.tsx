@@ -169,6 +169,9 @@ function ProviderDropdown({
             </button>
             ))}
           </div>
+          <p className={styles.emptyMsg}>
+            Your own server? Settings → AI providers → “Add provider” (name + Base URL + key + model).
+          </p>
         </div>
       </Popover>
     </div>

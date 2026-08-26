@@ -118,6 +118,8 @@ export interface ProviderPreset {
   protocolBaseUrls?: Partial<Record<ProviderProtocol, string>>;
   notes?: string;
   builtIn: boolean;
+  /** AgentRouter explicit wire mode: auto = prefix routing, openai = force openai-chat on /v1, anthropic = force anthropic-messages without /v1. */
+  agentRouterMode?: "auto" | "openai" | "anthropic";
 }
 
 /**
@@ -422,7 +424,16 @@ export type AgentEventPayload =
   /* ── Subagent live stream (P1-1) ─────────────────────────────────────────── */
   | { type: "subagent_start"; mode: Mode; sessionId: string; parentMessageId?: string; run: SubagentRun; runId: string }
   | { type: "subagent_progress"; mode: Mode; sessionId: string; runId: string; note: string; progress?: number }
-  | { type: "subagent_end"; mode: Mode; sessionId: string; runId: string; status: "completed" | "failed" | "cancelled"; result?: string; error?: string };
+  | { type: "subagent_end"; mode: Mode; sessionId: string; runId: string; status: "completed" | "failed" | "cancelled"; result?: string; error?: string }
+  /* ── Agent-controlled preview + session file discovery (W4) ─────────────── */
+  | {
+      type: "preview_open";
+      mode: Mode;
+      sessionId: string;
+      target: { kind: "file"; path: string } | { kind: "url"; url: string };
+      runId?: string;
+    }
+  | { type: "session_files"; mode: Mode; sessionId: string; files: SessionFileInfo[]; runId?: string };
 
 /** Stable identity added by the emitter for renderer-side idempotency. */
 export type AgentEvent = AgentEventPayload & { eventId?: string };
@@ -494,6 +505,12 @@ export interface McpServerConfig {
    * Required for local development MCP servers; false by default.
    */
   allowLocal?: boolean;
+  /**
+   * OAuth client_id obtained via RFC7591 Dynamic Client Registration.
+   * Not a secret (persisted with the config); the client secret, if any,
+   * lives in the encrypted secret store like the access token.
+   */
+  oauthClientId?: string;
   /** Per-tool execution policy; manager.add defaults it to {default:"ask"}. */
   toolPolicy?: McpToolPolicy;
 }
@@ -513,6 +530,30 @@ export interface McpToolInfo {
   name: string;
   description: string;
   inputSchema: unknown;
+}
+
+/** One tool entry in an MCP server's prompt-facing catalog (W2). */
+export interface McpCatalogTool {
+  name: string;
+  description: string;
+  /** Required property names from the tool's JSON-Schema input, for fast-fail validation. */
+  requiredArgs: string[];
+}
+
+/** A connected server's prompt-facing catalog (W2). */
+export interface McpServerCatalog {
+  id: string;
+  name: string;
+  tools: McpCatalogTool[];
+}
+
+/** One file discovered in the session working folder (W4 auto-context). */
+export interface SessionFileInfo {
+  path: string;
+  name: string;
+  kind: string;
+  size: number;
+  mtimeMs: number;
 }
 
 /* ============================================================ plugins === */
@@ -714,6 +755,8 @@ export interface AppSettings {
   };
   /** User-registered custom OpenAI-compatible providers. */
   customProviders: ProviderPreset[];
+  /** Per-provider overrides for built-ins (e.g. AgentRouter explicit mode). */
+  providerOverrides?: Record<string, { agentRouterMode?: "auto" | "openai" | "anthropic" }>;
 }
 
 export interface ModeSettings {

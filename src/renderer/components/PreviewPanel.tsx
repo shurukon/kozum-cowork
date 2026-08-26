@@ -632,6 +632,11 @@ async function safeBrowserAttach(
   rect: { x: number; y: number; width: number; height: number },
   sessionId?: string,
 ): Promise<BrowserState | null> {
+  // R6: never request a native overlay for a collapsed/measuring-zero panel —
+  // a 1px-wide native view stuck over the UI is unrecoverable without detach.
+  if (!Number.isFinite(rect.x) || !Number.isFinite(rect.y) || rect.width < 8 || rect.height < 8) {
+    return null;
+  }
   try {
     const b = bridge() as unknown as {
       browser?: {
@@ -655,6 +660,9 @@ async function safeBrowserAttach(
 async function safeBrowserUpdateBounds(
   rect: { x: number; y: number; width: number; height: number },
 ): Promise<void> {
+  if (!Number.isFinite(rect.x) || !Number.isFinite(rect.y) || rect.width < 8 || rect.height < 8) {
+    return;
+  }
   try {
     const b = bridge() as unknown as {
       browser?: { updateBounds: (rect: { x: number; y: number; width: number; height: number }) => Promise<unknown> };
@@ -884,8 +892,8 @@ export interface PreviewPanelProps {
   onRefresh?: () => void;
 }
 
-function targetPath(target: PreviewTarget): string | null {
-  return target.kind === "file" || target.kind === "artifact" || target.kind === "project" ? target.path : null;
+function targetPath(target: PreviewTarget | null): string | null {
+  return target && (target.kind === "file" || target.kind === "artifact" || target.kind === "project") ? target.path : null;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────

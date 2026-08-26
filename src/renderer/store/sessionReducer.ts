@@ -356,6 +356,17 @@ export function applyEventToMode(mode: ModeState, e: AgentEvent): ModeState {
       };
     }
 
+    case "session_files": {
+      // W4: bounded snapshot of the session working folder for chips + Canvas.
+      return { ...mode, sessionFiles: e.files };
+    }
+
+    case "preview_open": {
+      // Handled globally in App.onEvent (bypasses visibility filter); nothing
+      // to store in the transcript.
+      return mode;
+    }
+
     default: {
       const _never: never = e;
       void _never;
@@ -380,6 +391,7 @@ export function emptyModeState(): ModeState {
     pendingQuestions: [],
     pendingPermissions: [],
     subagents: {},
+    sessionFiles: [],
     seenEventIds: new Set(),
   };
 }

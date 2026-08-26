@@ -13,10 +13,8 @@
  *      registry checks required properties and coerces primitives against the
  *      declared schema before dispatch, so a handler never sees a missing path.
  *
- *   2. **The vision gate.** Tools flagged `requiresVision` refuse to run on a
- *      model that cannot see. Resolution is tri-state: only a definite "no"
- *      blocks, because a name-pattern guess has ~51% recall and hard-blocking
- *      on it locks users out of models that work fine.
+ *   2. **No capability gating.** (R5) Every tool runs for every model — the
+ *      former `requiresVision` refusal was removed by product decision.
  *
  *   3. **Workspace confinement.** Path-taking tools resolve against the
  *      session's working folder and refuse to escape it unless the session is
@@ -51,6 +49,10 @@ export interface ToolContext {
     multiSelect: boolean;
     allowFreeform?: boolean;
   }) => void;
+  /** Open a target in the user-facing preview panel (W4 preview_open). */
+  onPreviewOpen?: (
+    target: { kind: "file"; path: string } | { kind: "url"; url: string },
+  ) => void;
 }
 
 export type ToolHandler = (
@@ -138,17 +140,10 @@ export class ToolRegistry {
       return fail(`"${name}" is not available in ${ctx.mode} mode.`);
     }
 
-    // Only a definite "no" blocks. "unknown" proceeds and lets the provider
-    // adjudicate, which is the whole reason the capability is tri-state.
-    if (def.requiresVision && ctx.capabilities.vision === "no") {
-      return fail(
-        `"${name}" needs a model that can read images, and ${ctx.modelId} ` +
-          `(${ctx.providerId}) accepts text only. Switch to a vision-capable ` +
-          `model — Gemini, MiniMax-M3, Kimi K2.6, GLM-*-V, or a Llama-Vision ` +
-          `model — then run this again.`,
-        `${name} requires a vision model`,
-      );
-    }
+    // R5: the requiresVision/vision==="no" hard gate was removed by product
+    // decision — EVERY model may attempt ANY tool, preview and screenshots
+    // included, with no exceptions. A text-only model simply gets a degraded
+    // experience; the provider adjudicates image payloads itself.
 
     if (ctx.signal.aborted) return fail("Cancelled before this tool ran.");
 

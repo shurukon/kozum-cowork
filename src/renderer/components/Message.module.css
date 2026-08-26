@@ -60,11 +60,12 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--accent-primary) 12%);
-  border: 1px solid color-mix(in srgb, var(--border-strong) 78%, var(--accent-primary) 22%);
+  /* Muted professional tone: desaturated slate-teal instead of bright accent blue */
+  background: color-mix(in srgb, var(--bg-card) 92%, #2f3f4f 8%);
+  border: 1px solid color-mix(in srgb, var(--border) 88%, #3a4a5e 12%);
   border-radius: 18px 18px 5px 18px;
   padding: 12px 16px;
-  box-shadow: 0 5px 18px color-mix(in srgb, var(--accent-primary) 10%, transparent);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
   /* kz-send-ack applied via JS on first mount (from glass.css) */
 }
 
@@ -676,3 +677,81 @@
   color: #efb6a9;
   box-shadow: none;
 }
+
+/* == T8: inline bubble editing ============================================ */
+
+.inlineEdit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.inlineEditArea {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, #3a4a5e 12%);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-sunken) 88%, transparent);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+
+.inlineEditArea:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent-primary) 45%, transparent);
+  outline-offset: -1px;
+}
+
+.inlineEditActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.inlineEditCancel,
+.inlineEditSave {
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.inlineEditCancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.inlineEditSave {
+  background: color-mix(in srgb, var(--accent-primary) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent-primary) 40%, transparent);
+  color: var(--text-primary);
+}
+
+.inlineEditSave:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.inlineEditSave:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent-primary) 26%, transparent);
+}
+
+/* == T5: cowork assistant italic ========================================== */
+.coworkAssistantRow .assistantText,
+.coworkAssistantRow .assistantText p,
+.coworkAssistantRow .assistantText li {
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+

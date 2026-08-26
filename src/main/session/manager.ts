@@ -33,6 +33,17 @@ import type { ToolRegistry } from "../tools/registry.ts";
 import { looksVisionCapable } from "../providers/capabilities.ts";
 import { PROVIDER_PRESETS } from "../providers/presets.ts";
 import type { ToolContext } from "../tools/registry.ts";
+import { scanSessionFiles } from "../util/sessionFiles.ts";
+
+/** Tools whose successful completion means new files may exist (W4). */
+const WRITE_SHAPE_TOOLS = new Set([
+  "file_write",
+  "file_edit",
+  "file_edit_enhanced",
+  "shell_exec",
+  "shell_exec_bg",
+  "web_download",
+]);
 import { resolveCapabilities } from "../providers/capabilities.ts";
 import { checkPermission, blockedResult } from "../tools/permissions.ts";
 import { PermissionQueue } from "./permissions-queue.ts";
@@ -72,7 +83,52 @@ export class SessionManager {
   private readonly permissionQueue = new PermissionQueue();
   /** Sidecar writes already accepted before retirement; teardown waits for them. */
   private pendingRunWrites = new Map<string, Set<Promise<void>>>();
+  /** Debounce timers for working-folder scans (W4 session_files). */
+  private sessionFileTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /**
+   * T4: per-session baseline (path → mtimeMs) captured at the FIRST scan.
+   * Only files newer than the baseline — or absent from it — are emitted, so
+   * the Context sidebar strictly shows what THIS session created/changed,
+   * never leftovers from previous sessions in the same folder.
+   */
+  private sessionFileBaselines = new Map<string, Map<string, number>>();
+  /** One-second slack so same-millisecond creations are not swallowed. */
+  private static readonly BASELINE_SLACK_MS = 1000;
   private readonly completedTurnTtlMs = 10 * 60_000;
+
+  /**
+   * Scan the session's working folder (bounded) and push a `session_files`
+   * event containing only session-new artifacts.
+   */
+  private scheduleSessionFileScan(sessionId: string, mode: Mode, folder: string | null | undefined): void {
+    if (!folder) return;
+    const existing = this.sessionFileTimers.get(sessionId);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.sessionFileTimers.delete(sessionId);
+      if (this.retiredSessions.has(sessionId)) return;
+      void scanSessionFiles(folder)
+        .then((files) => {
+          if (this.retiredSessions.has(sessionId)) return;
+          let baseline = this.sessionFileBaselines.get(sessionId);
+          if (!baseline) {
+            // First scan of this session: everything currently on disk is
+            // pre-existing context. Record it and emit nothing yet.
+            baseline = new Map(files.map((f) => [f.path, f.mtimeMs]));
+            this.sessionFileBaselines.set(sessionId, baseline);
+            this.emitEvent(sessionId, { type: "session_files", mode, sessionId, files: [] });
+            return;
+          }
+          const fresh = files.filter((f) => {
+            const before = baseline!.get(f.path);
+            return before === undefined || f.mtimeMs > before + SessionManager.BASELINE_SLACK_MS;
+          });
+          this.emitEvent(sessionId, { type: "session_files", mode, sessionId, files: fresh });
+        })
+        .catch(() => undefined);
+    }, 600);
+    this.sessionFileTimers.set(sessionId, timer);
+  }
 
   constructor(opts: {
     sessions: SessionStore;
@@ -154,6 +210,21 @@ export class SessionManager {
   }
 
   /** Cancel a running loop. */
+  async truncateFrom(
+    sessionId: string,
+    messageId: string,
+    opts?: { inclusive?: boolean },
+  ): Promise<Result<{ removed: number }>> {
+    // Never rewrite history underneath a live turn — the loop would append
+    // onto a transcript that no longer contains its own tool calls.
+    if (this.inFlight.has(sessionId)) {
+      return err("Cannot edit or regenerate while the agent is still responding. Stop it first.");
+    }
+    const res = await this.sessions.truncateFrom(sessionId, messageId, opts);
+    if (res === null) return err(`Message "${messageId}" was not found in session ${sessionId}.`);
+    return ok(res);
+  }
+
   async cancel(sessionId: string): Promise<Result<void>> {
     const inf = this.inFlight.get(sessionId);
     if (!inf) return ok(undefined); // not running, that's fine
@@ -168,6 +239,12 @@ export class SessionManager {
    * must release all session-scoped state and pending user requests.
    */
   async teardown(sessionId: string): Promise<Result<void>> {
+    const pendingScan = this.sessionFileTimers.get(sessionId);
+    if (pendingScan) {
+      clearTimeout(pendingScan);
+      this.sessionFileTimers.delete(sessionId);
+    }
+    this.sessionFileBaselines.delete(sessionId);
     // Retire before aborting so a provider callback that wins the race cannot
     // emit or persist another event while the IPC delete/archive is underway.
     this.retiredSessions.add(sessionId);
@@ -307,6 +384,7 @@ export class SessionManager {
         .status()
         .filter((s) => s.status === "connected")
         .map((s) => ({ name: s.name, toolCount: s.toolCount }));
+      const mcpTools = this.mcp.toolCatalog();
 
       const visionCapable = looksVisionCapable(modelId, providerId);
 
@@ -341,6 +419,7 @@ export class SessionManager {
           .filter((s) => s.enabled && s.modes.includes(session.mode))
           .map((s) => ({ name: s.name, description: s.description })),
         mcpServers,
+        mcpTools,
         subagents: [],
         now: new Date(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -489,6 +568,9 @@ export class SessionManager {
       };
 
       // Run the agent loop
+      // W4: tool_end carries only toolUseId — remember names from tool_start
+      // so deliverable-shaped completions can trigger a folder scan.
+      const scanToolNames = new Map<string, string>();
       const result = await runAgentLoop({
         sessionId,
         mode: session.mode,
@@ -518,6 +600,15 @@ export class SessionManager {
               this.pendingRunWrites.delete(sessionId);
             }
           });
+          // W4: refresh the session's file chips after deliverable-shaped tool
+          // calls and once per finished turn.
+          if (e.type === "tool_start") {
+            scanToolNames.set(e.toolUseId, e.name);
+          } else if (e.type === "tool_end" && e.result.ok && WRITE_SHAPE_TOOLS.has(scanToolNames.get(e.toolUseId) ?? "")) {
+            this.scheduleSessionFileScan(sessionId, session.mode, resolvedWorkingFolder);
+          } else if (e.type === "turn_end") {
+            this.scheduleSessionFileScan(sessionId, session.mode, resolvedWorkingFolder);
+          }
         },
       });
 

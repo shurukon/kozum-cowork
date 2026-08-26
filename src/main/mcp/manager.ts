@@ -7,7 +7,7 @@
  * Tool names are namespaced: mcp__<serverName>__<toolName>
  */
 
-import type { McpConnectionTest, McpPolicyAction, McpServerConfig, McpStatus, McpToolInfo, McpToolPolicy } from "../../shared/types.ts";
+import type { McpConnectionTest, McpPolicyAction, McpServerCatalog, McpServerConfig, McpStatus, McpToolInfo, McpToolPolicy } from "../../shared/types.ts";
 import { McpClient } from "./client.ts";
 import type { McpToolDefinition } from "./client.ts";
 import { createTransport } from "./transport.ts";
@@ -22,6 +22,14 @@ interface ServerEntry {
   tools: McpToolDefinition[];
   status: McpStatus;
   statusMessage?: string;
+}
+
+/** Extract required property names from a JSON-Schema input object (W2). */
+function extractRequiredArgs(schema: unknown): string[] {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
+  const req = (schema as { required?: unknown }).required;
+  if (!Array.isArray(req)) return [];
+  return req.filter((k): k is string => typeof k === "string");
 }
 
 /* ----------------------------------------------------------- manager --- */
@@ -108,6 +116,19 @@ export class McpManager {
       }
     }
     this.tokenIds.set(id, replacement.id);
+  }
+
+  /**
+   * Persist the OAuth client_id obtained via RFC7591 DCR so later logins
+   * reuse it instead of registering a brand-new client every time.
+   */
+  async setOAuthClientId(id: string, clientId: string): Promise<void> {
+    await this.ensureLoaded();
+    const entry = this.servers.get(id);
+    if (!entry) return;
+    if (entry.config.oauthClientId === clientId) return;
+    entry.config = { ...entry.config, oauthClientId: clientId };
+    await this.persist();
   }
 
   private async authTokenFor(id: string): Promise<string | undefined> {
@@ -333,6 +354,29 @@ export class McpManager {
           inputSchema: tool.inputSchema ?? {},
         });
       }
+    }
+    return out;
+  }
+
+  /**
+   * Prompt-facing catalog per enabled+connected server (W2): bare tool names,
+   * trimmed descriptions and required argument names extracted from each
+   * tool's JSON-Schema input. Powers system-prompt injection and the
+   * mcp_call fast-fail validation.
+   */
+  toolCatalog(): McpServerCatalog[] {
+    const out: McpServerCatalog[] = [];
+    for (const entry of this.servers.values()) {
+      if (entry.status !== "connected" || !entry.config.enabled) continue;
+      out.push({
+        id: entry.config.id,
+        name: entry.config.name,
+        tools: entry.tools.map((t) => ({
+          name: t.name,
+          description: (t.description ?? "").replace(/\s+/g, " ").trim().slice(0, 220),
+          requiredArgs: extractRequiredArgs(t.inputSchema),
+        })),
+      });
     }
     return out;
   }

@@ -345,4 +345,53 @@ describe("browser:attach", () => {
     assert.equal(addedView, view);
     assert.deepEqual(view.lastBounds, { x: 12, y: 24, width: 640, height: 480 });
   });
+
+  it("R6: discards a late-resolving attach after a superseding detach (no orphaned overlay)", async () => {
+    const localIpc = new FakeIpcMain();
+    const surface = new BrowserSurface();
+    let activeView: unknown = null;
+    let addedView: unknown = null;
+
+    const view = {
+      webContents: {
+        getURL: () => "http://late.test/",
+        on: (_e: string, _l: (...a: unknown[]) => void) => undefined,
+        removeListener: () => undefined,
+        isDestroyed: () => false,
+      },
+      setBounds: () => undefined,
+    };
+
+    const fakeWindow = {
+      contentView: {
+        addChildView: (candidate: unknown) => { addedView = candidate; },
+        removeChildView: () => undefined,
+      },
+    };
+
+    registerIpc(
+      makeDeps(localIpc, {
+        getWindow: () => fakeWindow,
+        browserSurface: surface,
+        getBrowserView: () => activeView,
+        ensureBrowserView: async () => {
+          await new Promise<void>((resolve) => setTimeout(resolve, 40));
+          activeView = view;
+          return view;
+        },
+      }) as Parameters<typeof registerIpc>[0],
+    );
+
+    const pendingAttach = localIpc.invoke("browser:attach", {
+      x: 0, y: 0, width: 300, height: 200,
+    }) as Promise<{ ok: boolean; value?: { attached?: boolean } }>;
+
+    // The panel unmounts while the lazy view is still being created.
+    await new Promise((r) => setTimeout(r, 8));
+    await localIpc.invoke("browser:detach");
+
+    const result = await pendingAttach;
+    assert.equal(addedView, null, "an orphaned native view must never be added after detach");
+    assert.notEqual(result.value?.attached, true);
+  });
 });

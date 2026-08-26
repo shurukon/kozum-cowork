@@ -279,15 +279,26 @@ export async function fetchWithRetry(
       lastErr = e;
       // A caller-initiated abort is not a failure to retry.
       if ((init.signal as AbortSignal | undefined)?.aborted) throw e;
+      // Request-construction failures (bad header values, invalid URL chars)
+      // are deterministic config errors — retrying cannot fix them.
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/bytestring|invalid character|failed to construct|InvalidURL/i.test(msg)) {
+        throw new ProviderError({
+          message: msg,
+          providerId: opts.providerId,
+          retryable: false,
+        });
+      }
       if (attempt === retries) break;
       await sleep(backoff(attempt));
     }
   }
 
+  const finalMsg = lastErr instanceof Error ? lastErr.message : "network request failed";
   throw new ProviderError({
-    message: lastErr instanceof Error ? lastErr.message : "network request failed",
+    message: finalMsg,
     providerId: opts.providerId,
-    retryable: true,
+    retryable: !/bytestring|invalid character|failed to construct|InvalidURL/i.test(finalMsg),
   });
 }
 

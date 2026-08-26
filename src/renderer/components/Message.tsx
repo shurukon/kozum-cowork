@@ -117,8 +117,12 @@ interface Props {
   onPreview?: (target: import("./PreviewPanel.tsx").PreviewTarget) => void;
   /** Copy a user message's text without opening a popup. */
   onCopyMessage?: (text: string) => void;
-  /** Replace a user turn by branching before it and pre-filling the composer. */
-  onEditMessage?: (messageId: string, text: string) => void;
+  /** T8: enter inline editing on this bubble (in place). */
+  onEditMessage?: (messageId: string) => void;
+  /** T8: save the inline edit (truncate + resend as a fresh turn). */
+  onEditSave?: (messageId: string, newText: string) => void;
+  onEditCancel?: () => void;
+  editActive?: boolean;
   /** Retry a user turn by replacing that exact message and its tail. */
   onRetryMessage?: (messageId: string, text: string) => void;
 }
@@ -137,12 +141,44 @@ export function Message({
   onPreview,
   onCopyMessage,
   onEditMessage,
+  onEditSave,
+  onEditCancel,
+  editActive = false,
   onRetryMessage,
 }: Props) {
   const { t } = useTranslation();
   // Track whether this is the very first mount so we can add kz-send-ack once.
   const isMountedRef = useRef(false);
   const [sendAck, setSendAck] = useState(false);
+  /** T8: local draft for inline editing — seeded from the original text. */
+  const [editDraft, setEditDraft] = useState<string | null>(null);
+  const editAreaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (editActive) {
+      setEditDraft(message.content.map((b) => (b.type === "text" ? b.text : "")).join("\n").trim());
+      requestAnimationFrame(() => {
+        const el = editAreaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
+      });
+    }
+  }, [editActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function commitEdit() {
+    if (!onEditSave || !editActive) return;
+    const next = (editDraft ?? "").trim();
+    if (!next) return;
+    onEditSave(message.id, next);
+    setEditDraft(null);
+  }
+
+  function cancelEdit() {
+    setEditDraft(null);
+    onEditCancel?.();
+  }
 
   useEffect(() => {
     if (message.role === "user" && !isMountedRef.current) {
@@ -200,24 +236,52 @@ export function Message({
       <div className={styles.userRow}>
         <div className={styles.userMessageGroup}>
           <div className={`${styles.userBubble} ${sendAck ? "kz-send-ack" : ""}`}>
-          {message.content.map((block, i) => {
-            if (block.type === "text") {
-              return <p key={i} className={styles.userText}>{block.text}</p>;
-            }
-            if (block.type === "image" && !hasText) {
-              return (
-                <img
-                  key={i}
-                  src={`data:${block.mimeType};base64,${block.data}`}
-                  alt=""
-                  className={styles.inlineImage}
-                />
-              );
-            }
-            return null;
-          })}
+          {editActive ? (
+            <div className={styles.inlineEdit}>
+              <textarea
+                ref={editAreaRef}
+                className={styles.inlineEditArea}
+                value={editDraft ?? ""}
+                rows={Math.min(10, Math.max(2, (editDraft ?? "").split("\n").length))}
+                onChange={(event) => setEditDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") { event.preventDefault(); cancelEdit(); }
+                  else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); commitEdit(); }
+                }}
+              />
+              <div className={styles.inlineEditActions}>
+                <button type="button" className={styles.inlineEditCancel} onClick={cancelEdit}>Cancel</button>
+                <button
+                  type="button"
+                  className={styles.inlineEditSave}
+                  disabled={!((editDraft ?? "").trim())}
+                  onClick={commitEdit}
+                  title="Truncates this turn's history and resends as a new message"
+                >
+                  Save &amp; resend
+                </button>
+              </div>
+            </div>
+          ) : (
+            message.content.map((block, i) => {
+              if (block.type === "text") {
+                return <p key={i} className={styles.userText}>{block.text}</p>;
+              }
+              if (block.type === "image" && !hasText) {
+                return (
+                  <img
+                    key={i}
+                    src={`data:${block.mimeType};base64,${block.data}`}
+                    alt=""
+                    className={styles.inlineImage}
+                  />
+                );
+              }
+              return null;
+            })
+          )}
           </div>
-          {hasText && (onCopyMessage || onEditMessage || onRetryMessage) && (
+          {!editActive && hasText && (onCopyMessage || onEditMessage || onRetryMessage) && (
             <div className={styles.userMessageActions} aria-label="Message actions">
               {onCopyMessage && (
                 <button type="button" className={styles.messageAction} onClick={() => onCopyMessage(userText)} aria-label="Copy message" title="Copy message">
@@ -225,7 +289,7 @@ export function Message({
                 </button>
               )}
               {onEditMessage && (
-                <button type="button" className={styles.messageAction} onClick={() => onEditMessage(message.id, userText)} aria-label="Edit message" title="Edit message">
+                <button type="button" className={styles.messageAction} onClick={() => onEditMessage(message.id)} aria-label="Edit message" title="Edit message">
                   <Pencil size={13} aria-hidden="true" />
                 </button>
               )}

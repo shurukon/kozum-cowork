@@ -201,11 +201,15 @@
 .textPre {
   margin: 0;
   padding: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   line-height: var(--lh-relaxed);
   overflow-x: auto;
+  overflow-y: hidden;
   white-space: pre;
+  overflow-wrap: anywhere;
 }
 
 .lineTable {
@@ -789,4 +793,31 @@
 .liveHtmlWrap > .browserPreview {
   flex: 1;
   min-height: 0;
+}
+
+
+/* == T2: themed media stage =============================================== */
+/* Media previews sit on the app's own surfaces — never a hard-coded white
+   stage — so images/videos blend with both Code and Cowork themes. */
+
+.imageWrap,
+.mediaWrap {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.imageWrap {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+}
+
+.previewImage {
+  background: transparent;
+}
+
+.previewVideo {
+  background: #000;
+  border-radius: var(--r-md);
 }
